@@ -21,6 +21,7 @@
   --brand: #174f47;
   --brand-dark: #103c36;
   --brand-soft: #e6f0ed;
+  --brand-soft-strong: #d5e6e1;
   --terracotta: #a84b33;
   --attention: #8a531a;
   --attention-soft: #fff3df;
@@ -29,6 +30,7 @@
   --attention-border-soft: #edd9b8;
   --ready: #307154;
   --ready-soft: #e7f3ed;
+  --ready-border: #c4dfd1;
   --draft: #566166;
   --draft-soft: #eef0ef;
   --route: #346a74;
@@ -215,7 +217,7 @@ a:focus-visible {
 .overline {
   margin: 0 0 10px;
   color: var(--terracotta);
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 780;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -299,7 +301,7 @@ a:focus-visible {
   border-radius: 11px;
   background: var(--draft-soft);
   color: var(--muted);
-  font-size: 11px;
+  font-size: 13px;
 }
 
 .trip-tab-active {
@@ -353,6 +355,32 @@ a:focus-visible {
   background: var(--media-placeholder);
 }
 
+.trip-cover-fallback {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  gap: 10px;
+  background:
+    radial-gradient(circle at 24% 20%, rgba(255, 255, 255, 0.42), transparent 28%),
+    linear-gradient(145deg, var(--brand-soft), var(--route-soft));
+  color: var(--brand);
+  padding: 24px;
+  text-align: center;
+}
+
+.trip-cover-fallback span {
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 54px;
+  letter-spacing: -0.06em;
+}
+
+.trip-cover-fallback small {
+  max-width: 190px;
+  font-size: 12px;
+  font-weight: 720;
+}
+
 .trip-cover::after {
   position: absolute;
   inset: 0;
@@ -362,6 +390,7 @@ a:focus-visible {
 }
 
 .trip-cover img {
+  position: relative;
   width: 100%;
   height: 100%;
   object-fit: cover;
@@ -383,7 +412,7 @@ a:focus-visible {
   color: var(--text-on-color);
   padding: 7px 11px;
   backdrop-filter: blur(8px);
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 750;
   letter-spacing: 0.05em;
   text-transform: uppercase;
@@ -407,7 +436,7 @@ a:focus-visible {
 .trip-eyebrow {
   margin: 0;
   color: var(--subtle);
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 750;
   letter-spacing: 0.085em;
   text-transform: uppercase;
@@ -420,7 +449,7 @@ a:focus-visible {
   gap: 7px;
   border-radius: 999px;
   padding: 0 10px;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 720;
 }
 
@@ -534,7 +563,7 @@ a:focus-visible {
   flex: 0 0 auto;
   place-items: center;
   border-radius: 50%;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 800;
 }
 
@@ -667,10 +696,16 @@ a:focus-visible {
   margin: 0 auto;
   padding: 28px 0;
   color: var(--subtle);
-  font-size: 11px;
+  font-size: 13px;
 }
 
 @media (max-width: 760px) {
+  .trip-form input,
+  .ai-intake textarea,
+  .ai-composer textarea {
+    font-size: 16px;
+  }
+
   .header-inner {
     grid-template-columns: 1fr auto;
     width: min(100% - 32px, 980px);
@@ -700,14 +735,14 @@ a:focus-visible {
     font-size: 14px;
   }
 
-  .button-primary {
+  .page-heading > .button-primary {
     width: 48px;
     padding: 0;
     justify-content: center;
     font-size: 0;
   }
 
-  .button-primary span {
+  .page-heading > .button-primary span {
     font-size: 20px;
   }
 
@@ -821,7 +856,7 @@ a:focus-visible {
 .trip-preview > p {
   margin: 0 0 10px;
   color: var(--subtle);
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 760;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -844,7 +879,7 @@ a:focus-visible {
   background: var(--canvas);
   color: var(--muted);
   padding: 7px 10px;
-  font-size: 11px;
+  font-size: 13px;
 }
 
 .trip-preview li span {
@@ -954,7 +989,7 @@ a:focus-visible {
   background: var(--proposal-pill-soft);
   color: var(--proposal);
   padding: 0 11px;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 720;
 }
 
@@ -973,6 +1008,11 @@ a:focus-visible {
   font-weight: 500;
   letter-spacing: -0.055em;
   line-height: 0.96;
+  overflow-wrap: anywhere;
+}
+
+.trip-detail-heading > div:first-child {
+  min-width: 0;
 }
 
 .trip-detail-heading > div > p:last-child {
@@ -990,7 +1030,9 @@ a:focus-visible {
 
 .trip-detail-route {
   display: flex;
+  max-width: 100%;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
   padding-bottom: 7px;
   color: var(--muted);
@@ -1008,6 +1050,10 @@ a:focus-visible {
     transparent 4px,
     transparent 7px
   );
+}
+
+.detail-route-segment {
+  display: contents;
 }
 
 .trip-facts {
@@ -1041,7 +1087,7 @@ a:focus-visible {
 .trip-facts span {
   overflow: hidden;
   color: var(--subtle);
-  font-size: 11px;
+  font-size: 13px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1110,7 +1156,7 @@ a:focus-visible {
 .proposal-banner small {
   margin: 4px 0 0;
   color: var(--proposal-muted);
-  font-size: 11px;
+  font-size: 13px;
 }
 
 .proposal-ready > span:last-child {
@@ -1219,7 +1265,7 @@ a:focus-visible {
 .transport-eyebrow {
   margin: 0 0 5px;
   color: var(--route-muted);
-  font-size: 9px;
+  font-size: 12px;
   font-weight: 760;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -1242,7 +1288,7 @@ a:focus-visible {
   gap: 0 6px;
   margin: 6px 0 0;
   color: var(--route-muted);
-  font-size: 11px;
+  font-size: 13px;
 }
 
 .transport-side {
@@ -1260,13 +1306,13 @@ a:focus-visible {
   color: var(--route);
   cursor: pointer;
   padding: 0;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 720;
 }
 
 .leg-status {
   color: var(--ready);
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 720;
 }
 
@@ -1343,7 +1389,7 @@ a:focus-visible {
 
 .destination-title small {
   color: var(--subtle);
-  font-size: 9px;
+  font-size: 12px;
   font-weight: 760;
   letter-spacing: 0.09em;
   text-transform: uppercase;
@@ -1364,7 +1410,7 @@ a:focus-visible {
 .destination-dates small,
 .destination-summary {
   color: var(--subtle);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .destination-summary {
@@ -1424,7 +1470,7 @@ a:focus-visible {
 .section-kicker {
   margin: 0 0 4px;
   color: var(--subtle);
-  font-size: 9px;
+  font-size: 12px;
   font-weight: 760;
   letter-spacing: 0.09em;
   text-transform: uppercase;
@@ -1459,7 +1505,7 @@ a:focus-visible {
   border-radius: 50%;
   background: var(--draft-soft);
   color: var(--muted);
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 730;
 }
 
@@ -1499,7 +1545,7 @@ a:focus-visible {
 
 .mini-status {
   color: var(--ready);
-  font-size: 9px;
+  font-size: 12px;
   font-weight: 730;
 }
 
@@ -1513,7 +1559,7 @@ a:focus-visible {
   display: block;
   margin: 3px 0 0;
   color: var(--muted);
-  font-size: 9px;
+  font-size: 12px;
   line-height: 1.45;
 }
 
@@ -1525,7 +1571,7 @@ a:focus-visible {
   color: var(--brand);
   cursor: pointer;
   padding: 0;
-  font-size: 9px;
+  font-size: 12px;
   font-weight: 720;
 }
 
@@ -1564,14 +1610,14 @@ a:focus-visible {
 
 .activity-pool li strong {
   overflow: hidden;
-  font-size: 10px;
+  font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .activity-pool li small {
   color: var(--subtle);
-  font-size: 9px;
+  font-size: 12px;
 }
 
 .activity-pool li button {
@@ -1580,7 +1626,7 @@ a:focus-visible {
   background: transparent;
   color: var(--brand);
   cursor: pointer;
-  font-size: 9px;
+  font-size: 12px;
   font-weight: 730;
 }
 
@@ -1593,7 +1639,7 @@ a:focus-visible {
   background: transparent;
   color: var(--muted);
   cursor: pointer;
-  font-size: 9px;
+  font-size: 12px;
   font-weight: 680;
 }
 
@@ -1603,7 +1649,7 @@ a:focus-visible {
   background: var(--ready-soft);
   color: var(--ready);
   padding: 14px;
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .agenda-section {
@@ -1613,7 +1659,7 @@ a:focus-visible {
 
 .agenda-heading .button-secondary {
   min-height: 32px;
-  font-size: 9px;
+  font-size: 12px;
 }
 
 .agenda-list {
@@ -1655,13 +1701,13 @@ a:focus-visible {
 
 .agenda-day h4 {
   margin: 0;
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .agenda-day header p {
   margin: 4px 0 0;
   color: var(--subtle);
-  font-size: 8px;
+  font-size: 12px;
 }
 
 .agenda-day ol {
@@ -1685,7 +1731,7 @@ a:focus-visible {
 
 .agenda-day time {
   color: var(--subtle);
-  font-size: 9px;
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
 
@@ -1698,7 +1744,7 @@ a:focus-visible {
 
 .agenda-day li strong {
   overflow: hidden;
-  font-size: 10px;
+  font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1706,7 +1752,7 @@ a:focus-visible {
 .agenda-day li small {
   overflow: hidden;
   color: var(--subtle);
-  font-size: 8px;
+  font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1716,7 +1762,7 @@ a:focus-visible {
   background: var(--ready-soft);
   color: var(--ready);
   padding: 4px 7px;
-  font-size: 7px;
+  font-size: 12px;
   font-weight: 720;
 }
 
@@ -1730,7 +1776,7 @@ a:focus-visible {
   background: var(--surface);
   color: var(--brand);
   cursor: pointer;
-  font-size: 9px;
+  font-size: 12px;
   font-weight: 720;
 }
 
@@ -1762,7 +1808,7 @@ a:focus-visible {
 .compact-destination-body > section > span {
   display: inline-flex;
   margin-top: 12px;
-  font-size: 9px;
+  font-size: 12px;
   font-weight: 720;
 }
 
@@ -1784,7 +1830,7 @@ a:focus-visible {
   color: var(--brand);
   cursor: pointer;
   padding: 0 11px;
-  font-size: 9px;
+  font-size: 12px;
   font-weight: 720;
 }
 
@@ -1795,7 +1841,7 @@ a:focus-visible {
   padding: 0;
   color: var(--muted);
   list-style: none;
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .compact-destination-body li::before {
@@ -1807,7 +1853,7 @@ a:focus-visible {
 .compact-plan p:last-child {
   margin: 10px 0 0;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.55;
 }
 
@@ -1840,7 +1886,7 @@ a:focus-visible {
 .composer-intro p {
   margin: 4px 0 0;
   color: var(--proposal-muted);
-  font-size: 11px;
+  font-size: 13px;
 }
 
 .ai-composer {
@@ -1888,7 +1934,7 @@ a:focus-visible {
 .voice-button {
   background: var(--proposal-control-soft);
   color: var(--proposal);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .composer-send {
@@ -1900,7 +1946,7 @@ a:focus-visible {
 .composer-reassurance {
   margin: 10px 0 0;
   color: var(--proposal-muted);
-  font-size: 9px;
+  font-size: 12px;
 }
 
 .composer-reassurance span {
@@ -1953,7 +1999,7 @@ a:focus-visible {
 .modal-header > div > p:last-child {
   margin: 9px 0 0;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 13px;
 }
 
 .modal-close {
@@ -2002,7 +2048,7 @@ a:focus-visible {
 .ai-intake-title small {
   margin-top: 3px;
   color: var(--proposal-muted);
-  font-size: 9px;
+  font-size: 12px;
 }
 
 .ai-intake textarea {
@@ -2046,14 +2092,14 @@ a:focus-visible {
   color: var(--text-on-color);
   cursor: pointer;
   padding: 0 15px;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 730;
 }
 
 .ai-intake > p {
   margin: 12px 0 0;
   color: var(--proposal-muted);
-  font-size: 9px;
+  font-size: 12px;
   line-height: 1.5;
 }
 
@@ -2075,7 +2121,7 @@ a:focus-visible {
 .trip-form label > span,
 .trip-form legend {
   color: var(--muted);
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 720;
 }
 
@@ -2088,7 +2134,7 @@ a:focus-visible {
   background: var(--surface);
   padding: 0 12px;
   font: inherit;
-  font-size: 11px;
+  font-size: 13px;
 }
 
 .trip-form input:focus-visible {
@@ -2109,13 +2155,30 @@ a:focus-visible {
   gap: 7px;
 }
 
-.destination-chips span {
+.destination-chips button {
+  min-height: 34px;
+  border: 0;
   border-radius: 999px;
   background: var(--brand-soft);
   color: var(--brand);
   padding: 7px 10px;
-  font-size: 9px;
+  cursor: pointer;
+  font-size: 12px;
   font-weight: 680;
+}
+
+.destination-chips button:hover {
+  background: var(--brand-soft-strong);
+}
+
+.destination-chips button span {
+  margin-left: 4px;
+}
+
+.destination-entry {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
 }
 
 .add-destination {
@@ -2125,8 +2188,135 @@ a:focus-visible {
   background: transparent;
   color: var(--brand);
   cursor: pointer;
-  font-size: 10px;
+  padding: 0 14px;
+  font-size: 13px;
   font-weight: 700;
+}
+
+.form-error {
+  margin: -4px 0 0;
+  border-radius: 10px;
+  background: var(--danger-soft);
+  color: var(--danger);
+  padding: 10px 12px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.outline-journey {
+  padding-bottom: 8px;
+}
+
+.outline-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(280px, 0.75fr);
+  gap: 18px;
+}
+
+.outline-panel {
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: var(--surface);
+  padding: 26px;
+}
+
+.outline-panel h3 {
+  margin: 7px 0 0;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 25px;
+  font-weight: 500;
+  letter-spacing: -0.025em;
+  overflow-wrap: anywhere;
+}
+
+.route-outline-panel ol {
+  display: grid;
+  gap: 0;
+  margin: 24px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.route-outline-panel li {
+  display: grid;
+  grid-template-columns: 34px 1fr;
+  align-items: center;
+  gap: 12px;
+  min-height: 48px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.route-outline-panel li > span {
+  color: var(--subtle);
+  font-size: 13px;
+  font-weight: 760;
+}
+
+.route-outline-panel li strong {
+  color: var(--ink);
+  font-weight: 650;
+}
+
+.next-steps-panel {
+  background: var(--surface-subtle);
+}
+
+.next-steps-panel > button {
+  display: grid;
+  width: 100%;
+  grid-template-columns: 38px 1fr;
+  align-items: center;
+  gap: 11px;
+  margin-top: 10px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+  padding: 12px;
+  text-align: left;
+}
+
+.next-steps-panel > button:first-of-type {
+  margin-top: 22px;
+}
+
+.next-steps-panel > button > span:first-child {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border-radius: 11px;
+  background: var(--brand-soft);
+  color: var(--brand);
+}
+
+.next-steps-panel strong,
+.next-steps-panel small {
+  display: block;
+}
+
+.next-steps-panel strong {
+  font-size: 13px;
+}
+
+.next-steps-panel small {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.local-save-pill {
+  border-color: var(--ready-border);
+  background: var(--ready-soft);
+  color: var(--ready);
+}
+
+#main-content:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 4px;
 }
 
 .modal-footer {
@@ -2154,7 +2344,7 @@ a:focus-visible {
   background: var(--proposal-soft);
   color: var(--proposal-dark);
   padding: 14px 16px;
-  font-size: 11px;
+  font-size: 13px;
   font-style: normal;
   line-height: 1.55;
 }
@@ -2218,12 +2408,12 @@ a:focus-visible {
   background: var(--canvas);
   color: var(--muted);
   padding: 11px 12px;
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .before-after small {
   color: var(--subtle);
-  font-size: 8px;
+  font-size: 12px;
   font-weight: 740;
   letter-spacing: 0.07em;
   text-transform: uppercase;
@@ -2243,7 +2433,7 @@ a:focus-visible {
   background: var(--attention-soft);
   color: var(--attention);
   padding: 9px 10px;
-  font-size: 9px;
+  font-size: 12px;
   font-style: normal;
   line-height: 1.45;
 }
@@ -2297,7 +2487,7 @@ a:focus-visible {
   color: var(--text-on-color);
   padding: 12px 16px;
   box-shadow: 0 18px 46px rgba(12, 30, 27, 0.24);
-  font-size: 11px;
+  font-size: 13px;
   line-height: 1.4;
 }
 
@@ -2310,10 +2500,14 @@ a:focus-visible {
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.13);
   color: var(--toast-success);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 @media (max-width: 980px) {
+  .outline-grid {
+    grid-template-columns: 1fr;
+  }
+
   .destination-header {
     grid-template-columns: auto minmax(110px, 1fr) auto auto auto;
   }
@@ -2441,19 +2635,18 @@ a:focus-visible {
   }
 
   .destination-header {
-    grid-template-columns: auto 1fr auto;
+    grid-template-columns: auto 1fr auto auto;
     gap: 12px;
     min-height: 118px;
   }
 
   .destination-dates,
-  .destination-summary,
-  .destination-header .status-pill {
+  .destination-summary {
     display: none;
   }
 
   .destination-chevron {
-    grid-column: 3;
+    grid-column: 4;
     grid-row: 1;
   }
 
@@ -2483,12 +2676,8 @@ a:focus-visible {
   }
 
   .agenda-day li {
-    grid-template-columns: 44px 1fr;
+    grid-template-columns: 44px minmax(0, 1fr) auto;
     padding: 5px 0;
-  }
-
-  .event-confirmed {
-    display: none;
   }
 
   .compact-destination-body {
@@ -2594,7 +2783,7 @@ a:focus-visible {
   .button-primary-compact {
     width: auto;
     padding: 0 13px;
-    font-size: 10px;
+    font-size: 12px;
   }
 
   .trip-detail-heading h1 {
@@ -2620,7 +2809,19 @@ a:focus-visible {
   }
 
   .destination-header {
+    grid-template-columns: auto minmax(0, 1fr) auto;
     padding: 16px;
+  }
+
+  .destination-header .status-pill {
+    grid-column: 2;
+    grid-row: 2;
+    justify-self: start;
+  }
+
+  .destination-chevron {
+    grid-column: 3;
+    grid-row: 1 / span 2;
   }
 
   .destination-number {

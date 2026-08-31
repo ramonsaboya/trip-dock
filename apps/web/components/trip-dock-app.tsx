@@ -2,105 +2,28 @@
 
 import {
   type FormEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
   useEffect,
   useRef,
   useState,
 } from 'react';
 
-type StatusTone = 'attention' | 'ready' | 'draft';
-type ProposalStatus = 'idle' | 'loading' | 'ready' | 'kept' | 'applied';
-
-type Trip = {
-  id: string;
-  eyebrow: string;
-  title: string;
-  dates: string;
-  duration: string;
-  travelers: string;
-  route: string[];
-  status: string;
-  statusTone: StatusTone;
-  note: string;
-  next: string;
-  image: string;
-  alt: string;
-  featured?: boolean;
-};
-
-const trips: Trip[] = [
-  {
-    id: 'italy-spring-2027',
-    eyebrow: 'Next up',
-    title: 'Italy in spring',
-    dates: 'Apr 11–20, 2027',
-    duration: '9 nights',
-    travelers: '2 travelers',
-    route: ['Rome', 'Florence', 'Venice'],
-    status: 'Planning',
-    statusTone: 'attention',
-    note: '2 things to arrange',
-    next: 'Next: Flight to Rome · Sun, 09:20',
-    image:
-      'https://images.unsplash.com/photo-1552832230-c0197dd311b5?auto=format&fit=crop&w=1400&q=82',
-    alt: 'The Colosseum in Rome in warm evening light',
-    featured: true,
-  },
-  {
-    id: 'porto-weekend-2027',
-    eyebrow: 'May 7–10',
-    title: 'Porto long weekend',
-    dates: 'May 7–10, 2027',
-    duration: '3 nights',
-    travelers: '2 travelers',
-    route: ['Porto'],
-    status: 'Ready',
-    statusTone: 'ready',
-    note: 'Everything arranged',
-    next: 'Stay: Torel Avantgarde · Fri, 15:00',
-    image:
-      'https://images.unsplash.com/photo-1653837403076-be7194e55776?auto=format&fit=crop&w=1200&q=82',
-    alt: 'Colorful buildings along the Douro river in Porto',
-  },
-  {
-    id: 'japan-autumn-2027',
-    eyebrow: 'Oct 2–15',
-    title: 'Japan in autumn',
-    dates: 'Oct 2–15, 2027',
-    duration: '13 nights',
-    travelers: '3 travelers',
-    route: ['Tokyo', 'Kyoto', 'Osaka'],
-    status: 'Draft',
-    statusTone: 'draft',
-    note: 'Dates saved, details to come',
-    next: 'Start with accommodation in Tokyo',
-    image:
-      'https://images.unsplash.com/photo-1493976040374-85c8e12f0c0e?auto=format&fit=crop&w=1200&q=82',
-    alt: 'A quiet traditional street in Kyoto during autumn',
-  },
-];
-
-const previewRoutes: Record<string, string[]> = {
-  'italy-spring-2027': [
-    'Flight · Barcelona to Rome',
-    '4 nights · Rome',
-    'Train · Rome to Florence',
-    '3 nights · Florence',
-    'Train · Florence to Venice',
-    '2 nights · Venice',
-  ],
-  'porto-weekend-2027': [
-    'Flight · Barcelona to Porto',
-    '3 nights · Porto',
-    'Flight · Porto to Barcelona',
-  ],
-  'japan-autumn-2027': [
-    'Flight · Barcelona to Tokyo',
-    '5 nights · Tokyo',
-    '4 nights · Kyoto',
-    '4 nights · Osaka',
-  ],
-};
+import {
+  applyProposalChanges,
+  createInitialPrototypeState,
+  createTripFromDraft,
+  DEFAULT_PROPOSAL_PROMPT,
+  PROTOTYPE_STORAGE_KEY,
+  proposalChangesFromPrompt,
+  restorePrototypeState,
+  type ProposalChangeId,
+  type ProposalStatus,
+  type PrototypeState,
+  type StatusTone,
+  type Trip,
+  type TripDraft,
+} from '../lib/prototype-state';
 
 const romeActivityPool = [
   { id: 'borghese', title: 'Borghese Gallery', duration: '2 hr' },
@@ -118,7 +41,15 @@ function Wordmark({ onHome }: { onHome: () => void }) {
   );
 }
 
-function AppHeader({ detail, onHome }: { detail: boolean; onHome: () => void }) {
+function AppHeader({
+  detail,
+  onHome,
+  onProfile,
+}: {
+  detail: boolean;
+  onHome: () => void;
+  onProfile: () => void;
+}) {
   return (
     <header className="site-header">
       <div className="header-inner">
@@ -133,7 +64,12 @@ function AppHeader({ detail, onHome }: { detail: boolean; onHome: () => void }) 
             Trips
           </button>
         </nav>
-        <button className="profile-button" type="button" aria-label="Open account menu">
+        <button
+          className="profile-button"
+          type="button"
+          aria-label="Open prototype profile"
+          onClick={onProfile}
+        >
           <span>RS</span>
         </button>
       </div>
@@ -173,8 +109,16 @@ function TripCard({
   return (
     <article className={`trip-card ${trip.featured ? 'trip-card-featured' : ''}`}>
       <div className="trip-cover">
+        <div className="trip-cover-fallback" aria-hidden="true">
+          <span>{trip.route[0]?.slice(0, 2).toLocaleUpperCase() ?? 'TD'}</span>
+          <small>{trip.route.join(' · ')}</small>
+        </div>
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={trip.image} alt={trip.alt} />
+        <img
+          src={trip.image}
+          alt={trip.alt}
+          onError={(event) => { event.currentTarget.hidden = true; }}
+        />
         {trip.featured ? <span className="cover-label">Next trip</span> : null}
       </div>
 
@@ -211,7 +155,7 @@ function TripCard({
           <div className="trip-preview" id={previewId}>
             <p>Route preview</p>
             <ol>
-              {previewRoutes[trip.id].map((item) => (
+              {trip.preview.map((item) => (
                 <li key={item}>
                   <span aria-hidden="true" />
                   {item}
@@ -241,19 +185,19 @@ function TripCard({
 }
 
 function TripsOverview({
+  trips,
   onNewTrip,
   onOpenTrip,
-  showToast,
 }: {
+  trips: Trip[];
   onNewTrip: () => void;
-  onOpenTrip: () => void;
-  showToast: (message: string) => void;
+  onOpenTrip: (tripId: string) => void;
 }) {
   const [tab, setTab] = useState<'upcoming' | 'past'>('upcoming');
   const [previewTrip, setPreviewTrip] = useState<string | null>(null);
 
   return (
-    <main id="main-content" className="page-wrap">
+    <main id="main-content" className="page-wrap" tabIndex={-1}>
       <section className="page-heading" aria-labelledby="trips-heading">
         <div>
           <p className="overline">Your travel plans</p>
@@ -265,21 +209,19 @@ function TripsOverview({
         </button>
       </section>
 
-      <div className="trip-tabs" role="tablist" aria-label="Trip timing">
+      <div className="trip-tabs" aria-label="Trip timing">
         <button
           className={`trip-tab ${tab === 'upcoming' ? 'trip-tab-active' : ''}`}
           type="button"
-          role="tab"
-          aria-selected={tab === 'upcoming'}
+          aria-pressed={tab === 'upcoming'}
           onClick={() => setTab('upcoming')}
         >
-          Upcoming <span>3</span>
+          Upcoming <span>{trips.length}</span>
         </button>
         <button
           className={`trip-tab ${tab === 'past' ? 'trip-tab-active' : ''}`}
           type="button"
-          role="tab"
-          aria-selected={tab === 'past'}
+          aria-pressed={tab === 'past'}
           onClick={() => setTab('past')}
         >
           Past
@@ -294,11 +236,7 @@ function TripsOverview({
               key={trip.id}
               expanded={previewTrip === trip.id}
               onPreview={() => setPreviewTrip(previewTrip === trip.id ? null : trip.id)}
-              onView={
-                trip.id === 'italy-spring-2027'
-                  ? onOpenTrip
-                  : () => showToast('The detailed mock is populated for Italy in spring.')
-              }
+              onView={() => onOpenTrip(trip.id)}
             />
           ))}
         </section>
@@ -413,35 +351,43 @@ function AgendaDay({
 
 function RomeContent({
   assigned,
-  proposalApplied,
+  acceptedChanges,
   onAssign,
   onStayDetails,
+  onAddStay,
+  onAddIdea,
+  onAddActivity,
 }: {
   assigned: string[];
-  proposalApplied: boolean;
+  acceptedChanges: ProposalChangeId[];
   onAssign: (id: string) => void;
   onStayDetails: () => void;
+  onAddStay: () => void;
+  onAddIdea: () => void;
+  onAddActivity: () => void;
 }) {
+  const movedVatican = acceptedChanges.includes('move-vatican');
+  const scheduledBorghese = acceptedChanges.includes('schedule-borghese');
   const pool = romeActivityPool.filter(
-    (activity) => !assigned.includes(activity.id) && !(proposalApplied && activity.id === 'borghese'),
+    (activity) => !assigned.includes(activity.id) && !(scheduledBorghese && activity.id === 'borghese'),
   );
 
   const tuesdayEvents: AgendaEvent[] = [
-    ...(proposalApplied
+    ...(movedVatican
       ? []
       : [{ time: '09:30', title: 'Vatican Museums', meta: 'Viale Vaticano', confirmed: true }]),
     { time: '13:00', title: 'St Peter’s Basilica', meta: 'Vatican City' },
-    ...(proposalApplied
+    ...(scheduledBorghese
       ? [{ time: '15:00', title: 'Borghese Gallery', meta: 'Added by approved proposal' }]
       : []),
   ];
 
   const wednesdayEvents: AgendaEvent[] = [
-    ...(proposalApplied
+    ...(movedVatican
       ? [{ time: '09:30', title: 'Vatican Museums', meta: 'Moved by approved proposal', confirmed: true }]
       : []),
     ...assigned
-      .filter((id) => !(proposalApplied && id === 'borghese'))
+      .filter((id) => !(scheduledBorghese && id === 'borghese'))
       .map((id, index) => {
         const activity = romeActivityPool.find((item) => item.id === id);
         return {
@@ -461,7 +407,7 @@ function RomeContent({
               <p className="section-kicker">Stay</p>
               <h3>Accommodation</h3>
             </div>
-            <button type="button" aria-label="Add accommodation">＋</button>
+            <button type="button" aria-label="Add accommodation" onClick={onAddStay}>＋</button>
           </div>
           <article className="stay-card">
             <div className="stay-image stay-image-rome" aria-hidden="true"><span>R</span></div>
@@ -499,7 +445,7 @@ function RomeContent({
           ) : (
             <p className="pool-empty">Every saved idea is on the plan.</p>
           )}
-          <button className="add-idea-button" type="button">＋ Add an idea</button>
+          <button className="add-idea-button" type="button" onClick={onAddIdea}>＋ Add an idea</button>
         </section>
       </aside>
 
@@ -509,7 +455,7 @@ function RomeContent({
             <p className="section-kicker">Rome plan</p>
             <h3>Day by day</h3>
           </div>
-          <button className="button-secondary" type="button">＋ Add activity</button>
+          <button className="button-secondary" type="button" onClick={onAddActivity}>＋ Add activity</button>
         </div>
         <div className="agenda-list">
           <AgendaDay
@@ -549,12 +495,14 @@ function CompactDestinationContent({
   stayStatus,
   activities,
   attention,
+  onAction,
 }: {
   city: string;
   stay: string;
   stayStatus: string;
   activities: string[];
   attention?: string;
+  onAction: () => void;
 }) {
   return (
     <div className="compact-destination-body">
@@ -564,7 +512,7 @@ function CompactDestinationContent({
         <span className={attention ? 'compact-attention' : 'compact-ready'}>
           {attention ? '!' : '✓'} {stayStatus}
         </span>
-        <button type="button">{attention ? 'Find a place' : 'View details'}</button>
+        <button type="button" onClick={onAction}>{attention ? 'Find a place' : 'View details'}</button>
       </section>
       <section>
         <p className="section-kicker">Saved for {city}</p>
@@ -643,9 +591,11 @@ function DestinationCard({
 
 function ProposalBanner({
   status,
+  changeCount,
   onReview,
 }: {
   status: ProposalStatus;
+  changeCount: number;
   onReview: () => void;
 }) {
   if (status === 'idle' || status === 'applied') return null;
@@ -667,7 +617,7 @@ function ProposalBanner({
     <button className="proposal-banner proposal-ready" type="button" onClick={onReview}>
       <span className="proposal-spark" aria-hidden="true">✦</span>
       <span>
-        <strong>{status === 'kept' ? '1 unapplied proposal' : '2 changes ready to review'}</strong>
+        <strong>{status === 'kept' ? 'Saved proposal' : `${changeCount} ${changeCount === 1 ? 'change' : 'changes'} ready to review`}</strong>
         <small>{status === 'kept' ? 'Saved for whenever you are ready.' : 'Review before anything changes.'}</small>
       </span>
       <span aria-hidden="true">Review →</span>
@@ -678,14 +628,22 @@ function ProposalBanner({
 function TripDetail({
   onBack,
   showToast,
-  proposalStatus,
-  setProposalStatus,
+  proposal,
+  acceptedChanges,
+  assignedActivities,
+  storageLabel,
+  onAssignActivity,
+  onRequestProposal,
   onReviewProposal,
 }: {
   onBack: () => void;
   showToast: (message: string) => void;
-  proposalStatus: ProposalStatus;
-  setProposalStatus: (status: ProposalStatus) => void;
+  proposal: PrototypeState['proposal'];
+  acceptedChanges: ProposalChangeId[];
+  assignedActivities: string[];
+  storageLabel: 'on this device' | 'for this session';
+  onAssignActivity: (id: string) => void;
+  onRequestProposal: (prompt: string) => void;
   onReviewProposal: () => void;
 }) {
   const [expandedStops, setExpandedStops] = useState<Record<string, boolean>>({
@@ -693,48 +651,46 @@ function TripDetail({
     florence: false,
     venice: false,
   });
-  const [assigned, setAssigned] = useState<string[]>([]);
-  const [prompt, setPrompt] = useState(
-    'Move the Vatican Museums to Wednesday morning and add Borghese Gallery on Tuesday afternoon.',
-  );
-  const proposalTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const composerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => () => {
-    if (proposalTimer.current) clearTimeout(proposalTimer.current);
-  }, []);
+  const [prompt, setPrompt] = useState(proposal.prompt || DEFAULT_PROPOSAL_PROMPT);
+  const composerRef = useRef<HTMLElement>(null);
+  const promptRef = useRef<HTMLTextAreaElement>(null);
 
   function toggleStop(id: string) {
     setExpandedStops((current) => ({ ...current, [id]: !current[id] }));
   }
 
   function assignActivity(id: string) {
-    if (!assigned.includes(id)) setAssigned((current) => [...current, id]);
+    onAssignActivity(id);
     const activity = romeActivityPool.find((item) => item.id === id);
-    showToast(`${activity?.title ?? 'Activity'} assigned to Wed, Apr 14.`);
+    if (assignedActivities.includes(id)) {
+      showToast(`${activity?.title ?? 'Activity'} is already on Wed, Apr 14.`);
+      return;
+    }
+    showToast(`${activity?.title ?? 'Activity'} assigned to Wed, Apr 14 and saved ${storageLabel}.`);
   }
 
   function submitPrompt(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!prompt.trim()) return;
-    setProposalStatus('loading');
-    if (proposalTimer.current) clearTimeout(proposalTimer.current);
-    proposalTimer.current = setTimeout(() => setProposalStatus('ready'), 900);
+    onRequestProposal(prompt.trim());
   }
 
   return (
-    <main id="main-content" className="detail-page">
+    <main id="main-content" className="detail-page" tabIndex={-1}>
       <div className="detail-topbar">
         <button className="back-button" type="button" onClick={onBack}>
           <span aria-hidden="true">←</span> All trips
         </button>
         <div className="detail-actions">
-          {proposalStatus === 'kept' ? <span className="saved-proposal-pill">✦ 1 proposal</span> : null}
+          {proposal.status === 'kept' ? <span className="saved-proposal-pill">✦ {proposal.changes.length} proposed</span> : null}
           <button className="button-secondary" type="button" onClick={() => showToast('Trip editing is represented by the mock controls below.')}>Edit trip</button>
           <button
             className="button-primary button-primary-compact"
             type="button"
-            onClick={() => composerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })}
+            onClick={() => {
+              composerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              promptRef.current?.focus({ preventScroll: true });
+            }}
           >
             <span aria-hidden="true">✦</span> Ask TripDock
           </button>
@@ -760,7 +716,11 @@ function TripDetail({
         <div className="trip-fact-attention"><strong>2</strong><span>things to arrange</span></div>
       </section>
 
-      <ProposalBanner status={proposalStatus} onReview={onReviewProposal} />
+      <ProposalBanner
+        status={proposal.status}
+        changeCount={proposal.changes.length}
+        onReview={onReviewProposal}
+      />
 
       <section className="journey" aria-labelledby="journey-heading">
         <div className="journey-heading">
@@ -798,10 +758,13 @@ function TripDetail({
             onToggle={() => toggleStop('rome')}
           >
             <RomeContent
-              assigned={assigned}
-              proposalApplied={proposalStatus === 'applied'}
+              assigned={assignedActivities}
+              acceptedChanges={acceptedChanges}
               onAssign={assignActivity}
               onStayDetails={() => showToast('Casa Navona · Check-in after 15:00 · CN-4821.')}
+              onAddStay={() => showToast('Casa Navona is already saved. Stay editing is next on the prototype list.')}
+              onAddIdea={() => showToast('Idea capture is coming next. For now, assign one of the saved activities.')}
+              onAddActivity={() => showToast('Choose an activity from the Rome pool to add it to Wednesday.')}
             />
           </DestinationCard>
 
@@ -837,6 +800,7 @@ function TripDetail({
               stay="Arno Rooms"
               stayStatus="Confirmed"
               activities={['Uffizi Gallery', 'Duomo', 'Oltrarno evening']}
+              onAction={() => showToast('Arno Rooms · Check-in Thu, Apr 15 after 15:00.')}
             />
           </DestinationCard>
 
@@ -874,6 +838,7 @@ function TripDetail({
               stayStatus="Accommodation needed"
               activities={['St Mark’s Basilica', 'Rialto Market', 'Murano']}
               attention="Choose where to stay"
+              onAction={() => showToast('Accommodation search is not connected in this local prototype yet.')}
             />
           </DestinationCard>
 
@@ -896,14 +861,16 @@ function TripDetail({
           <span className="proposal-spark" aria-hidden="true">✦</span>
           <div>
             <h2 id="composer-title">Ask TripDock</h2>
-            <p>Ask a question or describe a change in your own words.</p>
+            <p>Try the local Vatican and Borghese proposal fixture—no API call is made.</p>
           </div>
         </div>
         <form className="ai-composer" onSubmit={submitPrompt}>
           <label className="sr-only" htmlFor="trip-prompt">Ask TripDock about this trip</label>
           <textarea
+            ref={promptRef}
             id="trip-prompt"
             value={prompt}
+            maxLength={500}
             onChange={(event) => setPrompt(event.target.value)}
             rows={2}
           />
@@ -911,6 +878,105 @@ function TripDetail({
           <button className="composer-send" type="submit" aria-label="Send request">↑</button>
         </form>
         <p className="composer-reassurance"><span aria-hidden="true">✓</span> Nothing changes until you approve.</p>
+      </section>
+    </main>
+  );
+}
+
+function TripOutlineDetail({
+  trip,
+  onBack,
+  showToast,
+  storageLabel,
+}: {
+  trip: Trip;
+  onBack: () => void;
+  showToast: (message: string) => void;
+  storageLabel: 'on this device' | 'for this session';
+}) {
+  return (
+    <main id="main-content" className="detail-page" tabIndex={-1}>
+      <div className="detail-topbar">
+        <button className="back-button" type="button" onClick={onBack}>
+          <span aria-hidden="true">←</span> All trips
+        </button>
+        <div className="detail-actions">
+          {trip.createdLocally ? (
+            <span className="saved-proposal-pill local-save-pill">
+              ✓ Saved {storageLabel}
+            </span>
+          ) : null}
+          <button
+            className="button-secondary"
+            type="button"
+            onClick={() => showToast('Trip editing is the next prototype slice. Your current draft is safely saved.')}
+          >
+            Edit trip
+          </button>
+        </div>
+      </div>
+
+      <header className="trip-detail-heading">
+        <div>
+          <p className="overline">{trip.status} trip</p>
+          <h1>{trip.title}</h1>
+          <p>{trip.dates} <span aria-hidden="true">·</span> {trip.duration} <span aria-hidden="true">·</span> {trip.travelers}</p>
+        </div>
+        <div className="trip-detail-route" aria-label={`Route: ${trip.route.join(' to ')}`}>
+          {trip.route.map((stop, index) => (
+            <span className="detail-route-segment" key={`${stop}-${index}`}>
+              <span>{stop}</span>
+              {index < trip.route.length - 1 ? <i aria-hidden="true" /> : null}
+            </span>
+          ))}
+        </div>
+      </header>
+
+      <section className="trip-facts" aria-label="Trip summary">
+        <div><strong>{trip.route.length}</strong><span>{trip.route.length === 1 ? 'destination' : 'destinations'}</span></div>
+        <div><strong>{trip.duration.split(' ')[0]}</strong><span>{trip.duration.includes('night') ? 'nights' : 'days'}</span></div>
+        <div><strong>{Math.max(0, trip.route.length - 1)}</strong><span>transport legs to plan</span></div>
+        <div><strong>0</strong><span>stays added</span></div>
+        <div className="trip-fact-attention"><strong>{trip.route.length + Math.max(0, trip.route.length - 1)}</strong><span>essentials to arrange</span></div>
+      </section>
+
+      <section className="journey outline-journey" aria-labelledby="outline-heading">
+        <div className="journey-heading">
+          <div>
+            <p className="overline">First draft</p>
+            <h2 id="outline-heading">Shape the journey</h2>
+          </div>
+          <p>The route and dates are saved. Add bookings and ideas when you are ready.</p>
+        </div>
+
+        <div className="outline-grid">
+          <article className="outline-panel route-outline-panel">
+            <p className="section-kicker">Route outline</p>
+            <h3>{trip.route.join(' → ')}</h3>
+            <ol>
+              {trip.preview.map((item, index) => (
+                <li key={`${item}-${index}`}>
+                  <span aria-hidden="true">{String(index + 1).padStart(2, '0')}</span>
+                  <strong>{item}</strong>
+                </li>
+              ))}
+            </ol>
+          </article>
+
+          <aside className="outline-panel next-steps-panel">
+            <p className="section-kicker">Planning checklist</p>
+            <h3>Good next steps</h3>
+            <button type="button" onClick={() => showToast('Transport planning will connect to each route leg in a later slice.')}>
+              <span aria-hidden="true">↗</span><span><strong>Add transport</strong><small>Connect each destination</small></span>
+            </button>
+            <button type="button" onClick={() => showToast('Accommodation planning is not connected in this local prototype yet.')}>
+              <span aria-hidden="true">⌂</span><span><strong>Add stays</strong><small>One place for each stop</small></span>
+            </button>
+            <button type="button" onClick={() => showToast('Activity capture is demonstrated in the detailed Italy trip.')}>
+              <span aria-hidden="true">＋</span><span><strong>Save activity ideas</strong><small>Schedule them later</small></span>
+            </button>
+          </aside>
+        </div>
       </section>
     </main>
   );
@@ -928,6 +994,11 @@ function ModalFrame({
   wide?: boolean;
 }) {
   const dialogRef = useRef<HTMLDivElement>(null);
+  const onCloseRef = useRef(onClose);
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
 
   useEffect(() => {
     const previousFocus = document.activeElement as HTMLElement | null;
@@ -937,7 +1008,7 @@ function ModalFrame({
     firstControl?.focus();
 
     function onKeyDown(event: KeyboardEvent) {
-      if (event.key === 'Escape') onClose();
+      if (event.key === 'Escape') onCloseRef.current();
       if (event.key !== 'Tab' || !dialogRef.current) return;
       const controls = Array.from(
         dialogRef.current.querySelectorAll<HTMLElement>(
@@ -962,7 +1033,7 @@ function ModalFrame({
       document.removeEventListener('keydown', onKeyDown);
       previousFocus?.focus();
     };
-  }, [onClose]);
+  }, []);
 
   return (
     <div
@@ -984,7 +1055,15 @@ function ModalFrame({
   );
 }
 
-function NewTripModal({ onClose, onCreate }: { onClose: () => void; onCreate: () => void }) {
+function NewTripModal({
+  onClose,
+  onCreate,
+  showToast,
+}: {
+  onClose: () => void;
+  onCreate: (draft: TripDraft) => void;
+  showToast: (message: string) => void;
+}) {
   const [prompt, setPrompt] = useState(
     'Ten days in Italy next April for two people. We want Rome, Florence and Venice.',
   );
@@ -996,6 +1075,10 @@ function NewTripModal({ onClose, onCreate }: { onClose: () => void; onCreate: ()
     travelers: '2',
     stops: [] as string[],
   });
+  const [stopInput, setStopInput] = useState('');
+  const [formError, setFormError] = useState<string | null>(null);
+  const stopInputRef = useRef<HTMLInputElement>(null);
+  const endInputRef = useRef<HTMLInputElement>(null);
 
   function prefill() {
     setForm({
@@ -1010,7 +1093,41 @@ function NewTripModal({ onClose, onCreate }: { onClose: () => void; onCreate: ()
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    onCreate();
+    if (!form.stops.length) {
+      setFormError('Add at least one destination before creating the trip.');
+      stopInputRef.current?.focus();
+      return;
+    }
+    if (form.end < form.start) {
+      setFormError('The end date must be after the start date.');
+      endInputRef.current?.focus();
+      return;
+    }
+    setFormError(null);
+    onCreate(form);
+  }
+
+  function addStop() {
+    const stop = stopInput.trim();
+    if (!stop) return;
+    if (form.stops.length >= 8) {
+      setFormError('This first prototype supports up to eight destinations per trip.');
+      return;
+    }
+    setForm((current) => ({
+      ...current,
+      stops: current.stops.some((item) => item.toLocaleLowerCase() === stop.toLocaleLowerCase())
+        ? current.stops
+        : [...current.stops, stop],
+    }));
+    setStopInput('');
+    setFormError(null);
+  }
+
+  function addStopWithKeyboard(event: ReactKeyboardEvent<HTMLInputElement>) {
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    addStop();
   }
 
   return (
@@ -1031,9 +1148,16 @@ function NewTripModal({ onClose, onCreate }: { onClose: () => void; onCreate: ()
             <div><strong>Describe your trip</strong><small>Type it or add a voice note.</small></div>
           </div>
           <label className="sr-only" htmlFor="intake-prompt">Describe your trip</label>
-          <textarea id="intake-prompt" rows={6} value={prompt} onChange={(event) => setPrompt(event.target.value)} />
+          <textarea id="intake-prompt" rows={6} value={prompt} maxLength={800} onChange={(event) => setPrompt(event.target.value)} />
           <div>
-            <button className="voice-button voice-button-light" type="button" aria-label="Add a voice note">●</button>
+            <button
+              className="voice-button voice-button-light"
+              type="button"
+              aria-label="Add a voice note"
+              onClick={() => showToast('Voice intake is planned, but this permission-free prototype uses text only.')}
+            >
+              ●
+            </button>
             <button className="button-ai" type="button" onClick={prefill}>✦ Fill the form</button>
           </div>
           <p>TripDock will only prefill the form. You still decide what to create.</p>
@@ -1045,6 +1169,7 @@ function NewTripModal({ onClose, onCreate }: { onClose: () => void; onCreate: ()
             <input
               required
               value={form.name}
+              maxLength={80}
               placeholder="e.g. Italy in spring"
               onChange={(event) => setForm({ ...form, name: event.target.value })}
             />
@@ -1054,6 +1179,7 @@ function NewTripModal({ onClose, onCreate }: { onClose: () => void; onCreate: ()
             <input
               required
               value={form.area}
+              maxLength={80}
               placeholder="Country, region, or city"
               onChange={(event) => setForm({ ...form, area: event.target.value })}
             />
@@ -1065,23 +1191,55 @@ function NewTripModal({ onClose, onCreate }: { onClose: () => void; onCreate: ()
             </label>
             <label>
               <span>Ends</span>
-              <input type="date" required value={form.end} onChange={(event) => setForm({ ...form, end: event.target.value })} />
+              <input
+                ref={endInputRef}
+                type="date"
+                required
+                min={form.start || undefined}
+                value={form.end}
+                aria-invalid={Boolean(formError && form.end < form.start)}
+                aria-describedby={formError ? 'trip-form-error' : undefined}
+                onChange={(event) => setForm({ ...form, end: event.target.value })}
+              />
             </label>
           </div>
           <label>
             <span>Travelers</span>
-            <input type="number" min="1" value={form.travelers} onChange={(event) => setForm({ ...form, travelers: event.target.value })} />
+            <input type="number" min="1" max="20" required value={form.travelers} onChange={(event) => setForm({ ...form, travelers: event.target.value })} />
           </label>
           <fieldset>
             <legend>Destinations</legend>
             {form.stops.length ? (
               <div className="destination-chips">
-                {form.stops.map((stop, index) => <span key={stop}>{index + 1}. {stop}</span>)}
+                {form.stops.map((stop, index) => (
+                  <button
+                    type="button"
+                    key={stop}
+                    onClick={() => setForm({ ...form, stops: form.stops.filter((item) => item !== stop) })}
+                    aria-label={`Remove ${stop}`}
+                    title={`Remove ${stop}`}
+                  >
+                    {index + 1}. {stop} <span aria-hidden="true">×</span>
+                  </button>
+                ))}
               </div>
-            ) : (
-              <button className="add-destination" type="button" onClick={() => setForm({ ...form, stops: ['Rome'] })}>＋ Add destination</button>
-            )}
+            ) : null}
+            <div className="destination-entry">
+              <input
+                ref={stopInputRef}
+                value={stopInput}
+                maxLength={60}
+                placeholder="Add a city or stop"
+                aria-label="Destination name"
+                aria-invalid={Boolean(formError && !form.stops.length)}
+                aria-describedby={formError ? 'trip-form-error' : undefined}
+                onChange={(event) => setStopInput(event.target.value)}
+                onKeyDown={addStopWithKeyboard}
+              />
+              <button className="add-destination" type="button" onClick={addStop}>＋ Add</button>
+            </div>
           </fieldset>
+          {formError ? <p className="form-error" id="trip-form-error" role="alert">{formError}</p> : null}
           <div className="modal-footer form-footer">
             <button className="button-secondary" type="button" onClick={onClose}>Cancel</button>
             <button className="button-primary" type="submit">Create trip</button>
@@ -1093,18 +1251,34 @@ function NewTripModal({ onClose, onCreate }: { onClose: () => void; onCreate: ()
 }
 
 function ProposalReviewModal({
+  prompt,
+  changes,
+  borgheseAssigned,
   onClose,
   onDiscard,
   onKeep,
   onApply,
 }: {
+  prompt: string;
+  changes: ProposalChangeId[];
+  borgheseAssigned: boolean;
   onClose: () => void;
   onDiscard: () => void;
   onKeep: () => void;
-  onApply: () => void;
+  onApply: (included: ProposalChangeId[]) => void;
 }) {
-  const [included, setIncluded] = useState([true, true]);
-  const count = included.filter(Boolean).length;
+  const [included, setIncluded] = useState<ProposalChangeId[]>(() => [...changes]);
+  const count = included.length;
+
+  function toggleChange(change: ProposalChangeId, checked: boolean) {
+    setIncluded((current) => checked
+      ? [...new Set([...current, change])]
+      : current.filter((item) => item !== change));
+  }
+
+  function changeIndex(change: ProposalChangeId) {
+    return String(changes.indexOf(change) + 1).padStart(2, '0');
+  }
 
   return (
     <ModalFrame titleId="review-title" onClose={onClose} wide>
@@ -1118,51 +1292,58 @@ function ProposalReviewModal({
       </header>
 
       <blockquote className="original-request">
-        “Move the Vatican Museums to Wednesday morning and add Borghese Gallery on Tuesday afternoon.”
+        “{prompt}”
       </blockquote>
 
       <div className="change-list">
-        <label className={`change-card ${included[0] ? '' : 'change-card-muted'}`}>
-          <input
-            type="checkbox"
-            checked={included[0]}
-            onChange={(event) => setIncluded([event.target.checked, included[1]])}
-          />
-          <span className="change-index">01</span>
-          <span className="change-copy">
-            <strong>Move Vatican Museums</strong>
-            <span className="before-after">
-              <span><small>Before</small>Tue, Apr 13 · 09:30</span>
-              <i aria-hidden="true">→</i>
-              <span><small>After</small>Wed, Apr 14 · 09:30</span>
+        {changes.includes('move-vatican') ? (
+          <label className={`change-card ${included.includes('move-vatican') ? '' : 'change-card-muted'}`}>
+            <input
+              type="checkbox"
+              checked={included.includes('move-vatican')}
+              onChange={(event) => toggleChange('move-vatican', event.target.checked)}
+            />
+            <span className="change-index">{changeIndex('move-vatican')}</span>
+            <span className="change-copy">
+              <strong>Move Vatican Museums</strong>
+              <span className="before-after">
+                <span><small>Before</small>Tue, Apr 13 · 09:30</span>
+                <i aria-hidden="true">→</i>
+                <span><small>After</small>Wed, Apr 14 · 09:30</span>
+              </span>
+              <em><span aria-hidden="true">!</span> This activity is confirmed. Its booking time will not change automatically.</em>
             </span>
-            <em><span aria-hidden="true">!</span> This activity is confirmed. Its booking time will not change automatically.</em>
-          </span>
-        </label>
+          </label>
+        ) : null}
 
-        <label className={`change-card ${included[1] ? '' : 'change-card-muted'}`}>
-          <input
-            type="checkbox"
-            checked={included[1]}
-            onChange={(event) => setIncluded([included[0], event.target.checked])}
-          />
-          <span className="change-index">02</span>
-          <span className="change-copy">
-            <strong>Schedule Borghese Gallery</strong>
-            <span className="before-after">
-              <span><small>Before</small>Unscheduled idea</span>
-              <i aria-hidden="true">→</i>
-              <span><small>After</small>Tue, Apr 13 · 15:00</span>
+        {changes.includes('schedule-borghese') ? (
+          <label className={`change-card ${included.includes('schedule-borghese') ? '' : 'change-card-muted'}`}>
+            <input
+              type="checkbox"
+              checked={included.includes('schedule-borghese')}
+              onChange={(event) => toggleChange('schedule-borghese', event.target.checked)}
+            />
+            <span className="change-index">{changeIndex('schedule-borghese')}</span>
+            <span className="change-copy">
+              <strong>{borgheseAssigned ? 'Move Borghese Gallery' : 'Schedule Borghese Gallery'}</strong>
+              <span className="before-after">
+                <span><small>Before</small>{borgheseAssigned ? 'Wed, Apr 14 · 14:00' : 'Unscheduled idea'}</span>
+                <i aria-hidden="true">→</i>
+                <span><small>After</small>Tue, Apr 13 · 15:00</span>
+              </span>
+              {borgheseAssigned ? (
+                <em><span aria-hidden="true">!</span> This replaces the Wednesday assignment you already accepted.</em>
+              ) : null}
             </span>
-          </span>
-        </label>
+          </label>
+        ) : null}
       </div>
 
       <footer className="modal-footer review-footer">
         <button className="button-text button-danger" type="button" onClick={onDiscard}>Discard</button>
         <div>
           <button className="button-secondary" type="button" onClick={onKeep}>Keep for later</button>
-          <button className="button-primary" type="button" disabled={!count} onClick={onApply}>
+          <button className="button-primary" type="button" disabled={!count} onClick={() => onApply(included)}>
             Apply {count} {count === 1 ? 'change' : 'changes'}
           </button>
         </div>
@@ -1172,15 +1353,56 @@ function ProposalReviewModal({
 }
 
 export function TripDockApp() {
+  const [prototype, setPrototype] = useState<PrototypeState>(() => createInitialPrototypeState());
+  const [stateLoaded, setStateLoaded] = useState(false);
+  const [storageMode, setStorageMode] = useState<'durable' | 'memory'>('durable');
   const [view, setView] = useState<'trips' | 'detail'>('trips');
+  const [selectedTripId, setSelectedTripId] = useState<string | null>(null);
   const [newTripOpen, setNewTripOpen] = useState(false);
   const [reviewOpen, setReviewOpen] = useState(false);
-  const [proposalStatus, setProposalStatus] = useState<ProposalStatus>('idle');
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const proposalTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    try {
+      setPrototype(restorePrototypeState(window.localStorage.getItem(PROTOTYPE_STORAGE_KEY)));
+      setStorageMode('durable');
+    } catch {
+      setPrototype(createInitialPrototypeState());
+      setStorageMode('memory');
+    } finally {
+      setStateLoaded(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!stateLoaded) return;
+    try {
+      const serialized = JSON.stringify(prototype);
+      if (window.localStorage.getItem(PROTOTYPE_STORAGE_KEY) !== serialized) {
+        window.localStorage.setItem(PROTOTYPE_STORAGE_KEY, serialized);
+      }
+      setStorageMode('durable');
+    } catch {
+      setStorageMode('memory');
+    }
+  }, [prototype, stateLoaded]);
+
+  useEffect(() => {
+    function syncExternalPrototype(event: StorageEvent) {
+      if (event.key !== PROTOTYPE_STORAGE_KEY || !event.newValue) return;
+      setPrototype(restorePrototypeState(event.newValue));
+      setStorageMode('durable');
+    }
+
+    window.addEventListener('storage', syncExternalPrototype);
+    return () => window.removeEventListener('storage', syncExternalPrototype);
+  }, []);
 
   useEffect(() => () => {
     if (toastTimer.current) clearTimeout(toastTimer.current);
+    if (proposalTimer.current) clearTimeout(proposalTimer.current);
   }, []);
 
   function showToast(message: string) {
@@ -1191,32 +1413,109 @@ export function TripDockApp() {
 
   function showTrips() {
     setView('trips');
+    setSelectedTripId(null);
     window.scrollTo({ top: 0, behavior: 'smooth' });
+    window.requestAnimationFrame(() => document.getElementById('main-content')?.focus());
   }
 
-  function showDetail() {
+  function showDetail(tripId: string) {
+    setSelectedTripId(tripId);
     setView('detail');
     window.scrollTo({ top: 0, behavior: 'smooth' });
+    window.requestAnimationFrame(() => document.getElementById('main-content')?.focus());
   }
+
+  function assignRomeActivity(id: string) {
+    setPrototype((current) => ({
+      ...current,
+      assignedRomeActivities: current.assignedRomeActivities.includes(id)
+        ? current.assignedRomeActivities
+        : [...current.assignedRomeActivities, id],
+    }));
+  }
+
+  function requestProposal(prompt: string) {
+    const recognizedChanges = proposalChangesFromPrompt(prompt);
+    const pendingChanges = recognizedChanges.filter(
+      (change) => !prototype.acceptedRomeChanges.includes(change),
+    );
+    if (!recognizedChanges.length) {
+      showToast('This local fixture recognizes requests about the Vatican Museums and Borghese Gallery.');
+      return;
+    }
+    if (!pendingChanges.length) {
+      showToast('Those itinerary changes are already part of the accepted trip.');
+      return;
+    }
+    if (proposalTimer.current) clearTimeout(proposalTimer.current);
+    setPrototype((current) => ({
+      ...current,
+      proposal: { status: 'loading', prompt, changes: pendingChanges },
+    }));
+    proposalTimer.current = setTimeout(() => {
+      setPrototype((current) => ({
+        ...current,
+        proposal: current.proposal.status === 'loading'
+          ? { ...current.proposal, status: 'ready' }
+          : current.proposal,
+      }));
+    }, 900);
+  }
+
+  function createTrip(draft: TripDraft) {
+    try {
+      const trip = createTripFromDraft(draft);
+      setPrototype((current) => ({ ...current, trips: [trip, ...current.trips] }));
+      setNewTripOpen(false);
+      showDetail(trip.id);
+      showToast(`Trip created and saved ${storageMode === 'durable' ? 'on this device' : 'for this session'}.`);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'The trip could not be created.');
+    }
+  }
+
+  const selectedTrip = prototype.trips.find((trip) => trip.id === selectedTripId);
+  const storageLabel = storageMode === 'durable' ? 'on this device' : 'for this session';
 
   return (
     <div id="top" className="app-shell">
       <a className="skip-link" href="#main-content">Skip to main content</a>
-      <AppHeader detail={view === 'detail'} onHome={showTrips} />
+      <AppHeader
+        detail={view === 'detail'}
+        onHome={showTrips}
+        onProfile={() => showToast(`Local prototype mode · Trip data is saved ${storageLabel}.`)}
+      />
 
       {view === 'trips' ? (
         <TripsOverview
+          trips={prototype.trips}
           onNewTrip={() => setNewTripOpen(true)}
           onOpenTrip={showDetail}
-          showToast={showToast}
         />
-      ) : (
+      ) : selectedTrip?.id === 'italy-spring-2027' ? (
         <TripDetail
           onBack={showTrips}
           showToast={showToast}
-          proposalStatus={proposalStatus}
-          setProposalStatus={setProposalStatus}
+          proposal={prototype.proposal}
+          acceptedChanges={prototype.acceptedRomeChanges}
+          assignedActivities={prototype.assignedRomeActivities}
+          storageLabel={storageLabel}
+          onAssignActivity={assignRomeActivity}
+          onRequestProposal={requestProposal}
           onReviewProposal={() => setReviewOpen(true)}
+        />
+      ) : selectedTrip ? (
+        <TripOutlineDetail
+          trip={selectedTrip}
+          onBack={showTrips}
+          showToast={showToast}
+          storageLabel={storageLabel}
+        />
+      ) : (
+        <TripsOverview
+          trips={prototype.trips}
+          onNewTrip={() => setNewTripOpen(true)}
+          onOpenTrip={showDetail}
         />
       )}
 
@@ -1227,30 +1526,39 @@ export function TripDockApp() {
       {newTripOpen ? (
         <NewTripModal
           onClose={() => setNewTripOpen(false)}
-          onCreate={() => {
-            setNewTripOpen(false);
-            showToast('Trip created. Your new journey is ready to shape.');
-          }}
+          onCreate={createTrip}
+          showToast={showToast}
         />
       ) : null}
 
       {reviewOpen ? (
         <ProposalReviewModal
+          prompt={prototype.proposal.prompt}
+          changes={prototype.proposal.changes}
+          borgheseAssigned={prototype.assignedRomeActivities.includes('borghese')}
           onClose={() => setReviewOpen(false)}
           onDiscard={() => {
             setReviewOpen(false);
-            setProposalStatus('idle');
+            setPrototype((current) => ({
+              ...current,
+              proposal: { ...current.proposal, status: 'idle', changes: [] },
+            }));
             showToast('Proposal discarded. The trip was not changed.');
+            window.requestAnimationFrame(() => document.getElementById('main-content')?.focus());
           }}
           onKeep={() => {
             setReviewOpen(false);
-            setProposalStatus('kept');
-            showToast('Proposal saved for later.');
+            setPrototype((current) => ({
+              ...current,
+              proposal: { ...current.proposal, status: 'kept' },
+            }));
+            showToast(`Proposal saved ${storageLabel}.`);
           }}
-          onApply={() => {
+          onApply={(included) => {
             setReviewOpen(false);
-            setProposalStatus('applied');
-            showToast('Trip updated. Proposal applied.');
+            setPrototype((current) => applyProposalChanges(current, included));
+            showToast(`${included.length} ${included.length === 1 ? 'change' : 'changes'} applied and saved ${storageLabel}.`);
+            window.requestAnimationFrame(() => document.getElementById('main-content')?.focus());
           }}
         />
       ) : null}

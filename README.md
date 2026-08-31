@@ -4,7 +4,7 @@ TripDock is a consumer-first web product for organizing multi-destination trips.
 
 ## Status
 
-The project is currently in product, UX, and architecture design. `apps/web` contains an interactive, mock-data-only UI prototype for evaluating the trips list and structured itinerary experience. It has no backend, persistence, authentication, GraphQL, AI, or provider integrations yet.
+The project is currently in product, UX, and architecture design. `apps/web` contains an interactive, device-local UI prototype for evaluating the trips list and structured itinerary experience. It persists prototype trips, activity assignments, and reviewed proposals in browser storage, but it has no backend, shared persistence, authentication, GraphQL, live AI, or provider integrations yet.
 
 ## Important future investigation: shared project memory and coordination
 
@@ -22,19 +22,34 @@ The prototype currently demonstrates:
 - A simple upcoming-trips list with route previews and realistic planning states.
 - A multi-destination Italy itinerary with first-class transport between stops.
 - Expandable destination sections for accommodation, activity ideas, and daily plans.
-- Mock activity assignment from a destination pool into the agenda.
-- Natural-language trip intake and a persisted-looking review-before-apply AI proposal flow.
+- Activity assignment from a destination pool into the agenda, saved on the current device.
+- A reviewed trip-essentials form that creates a real local draft.
+- A deterministic review-before-apply proposal flow with selective changes and device-local persistence.
 - Responsive layouts and keyboard-accessible modal interactions.
 
-To run the prototype, install Node.js 22.13 or newer and pnpm, then run:
+To run the prototype, install the pinned Node.js release with a user-owned version manager such as `fnm`, `nodenv`, `asdf`, or `nvm`. Then enable the pinned pnpm version with Corepack and run from the repository root:
 
 ```sh
-cd apps/web
+corepack enable
 pnpm install --frozen-lockfile
 pnpm run dev
 ```
 
-Use `pnpm run lint`, `pnpm run typecheck`, and `pnpm run build` for the current automated checks.
+Use `pnpm run test` for the permission-free state-model tests, or `pnpm run check` for tests, lint, type checking, and the production build.
+
+### macOS development
+
+- `.node-version` and `.nvmrc` both pin Node.js 22.23.2; user-owned tools such as `fnm`, `nodenv`, `asdf`, and `nvm` can use them on Intel or Apple Silicon Macs. That release includes a Corepack version compatible with pnpm 11.
+- Run `corepack enable` only after the selected Node version manager is active. This keeps Corepack's shims in a user-writable Node installation and avoids requiring administrator access.
+- pnpm is pinned through the repository's `packageManager` field, so a global `sudo npm install` is neither needed nor recommended.
+- Commands and scripts are shell-neutral and use repository-relative paths.
+- Development preview automatically uses polling when Codex runs inside the macOS Seatbelt sandbox, avoiding unavailable FSEvents access.
+- Set `TRIPDOCK_USE_POLLING=1` when working from a network volume or container-mounted folder that does not deliver file events reliably.
+- Native packages in the frozen lockfile include macOS Intel and Apple Silicon variants. A clean install is still required on the target Mac before the first full preview.
+
+The current prototype deliberately uses browser storage rather than pretending it is shared data. Clearing site data resets locally created trips and itinerary changes. PostgreSQL remains the accepted canonical store for the later application backend.
+
+The exact prototype boundary and handoff notes are recorded in [Prototype v0](docs/prototype-v0.md).
 
 ## Product direction
 

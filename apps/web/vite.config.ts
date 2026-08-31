@@ -11,6 +11,8 @@ const { d1, r2 } = hostingConfig;
 
 // macOS Seatbelt blocks FSEvents, so Codex previews need polling for HMR.
 const isCodexSeatbeltSandbox = process.env.CODEX_SANDBOX === 'seatbelt';
+const shouldPollForChanges =
+  isCodexSeatbeltSandbox || process.env.TRIPDOCK_USE_POLLING === '1';
 
 const localBindingConfig = {
   main: 'vinext/server/app-router-entry',
@@ -46,7 +48,7 @@ export default defineConfig(async () => {
 
   return {
     css: { postcss: { plugins: [tailwindcss()] } },
-    server: isCodexSeatbeltSandbox
+    server: shouldPollForChanges
       ? { watch: { useFsEvents: false, usePolling: true } }
       : undefined,
     plugins: [
