@@ -7,12 +7,19 @@
     "node": ">=22.23.2"
   },
   "scripts": {
-    "dev": "pnpm --filter @tripdock/web dev",
-    "build": "pnpm --filter @tripdock/web build",
-    "start": "pnpm --filter @tripdock/web start",
-    "lint": "pnpm --filter @tripdock/web lint",
-    "typecheck": "pnpm --filter @tripdock/web typecheck",
-    "test": "pnpm --filter @tripdock/web test",
+    "dev": "pnpm --parallel --filter @tripdock/api --filter @tripdock/web dev",
+    "build": "pnpm -r --filter @tripdock/api --filter @tripdock/web build",
+    "start": "pnpm --parallel --filter @tripdock/api --filter @tripdock/web start",
+    "lint": "pnpm -r --filter @tripdock/api --filter @tripdock/web lint",
+    "typecheck": "pnpm -r --filter @tripdock/api --filter @tripdock/web typecheck",
+    "test": "pnpm -r --filter @tripdock/api --filter @tripdock/web test",
+    "test:postgres": "pnpm --filter @tripdock/api test:postgres",
+    "test:ai-live": "pnpm --filter @tripdock/api test:ai-live",
+    "db:up": "docker compose up -d postgres",
+    "db:down": "docker compose down",
+    "db:generate": "pnpm --filter @tripdock/api db:generate",
+    "db:migrate": "pnpm --filter @tripdock/api db:migrate",
+    "db:reset": "pnpm --filter @tripdock/api db:reset",
     "check": "pnpm test && pnpm lint && pnpm typecheck && pnpm build"
   }
 }

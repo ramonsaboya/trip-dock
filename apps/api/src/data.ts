@@ -1,0 +1,101 @@
+import { asc, desc, eq } from 'drizzle-orm';
+
+import type { AppDatabase } from './db/client.js';
+import {
+  activities,
+  aiProposalOperations,
+  aiProposals,
+  stays,
+  transportLegs,
+  trips,
+  tripStops,
+} from './db/schema.js';
+
+export type ProposalView = typeof aiProposals.$inferSelect & {
+  operations: Array<typeof aiProposalOperations.$inferSelect>;
+};
+
+export type TripView = typeof trips.$inferSelect & {
+  stops: Array<typeof tripStops.$inferSelect>;
+  transportLegs: Array<typeof transportLegs.$inferSelect>;
+  stays: Array<typeof stays.$inferSelect>;
+  activities: Array<typeof activities.$inferSelect>;
+  proposals: ProposalView[];
+};
+
+export async function loadProposal(
+  db: Pick<AppDatabase, 'select'>,
+  id: string,
+): Promise<ProposalView | null> {
+  const [proposal] = await db.select().from(aiProposals).where(eq(aiProposals.id, id)).limit(1);
+  if (!proposal) return null;
+  const operations = await db
+    .select()
+    .from(aiProposalOperations)
+    .where(eq(aiProposalOperations.proposalId, id))
+    .orderBy(asc(aiProposalOperations.position));
+  return { ...proposal, operations };
+}
+
+export async function loadTrip(
+  db: Pick<AppDatabase, 'select'>,
+  id: string,
+): Promise<TripView | null> {
+  const [trip] = await db.select().from(trips).where(eq(trips.id, id)).limit(1);
+  if (!trip) return null;
+
+  const [stopsList, transportList, staysList, activityList, proposalList] =
+    await Promise.all([
+      db
+        .select()
+        .from(tripStops)
+        .where(eq(tripStops.tripId, id))
+        .orderBy(asc(tripStops.position)),
+      db
+        .select()
+        .from(transportLegs)
+        .where(eq(transportLegs.tripId, id))
+        .orderBy(asc(transportLegs.position)),
+      db
+        .select()
+        .from(stays)
+        .where(eq(stays.tripId, id))
+        .orderBy(asc(stays.position)),
+      db
+        .select()
+        .from(activities)
+        .where(eq(activities.tripId, id))
+        .orderBy(asc(activities.position)),
+      db
+        .select()
+        .from(aiProposals)
+        .where(eq(aiProposals.tripId, id))
+        .orderBy(desc(aiProposals.createdAt)),
+    ]);
+
+  const proposalViews = await Promise.all(
+    proposalList.map(async (proposal) => {
+      const operations = await db
+        .select()
+        .from(aiProposalOperations)
+        .where(eq(aiProposalOperations.proposalId, proposal.id))
+        .orderBy(asc(aiProposalOperations.position));
+      return { ...proposal, operations };
+    }),
+  );
+
+  return {
+    ...trip,
+    stops: stopsList,
+    transportLegs: transportList,
+    stays: staysList,
+    activities: activityList,
+    proposals: proposalViews,
+  };
+}
+
+export async function loadTrips(db: AppDatabase): Promise<TripView[]> {
+  const rows = await db.select({ id: trips.id }).from(trips).orderBy(asc(trips.startDate));
+  const loaded = await Promise.all(rows.map(({ id }) => loadTrip(db, id)));
+  return loaded.filter((trip): trip is TripView => trip !== null);
+}

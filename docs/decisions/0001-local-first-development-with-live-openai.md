@@ -5,19 +5,19 @@
 
 ## Context
 
-TripDock has no launch deadline that requires early investment in deployment infrastructure. The product is still in product, UX, and architecture design, and the current web application is a mock-data-only prototype.
+TripDock has no launch deadline that requires early investment in deployment infrastructure. The first complete product slice now runs locally with a web app, GraphQL API, and PostgreSQL.
 
 The product does, however, need its real AI path during development. AI is expected to answer questions, turn natural-language or voice input into structured drafts, and prepare reviewable trip-change proposals. This creates one intentional external dependency even while the application, database, and supporting services remain local.
 
 ## Decision
 
-This ADR accepts the environment and provider boundaries below. It does not claim that the target backend components exist yet, and it does not approve every implementation suggestion recorded later in this document.
+This ADR accepts the environment and provider boundaries below. The local vertical slice implements these boundaries; later production architecture remains open.
 
 ### Local development is the default environment
 
 The normal development workflow must not require AWS or another deployment platform. Application code, data, and supporting services will run locally when they are introduced. Production-provider selection and deployment work are deferred until TripDock needs a shared online environment, external testing, or production operations.
 
-PostgreSQL remains the canonical data store and must be runnable entirely locally. The exact container, migration runner, and background-job implementation remain implementation choices.
+PostgreSQL is the canonical data store and runs locally through the pinned Compose service. Drizzle applies reviewed SQL migrations. Background jobs remain deferred.
 
 AWS accounts, credentials, infrastructure-as-code, IAM, RDS, S3, SQS, SES, CloudWatch, LocalStack, and equivalent deployment work are out of scope for the current phase. The design should remain portable without accumulating speculative abstractions for a provider that has not been selected.
 
@@ -32,17 +32,17 @@ Live OpenAI access is the intentional external dependency while the rest of Trip
 - A model response never directly mutates canonical trip state. It produces an answer, structured draft, or reviewable proposal; deterministic application logic and explicit human approval control accepted changes.
 - The application sends only the context needed for the request and excludes credentials, passport documents, unrelated traveler data, and raw voice recordings by default.
 
-## Proposed implementation profile
+## Implemented slice profile
 
-The following is the current implementation recommendation. It is target state, is not implemented yet, and may be refined or replaced by later decisions.
+The following profile describes the implemented local slice and may be refined by later decisions.
 
 ### Local runtime
 
-- Run the web application, API, and background worker on the developer's machine.
+- Run the web application and API on the developer's machine.
 - Run a pinned PostgreSQL container as the canonical data store.
-- Define database state through reviewed schema migrations and deterministic development seeds.
-- Begin background processing with a transactional outbox and PostgreSQL-backed worker rather than a cloud queue.
-- Introduce local authentication, file-storage, email, and similar adapters as those capabilities are built.
+- Define database state through reviewed schema migrations. Start clean; production runtime code has no seeds.
+- Expose the application contract through GraphQL Yoga and keep the browser free of canonical data storage.
+- Defer background processing, authentication, file storage, and email until a product flow requires them.
 
 ### AI adapter
 
@@ -61,10 +61,12 @@ The model and model snapshot remain configuration choices rather than domain log
 The repository should grow toward a small root-level command surface:
 
 ```text
-pnpm dev                 # run the local application and dependencies
-pnpm db:reset            # rebuild the explicitly local database and seed it
+pnpm db:up               # start the local PostgreSQL container
+pnpm db:migrate          # apply reviewed migrations
+pnpm dev                 # run the local web app and API
+pnpm db:reset            # rebuild the explicitly local database, empty
 pnpm test                # run deterministic tests without live provider calls
-pnpm test:integration    # exercise the API, worker, and an isolated PostgreSQL database
+pnpm test:postgres       # exercise migrations against tripdock_test
 pnpm test:ai-live        # run a small, explicit, billed OpenAI integration suite
 ```
 
@@ -103,7 +105,7 @@ This decision does not select:
 
 - The production hosting or cloud provider.
 - The final web runtime or routing architecture.
-- GraphQL versus REST for the application API.
+- Whether GraphQL remains the long-term production API contract beyond this slice.
 - A production authentication, storage, email, queue, or observability provider.
 - The final background-job implementation.
 - A specific OpenAI model or snapshot.

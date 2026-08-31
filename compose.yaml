@@ -1,0 +1,22 @@
+name: tripdock
+
+services:
+  postgres:
+    image: postgres:17.6-alpine
+    environment:
+      POSTGRES_DB: tripdock
+      POSTGRES_USER: tripdock
+      POSTGRES_PASSWORD: tripdock
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tripdock -d tripdock"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - tripdock_postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/init/01-create-test-database.sql:/docker-entrypoint-initdb.d/01-create-test-database.sql:ro
+
+volumes:
+  tripdock_postgres_data:

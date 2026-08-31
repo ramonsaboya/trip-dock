@@ -1,87 +1,122 @@
 # TripDock
 
-TripDock is a consumer-first web product for organizing multi-destination trips. It gives a group a structured view of destinations, transport, accommodation, activities, and the day-by-day plan. The current prototype starts with one trip owner, while collaborative coordination remains a core planned capability.
+TripDock is a local-first trip planner for multi-stop journeys. This repository contains a complete local vertical slice: a responsive web app, a GraphQL Yoga API, PostgreSQL persistence through Drizzle, and server-side OpenAI Structured Outputs for draft generation and reviewable change proposals.
 
-## Status
+Canonical trip data lives only in PostgreSQL. The browser contains no trip fixtures, local-storage state, provider key, or AI mutation shortcut.
 
-The project is currently in product, UX, and architecture design. `apps/web` contains an interactive, device-local UI prototype for evaluating the trips list and structured itinerary experience. It persists prototype trips, activity assignments, and reviewed proposals in browser storage, but it has no backend, shared persistence, authentication, GraphQL, live AI, or provider integrations yet.
+## What works
 
-## Important future investigation: shared project memory and coordination
+- Create, view, update, and delete trips.
+- Add, edit, remove, and reorder destinations.
+- Add, edit, and remove transport legs, stays, and activities.
+- Generate an unpersisted trip draft from natural language, edit it, and explicitly create it.
+- Prepare and persist an AI proposal without changing accepted trip data.
+- Select individual proposal operations, apply them in one transaction, keep a proposal for later, or discard it.
+- Reject stale edits and proposals with trip revision checks.
+- Start from a genuinely empty database with polished loading, error, and empty UI states.
+- Use the supplied TripDock logo throughout the header, favicon, Apple icon, PWA icons, manifest, and social preview.
 
-> [!IMPORTANT]
-> TripDock needs a deliberate, repository-based way to keep project ideas, direction, decisions, active work, ownership, and handoffs discoverable and current for both people and AI agents. Before multiple developers and agents work in parallel, investigate the best file structure and maintenance workflow for this shared “team brain.”
->
-> That investigation must also define how branches and worktrees are used together, including task isolation, ownership, naming, synchronization, handoff, integration, and cleanup. The goal is to make the project’s current intent easy to recover on any machine, reduce duplicated or overlapping work and merge conflicts, and help humans and AI coordinate without relying on private chat history or one person’s memory.
->
-> This is a future design task only. Do not build or select the system or branch workflow as part of the initial repository setup.
+## Local setup
 
-## UI prototype
+Prerequisites:
 
-The prototype currently demonstrates:
+- Node.js 22.23.2 (pinned in `.node-version` and `.nvmrc`)
+- pnpm 11.19.0 through Corepack
+- Docker with Compose for the local PostgreSQL container
 
-- A simple upcoming-trips list with route previews and realistic planning states.
-- A multi-destination Italy itinerary with first-class transport between stops.
-- Expandable destination sections for accommodation, activity ideas, and daily plans.
-- Activity assignment from a destination pool into the agenda, saved on the current device.
-- A reviewed trip-essentials form that creates a real local draft.
-- A deterministic review-before-apply proposal flow with selective changes and device-local persistence.
-- Responsive layouts and keyboard-accessible modal interactions.
-
-To run the prototype, install the pinned Node.js release with a user-owned version manager such as `fnm`, `nodenv`, `asdf`, or `nvm`. Then enable the pinned pnpm version with Corepack and run from the repository root:
+From the repository root:
 
 ```sh
 corepack enable
 pnpm install --frozen-lockfile
-pnpm run dev
+cp .env.example .env
+pnpm db:up
+pnpm db:migrate
+pnpm dev
 ```
 
-Use `pnpm run test` for the permission-free state-model tests, or `pnpm run check` for tests, lint, type checking, and the production build.
+On PowerShell, use `Copy-Item .env.example .env` instead of `cp`.
 
-### macOS development
+Open [http://localhost:3000](http://localhost:3000). The GraphQL endpoint is [http://127.0.0.1:4000/graphql](http://127.0.0.1:4000/graphql); GraphiQL is enabled only in development. Both servers bind locally, and the API permits the exact `WEB_ORIGIN` configured in `.env`.
 
-- `.node-version` and `.nvmrc` both pin Node.js 22.23.2; user-owned tools such as `fnm`, `nodenv`, `asdf`, and `nvm` can use them on Intel or Apple Silicon Macs. That release includes a Corepack version compatible with pnpm 11.
-- Run `corepack enable` only after the selected Node version manager is active. This keeps Corepack's shims in a user-writable Node installation and avoids requiring administrator access.
-- pnpm is pinned through the repository's `packageManager` field, so a global `sudo npm install` is neither needed nor recommended.
-- Commands and scripts are shell-neutral and use repository-relative paths.
-- Development preview automatically uses polling when Codex runs inside the macOS Seatbelt sandbox, avoiding unavailable FSEvents access.
-- Set `TRIPDOCK_USE_POLLING=1` when working from a network volume or container-mounted folder that does not deliver file events reliably.
-- Native packages in the frozen lockfile include macOS Intel and Apple Silicon variants. A clean install is still required on the target Mac before the first full preview.
+The Compose service initializes two empty databases on a fresh volume:
 
-The current prototype deliberately uses browser storage rather than pretending it is shared data. Clearing site data resets locally created trips and itinerary changes. PostgreSQL remains the accepted canonical store for the later application backend.
+- `tripdock` for the application
+- `tripdock_test` for the optional real-PostgreSQL integration smoke
 
-The exact prototype boundary and handoff notes are recorded in [Prototype v0](docs/prototype-v0.md).
+No seed command or runtime fixture is provided. `pnpm db:reset` is intentionally destructive, refuses non-local hosts and unknown database names, and recreates an empty migrated schema.
 
-## Product direction
+## Live OpenAI configuration
 
-- Create a trip from a short form or from natural-language text or audio.
-- Represent destinations as ordered stops connected by explicit transport legs.
-- Track accommodation separately from activities.
-- Maintain an activity pool for each destination and assign activities to days.
-- Let AI answer questions and prepare persisted, reviewable change proposals.
-- Require explicit human approval before an AI proposal changes the accepted trip.
-- Support WhatsApp as an additional conversational surface, starting with secure one-to-one trip linking.
+Set both server-only values in the ignored root `.env`:
 
-## Current technical direction
+```dotenv
+OPENAI_API_KEY=your-project-key
+OPENAI_MODEL=your-structured-outputs-capable-model
+```
 
-The accepted workflow boundaries are:
+The API uses the OpenAI Responses API with strict Zod-backed Structured Outputs and `store: false`. The key is read only by `apps/api`; it is never sent to or embedded in the web app. If either setting is missing, all manual functionality remains available and AI mutations return a clear configuration error. There is no silent fixture fallback.
 
-- PostgreSQL as the canonical data store.
-- A local-first development environment with no AWS account, credentials, infrastructure, or emulation required in the current phase.
-- Live OpenAI API access from the local server for natural-language and voice intelligence, with deterministic fixtures for automated tests.
-- Production-provider selection for hosting, compute, storage, queues, authentication, observability, and email is deferred. Those capabilities use local implementations during development when introduced.
+Run the separately billed, explicit provider smoke with:
 
-The accepted local-development and AI boundary is recorded in [ADR 0001](docs/decisions/0001-local-first-development-with-live-openai.md).
+```sh
+pnpm test:ai-live
+```
 
-The following application-stack candidates are not approved decisions:
+Normal tests never call OpenAI. Their `FixtureAiGateway` is injected only by test code.
 
-- React, Vite, React Router, and Relay for the production web application.
-- TypeScript, Fastify, GraphQL Yoga, and Pothos for a custom GraphQL modular monolith.
+## Commands
 
-The current `apps/web` prototype uses Next.js, Vinext, and Cloudflare/OpenAI Sites development tooling. That scaffold supports prototype preview and does not select a production web runtime or deployment provider.
+```text
+pnpm dev             Run the API and web app in watch mode
+pnpm build           Build both applications
+pnpm check           Run deterministic tests, lint, typecheck, and builds
+pnpm db:up           Start local PostgreSQL
+pnpm db:down         Stop local services without deleting the volume
+pnpm db:generate     Generate a reviewed Drizzle SQL migration
+pnpm db:migrate      Apply pending migrations
+pnpm db:reset        Empty and remigrate an explicitly local database
+pnpm test:postgres   Test migrations against TEST_DATABASE_URL
+pnpm test:ai-live    Make one explicit live OpenAI Structured Outputs request
+```
+
+## Architecture and trust boundary
+
+```text
+Browser (React/Vinext)
+        │ GraphQL; accepted records and proposal selections
+        ▼
+GraphQL Yoga API ───────────────► PostgreSQL 17
+        │                          canonical trips + proposals
+        │ minimal trip context
+        ▼
+OpenAI Responses API
+        │ schema-validated draft or proposed operations
+        └────────► persisted proposal ──human selection──► one DB transaction
+```
+
+The API owns validation, revision checks, entity ownership, proposal status, and transaction boundaries. Model output is parsed through a discriminated Zod operation schema and then validated against the current trip. It cannot directly write accepted trip rows. The initial AI operation vocabulary is deliberately small: update trip essentials, add an activity, update an activity, and remove an activity. Manual CRUD covers the full implemented data model.
+
+The migrated schema contains `trips`, `trip_stops`, `transport_legs`, `stays`, `activities`, `ai_proposals`, and `ai_proposal_operations`. UUID primary keys, foreign keys with cascades, ordered positions, timestamps, date/status checks, and trip revisions are defined in the generated SQL migration under `apps/api/drizzle`.
+
+## Verification
+
+`pnpm test` covers empty-database behavior, persistence across API instances, revision increments, proposal persistence, selective application, staleness, discard behavior, rollback, deterministic AI fixtures, GraphQL error handling, and removal of production browser fixtures/storage. `pnpm test:postgres` is the optional real-PostgreSQL migration smoke. `pnpm check` is the required local gate.
+
+The deterministic brand generator is `scripts/generate-brand-assets.py`. It requires Python 3 and Pillow (`python -m pip install Pillow`) and reproduces all checked-in icons and the social preview from `apps/web/public/brand/tripdock-logo.png`.
+
+## Current limitations
+
+- This is intentionally local-only: no deployment, authentication, authorization, collaboration, or multi-user concurrency beyond optimistic revision protection.
+- Voice, WhatsApp, booking providers, uploads, background workers, notifications, and itinerary chat are out of scope.
+- Live model quality and compatibility require `pnpm test:ai-live`; deterministic tests do not spend API credits.
+- Production hosting and infrastructure providers remain undecided.
+
+The detailed slice contract is recorded in [docs/prototype-v0.md](docs/prototype-v0.md). The local-first/OpenAI boundary is recorded in [ADR 0001](docs/decisions/0001-local-first-development-with-live-openai.md).
 
 ## Repository policy
 
-- Keep secrets out of Git and provide sanitized `.env.example` files when configuration is introduced.
-- Record consequential product and architecture choices as short decision documents.
-- Treat generated artifacts as derived outputs and verify them from their source definitions.
-- Keep AI-generated changes reviewable and subject to the same tests and validation as human-authored changes.
+- Keep secrets out of Git; commit only sanitized examples.
+- Make schema changes through reviewed generated migrations.
+- Keep AI output reviewable and subject to the same deterministic validation as human input.
+- Treat generated brand assets as reproducible derivatives of `apps/web/public/brand/tripdock-logo.png`.

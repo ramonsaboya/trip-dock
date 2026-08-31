@@ -2,1568 +2,596 @@
 
 import {
   type FormEvent,
-  type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from 'react';
 
 import {
-  applyProposalChanges,
-  createInitialPrototypeState,
-  createTripFromDraft,
-  DEFAULT_PROPOSAL_PROMPT,
-  PROTOTYPE_STORAGE_KEY,
-  proposalChangesFromPrompt,
-  restorePrototypeState,
-  type ProposalChangeId,
-  type ProposalStatus,
-  type PrototypeState,
-  type StatusTone,
+  dateTimeLocalToIso,
+  draftToTripInput,
+  formatDateRange,
+  formatDateTime,
+  graphqlRequest,
+  isoToDateTimeLocal,
+  operations,
+  TripDockGraphQLError,
+  toggleSelectedOperation,
+  type Activity,
+  type Proposal,
+  type ProposalOperation,
+  type Stay,
+  type TransportLeg,
   type Trip,
   type TripDraft,
-} from '../lib/prototype-state';
+  type TripDraftStop,
+  type TripInput,
+  type TripStop,
+} from '../lib/graphql-client';
 
-const romeActivityPool = [
-  { id: 'borghese', title: 'Borghese Gallery', duration: '2 hr' },
-  { id: 'catacombs', title: 'Catacombs of San Callisto', duration: '2.5 hr' },
-  { id: 'campo', title: 'Campo de’ Fiori', duration: '1 hr' },
-  { id: 'appian', title: 'Appian Way bike ride', duration: '3 hr' },
-];
+type LoadState =
+  | { kind: 'loading' }
+  | { kind: 'error'; message: string }
+  | { kind: 'ready'; trips: Trip[] };
 
-function Wordmark({ onHome }: { onHome: () => void }) {
+type Notice = { tone: 'success' | 'error'; message: string } | null;
+
+const blankStop = (): TripDraftStop => ({
+  name: '',
+  locationText: null,
+  arrivalDate: null,
+  departureDate: null,
+});
+
+const blankTrip = (): TripInput => ({
+  name: '',
+  destinationArea: '',
+  startDate: '',
+  endDate: '',
+  travelerCount: 2,
+  stops: [blankStop()],
+});
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : 'Something went wrong. Try again.';
+}
+
+function Logo({ compact = false }: { compact?: boolean }) {
   return (
-    <button className="wordmark wordmark-button" type="button" onClick={onHome}>
-      <span className="wordmark-mark" aria-hidden="true" />
-      <span>TripDock</span>
-    </button>
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      className={compact ? 'brand-logo brand-logo-compact' : 'brand-logo'}
+      src="/brand/tripdock-logo.png"
+      width="1863"
+      height="844"
+      alt="TripDock"
+    />
   );
 }
 
-function AppHeader({
-  detail,
-  onHome,
-  onProfile,
-}: {
-  detail: boolean;
-  onHome: () => void;
-  onProfile: () => void;
-}) {
-  return (
-    <header className="site-header">
-      <div className="header-inner">
-        <Wordmark onHome={onHome} />
-        <nav aria-label="Primary navigation">
-          <button
-            className={`nav-link nav-button ${detail ? '' : 'nav-link-active'}`}
-            type="button"
-            onClick={onHome}
-            aria-current={detail ? undefined : 'page'}
-          >
-            Trips
-          </button>
-        </nav>
-        <button
-          className="profile-button"
-          type="button"
-          aria-label="Open prototype profile"
-          onClick={onProfile}
-        >
-          <span>RS</span>
-        </button>
-      </div>
-    </header>
-  );
-}
-
-function RouteLine({ stops }: { stops: string[] }) {
-  return (
-    <div className="route-line" aria-label={`Route: ${stops.join(' to ')}`}>
-      {stops.map((stop, index) => (
-        <span className="route-stop" key={stop}>
-          <span className="route-dot" aria-hidden="true" />
-          <span>{stop}</span>
-          {index < stops.length - 1 ? (
-            <span className="route-connector" aria-hidden="true" />
-          ) : null}
-        </span>
-      ))}
-    </div>
-  );
-}
-
-function TripCard({
-  trip,
-  expanded,
-  onPreview,
-  onView,
-}: {
-  trip: Trip;
-  expanded: boolean;
-  onPreview: () => void;
-  onView: () => void;
-}) {
-  const previewId = `preview-${trip.id}`;
-
-  return (
-    <article className={`trip-card ${trip.featured ? 'trip-card-featured' : ''}`}>
-      <div className="trip-cover">
-        <div className="trip-cover-fallback" aria-hidden="true">
-          <span>{trip.route[0]?.slice(0, 2).toLocaleUpperCase() ?? 'TD'}</span>
-          <small>{trip.route.join(' · ')}</small>
-        </div>
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={trip.image}
-          alt={trip.alt}
-          onError={(event) => { event.currentTarget.hidden = true; }}
-        />
-        {trip.featured ? <span className="cover-label">Next trip</span> : null}
-      </div>
-
-      <div className="trip-card-body">
-        <div className="trip-card-topline">
-          <p className="trip-eyebrow">{trip.eyebrow}</p>
-          <span className={`status-pill status-${trip.statusTone}`}>
-            <span aria-hidden="true" />
-            {trip.status}
-          </span>
-        </div>
-
-        <div>
-          <h2>{trip.title}</h2>
-          <p className="trip-meta">
-            {trip.dates} <span aria-hidden="true">·</span> {trip.duration}{' '}
-            <span aria-hidden="true">·</span> {trip.travelers}
-          </p>
-        </div>
-
-        <RouteLine stops={trip.route} />
-
-        <div className="trip-health">
-          <div>
-            <span className={`health-icon health-${trip.statusTone}`} aria-hidden="true">
-              {trip.statusTone === 'ready' ? '✓' : trip.statusTone === 'attention' ? '!' : '·'}
-            </span>
-            <span>{trip.note}</span>
-          </div>
-          <p>{trip.next}</p>
-        </div>
-
-        {expanded ? (
-          <div className="trip-preview" id={previewId}>
-            <p>Route preview</p>
-            <ol>
-              {trip.preview.map((item) => (
-                <li key={item}>
-                  <span aria-hidden="true" />
-                  {item}
-                </li>
-              ))}
-            </ol>
-          </div>
-        ) : null}
-
-        <div className="trip-actions">
-          <button
-            className="button-secondary"
-            type="button"
-            aria-expanded={expanded}
-            aria-controls={previewId}
-            onClick={onPreview}
-          >
-            {expanded ? 'Hide preview' : 'Preview route'}
-          </button>
-          <button className="button-text" type="button" onClick={onView}>
-            View trip <span aria-hidden="true">→</span>
-          </button>
-        </div>
-      </div>
-    </article>
-  );
-}
-
-function TripsOverview({
-  trips,
-  onNewTrip,
-  onOpenTrip,
-}: {
-  trips: Trip[];
-  onNewTrip: () => void;
-  onOpenTrip: (tripId: string) => void;
-}) {
-  const [tab, setTab] = useState<'upcoming' | 'past'>('upcoming');
-  const [previewTrip, setPreviewTrip] = useState<string | null>(null);
-
-  return (
-    <main id="main-content" className="page-wrap" tabIndex={-1}>
-      <section className="page-heading" aria-labelledby="trips-heading">
-        <div>
-          <p className="overline">Your travel plans</p>
-          <h1 id="trips-heading">Your trips</h1>
-          <p className="page-intro">Everything you need, in the order you’ll need it.</p>
-        </div>
-        <button className="button-primary" type="button" onClick={onNewTrip}>
-          <span aria-hidden="true">＋</span> New trip
-        </button>
-      </section>
-
-      <div className="trip-tabs" aria-label="Trip timing">
-        <button
-          className={`trip-tab ${tab === 'upcoming' ? 'trip-tab-active' : ''}`}
-          type="button"
-          aria-pressed={tab === 'upcoming'}
-          onClick={() => setTab('upcoming')}
-        >
-          Upcoming <span>{trips.length}</span>
-        </button>
-        <button
-          className={`trip-tab ${tab === 'past' ? 'trip-tab-active' : ''}`}
-          type="button"
-          aria-pressed={tab === 'past'}
-          onClick={() => setTab('past')}
-        >
-          Past
-        </button>
-      </div>
-
-      {tab === 'upcoming' ? (
-        <section id="trips" className="trips-list" aria-label="Upcoming trips">
-          {trips.map((trip) => (
-            <TripCard
-              trip={trip}
-              key={trip.id}
-              expanded={previewTrip === trip.id}
-              onPreview={() => setPreviewTrip(previewTrip === trip.id ? null : trip.id)}
-              onView={() => onOpenTrip(trip.id)}
-            />
-          ))}
-        </section>
-      ) : (
-        <section className="past-empty" aria-labelledby="past-heading">
-          <span aria-hidden="true">↺</span>
-          <h2 id="past-heading">Your past trips will live here</h2>
-          <p>Completed journeys stay easy to revisit without crowding the plans ahead.</p>
-        </section>
-      )}
-
-      <button className="new-trip-row" type="button" onClick={onNewTrip}>
-        <span className="new-trip-icon" aria-hidden="true">＋</span>
-        <span>
-          <strong>Start planning another trip</strong>
-          <small>Add a destination and dates to begin</small>
-        </span>
-        <span className="new-trip-arrow" aria-hidden="true">→</span>
-      </button>
-    </main>
-  );
-}
-
-type TransportLegProps = {
-  icon: string;
-  eyebrow: string;
-  route: string;
-  time: string;
-  detail: string;
-  status: 'Confirmed' | 'Booked' | 'Needs booking';
-  attention?: boolean;
-  onDetails: () => void;
-};
-
-function TransportLeg({
-  icon,
+function Dialog({
+  title,
   eyebrow,
-  route,
-  time,
-  detail,
-  status,
-  attention,
-  onDetails,
-}: TransportLegProps) {
-  return (
-    <article className={`transport-card ${attention ? 'transport-card-attention' : ''}`}>
-      <div className="transport-icon" aria-hidden="true">{icon}</div>
-      <div className="transport-copy">
-        <p className="transport-eyebrow">{eyebrow}</p>
-        <h3>{route}</h3>
-        <p>{time} <span aria-hidden="true">·</span> {detail}</p>
-      </div>
-      <div className="transport-side">
-        <span className={attention ? 'leg-status attention' : 'leg-status'}>
-          {attention ? '!' : '✓'} {status}
-        </span>
-        <button type="button" onClick={onDetails}>Details</button>
-      </div>
-    </article>
-  );
-}
-
-type AgendaEvent = {
-  time: string;
-  title: string;
-  meta?: string;
-  confirmed?: boolean;
-};
-
-function AgendaDay({
-  day,
-  label,
-  events,
-  emptyAction,
-}: {
-  day: string;
-  label: string;
-  events: AgendaEvent[];
-  emptyAction?: () => void;
-}) {
-  return (
-    <section className="agenda-day">
-      <header>
-        <span>{day}</span>
-        <div>
-          <h4>{label}</h4>
-          <p>{events.length ? `${events.length} planned` : 'Open day'}</p>
-        </div>
-      </header>
-      {events.length ? (
-        <ol>
-          {events.map((event) => (
-            <li key={`${event.time}-${event.title}`}>
-              <time>{event.time}</time>
-              <div>
-                <strong>{event.title}</strong>
-                {event.meta ? <small>{event.meta}</small> : null}
-              </div>
-              {event.confirmed ? <span className="event-confirmed">Confirmed</span> : null}
-            </li>
-          ))}
-        </ol>
-      ) : (
-        <button className="empty-day" type="button" onClick={emptyAction}>
-          <span aria-hidden="true">＋</span>
-          Add from activity pool
-        </button>
-      )}
-    </section>
-  );
-}
-
-function RomeContent({
-  assigned,
-  acceptedChanges,
-  onAssign,
-  onStayDetails,
-  onAddStay,
-  onAddIdea,
-  onAddActivity,
-}: {
-  assigned: string[];
-  acceptedChanges: ProposalChangeId[];
-  onAssign: (id: string) => void;
-  onStayDetails: () => void;
-  onAddStay: () => void;
-  onAddIdea: () => void;
-  onAddActivity: () => void;
-}) {
-  const movedVatican = acceptedChanges.includes('move-vatican');
-  const scheduledBorghese = acceptedChanges.includes('schedule-borghese');
-  const pool = romeActivityPool.filter(
-    (activity) => !assigned.includes(activity.id) && !(scheduledBorghese && activity.id === 'borghese'),
-  );
-
-  const tuesdayEvents: AgendaEvent[] = [
-    ...(movedVatican
-      ? []
-      : [{ time: '09:30', title: 'Vatican Museums', meta: 'Viale Vaticano', confirmed: true }]),
-    { time: '13:00', title: 'St Peter’s Basilica', meta: 'Vatican City' },
-    ...(scheduledBorghese
-      ? [{ time: '15:00', title: 'Borghese Gallery', meta: 'Added by approved proposal' }]
-      : []),
-  ];
-
-  const wednesdayEvents: AgendaEvent[] = [
-    ...(movedVatican
-      ? [{ time: '09:30', title: 'Vatican Museums', meta: 'Moved by approved proposal', confirmed: true }]
-      : []),
-    ...assigned
-      .filter((id) => !(scheduledBorghese && id === 'borghese'))
-      .map((id, index) => {
-        const activity = romeActivityPool.find((item) => item.id === id);
-        return {
-          time: `${14 + index}:00`,
-          title: activity?.title ?? 'Activity',
-          meta: 'Assigned from activity pool',
-        };
-      }),
-  ];
-
-  return (
-    <div className="destination-body destination-body-rome">
-      <aside className="destination-sidebar">
-        <section className="subsection stay-section">
-          <div className="section-title-row">
-            <div>
-              <p className="section-kicker">Stay</p>
-              <h3>Accommodation</h3>
-            </div>
-            <button type="button" aria-label="Add accommodation" onClick={onAddStay}>＋</button>
-          </div>
-          <article className="stay-card">
-            <div className="stay-image stay-image-rome" aria-hidden="true"><span>R</span></div>
-            <div>
-              <span className="mini-status">✓ Confirmed</span>
-              <h4>Casa Navona</h4>
-              <p>Piazza Navona area</p>
-              <small>Apr 11, 15:00 → Apr 15, 08:00</small>
-              <button type="button" onClick={onStayDetails}>View booking</button>
-            </div>
-          </article>
-        </section>
-
-        <section className="subsection activity-pool">
-          <div className="section-title-row">
-            <div>
-              <p className="section-kicker">Ideas</p>
-              <h3>Activity pool</h3>
-            </div>
-            <span>{pool.length}</span>
-          </div>
-          {pool.length ? (
-            <ul>
-              {pool.map((activity) => (
-                <li key={activity.id}>
-                  <span className="drag-handle" aria-hidden="true">⋮⋮</span>
-                  <div>
-                    <strong>{activity.title}</strong>
-                    <small>{activity.duration}</small>
-                  </div>
-                  <button type="button" onClick={() => onAssign(activity.id)}>Assign</button>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="pool-empty">Every saved idea is on the plan.</p>
-          )}
-          <button className="add-idea-button" type="button" onClick={onAddIdea}>＋ Add an idea</button>
-        </section>
-      </aside>
-
-      <section className="agenda-section">
-        <div className="agenda-heading">
-          <div>
-            <p className="section-kicker">Rome plan</p>
-            <h3>Day by day</h3>
-          </div>
-          <button className="button-secondary" type="button" onClick={onAddActivity}>＋ Add activity</button>
-        </div>
-        <div className="agenda-list">
-          <AgendaDay
-            day="11"
-            label="Sun, Apr 11"
-            events={[
-              { time: '11:05', title: 'Arrive at FCO', meta: 'Flight VY 6100', confirmed: true },
-              { time: '15:00', title: 'Check in at Casa Navona', meta: 'Booking CN-4821' },
-              { time: '18:00', title: 'Piazza Navona walk', meta: 'Easy first evening' },
-            ]}
-          />
-          <AgendaDay
-            day="12"
-            label="Mon, Apr 12"
-            events={[
-              { time: '09:00', title: 'Colosseum', meta: 'Timed entry', confirmed: true },
-              { time: '11:30', title: 'Roman Forum', meta: 'Walk from Colosseum' },
-              { time: '19:00', title: 'Trastevere food walk', meta: 'Meet at Piazza Trilussa' },
-            ]}
-          />
-          <AgendaDay day="13" label="Tue, Apr 13" events={tuesdayEvents} />
-          <AgendaDay
-            day="14"
-            label="Wed, Apr 14"
-            events={wednesdayEvents}
-            emptyAction={() => onAssign('borghese')}
-          />
-        </div>
-      </section>
-    </div>
-  );
-}
-
-function CompactDestinationContent({
-  city,
-  stay,
-  stayStatus,
-  activities,
-  attention,
-  onAction,
-}: {
-  city: string;
-  stay: string;
-  stayStatus: string;
-  activities: string[];
-  attention?: string;
-  onAction: () => void;
-}) {
-  return (
-    <div className="compact-destination-body">
-      <section>
-        <p className="section-kicker">Stay</p>
-        <h3>{stay}</h3>
-        <span className={attention ? 'compact-attention' : 'compact-ready'}>
-          {attention ? '!' : '✓'} {stayStatus}
-        </span>
-        <button type="button" onClick={onAction}>{attention ? 'Find a place' : 'View details'}</button>
-      </section>
-      <section>
-        <p className="section-kicker">Saved for {city}</p>
-        <h3>{activities.length} activities</h3>
-        <ul>
-          {activities.map((activity) => <li key={activity}>{activity}</li>)}
-        </ul>
-      </section>
-      <section className="compact-plan">
-        <p className="section-kicker">Plan</p>
-        <h3>{attention ?? 'Everything arranged'}</h3>
-        <p>{attention ? 'This will stay visible until it has a home in the trip.' : 'The essentials are covered. You can keep refining the days.'}</p>
-      </section>
-    </div>
-  );
-}
-
-function DestinationCard({
-  id,
-  number,
-  city,
-  country,
-  dates,
-  nights,
-  summary,
-  status,
-  statusTone,
-  expanded,
-  onToggle,
   children,
-}: {
-  id: string;
-  number: string;
-  city: string;
-  country: string;
-  dates: string;
-  nights: string;
-  summary: string;
-  status: string;
-  statusTone: StatusTone;
-  expanded: boolean;
-  onToggle: () => void;
-  children: ReactNode;
-}) {
-  const contentId = `${id}-content`;
-
-  return (
-    <article className={`destination-card ${expanded ? 'destination-card-expanded' : ''}`}>
-      <button
-        className="destination-header"
-        type="button"
-        aria-expanded={expanded}
-        aria-controls={contentId}
-        onClick={onToggle}
-      >
-        <span className="destination-number">{number}</span>
-        <span className="destination-title">
-          <small>{country}</small>
-          <strong>{city}</strong>
-        </span>
-        <span className="destination-dates">
-          <strong>{dates}</strong>
-          <small>{nights}</small>
-        </span>
-        <span className="destination-summary">{summary}</span>
-        <span className={`status-pill status-${statusTone}`}>
-          <span aria-hidden="true" />
-          {status}
-        </span>
-        <span className="destination-chevron" aria-hidden="true">⌄</span>
-      </button>
-      {expanded ? <div id={contentId}>{children}</div> : null}
-    </article>
-  );
-}
-
-function ProposalBanner({
-  status,
-  changeCount,
-  onReview,
-}: {
-  status: ProposalStatus;
-  changeCount: number;
-  onReview: () => void;
-}) {
-  if (status === 'idle' || status === 'applied') return null;
-
-  if (status === 'loading') {
-    return (
-      <div className="proposal-banner proposal-loading" role="status">
-        <span className="proposal-spark" aria-hidden="true">✦</span>
-        <div>
-          <strong>Preparing your proposal…</strong>
-          <p>Checking the plan and preserving confirmed details.</p>
-        </div>
-        <span className="loading-dots" aria-hidden="true"><i /><i /><i /></span>
-      </div>
-    );
-  }
-
-  return (
-    <button className="proposal-banner proposal-ready" type="button" onClick={onReview}>
-      <span className="proposal-spark" aria-hidden="true">✦</span>
-      <span>
-        <strong>{status === 'kept' ? 'Saved proposal' : `${changeCount} ${changeCount === 1 ? 'change' : 'changes'} ready to review`}</strong>
-        <small>{status === 'kept' ? 'Saved for whenever you are ready.' : 'Review before anything changes.'}</small>
-      </span>
-      <span aria-hidden="true">Review →</span>
-    </button>
-  );
-}
-
-function TripDetail({
-  onBack,
-  showToast,
-  proposal,
-  acceptedChanges,
-  assignedActivities,
-  storageLabel,
-  onAssignActivity,
-  onRequestProposal,
-  onReviewProposal,
-}: {
-  onBack: () => void;
-  showToast: (message: string) => void;
-  proposal: PrototypeState['proposal'];
-  acceptedChanges: ProposalChangeId[];
-  assignedActivities: string[];
-  storageLabel: 'on this device' | 'for this session';
-  onAssignActivity: (id: string) => void;
-  onRequestProposal: (prompt: string) => void;
-  onReviewProposal: () => void;
-}) {
-  const [expandedStops, setExpandedStops] = useState<Record<string, boolean>>({
-    rome: true,
-    florence: false,
-    venice: false,
-  });
-  const [prompt, setPrompt] = useState(proposal.prompt || DEFAULT_PROPOSAL_PROMPT);
-  const composerRef = useRef<HTMLElement>(null);
-  const promptRef = useRef<HTMLTextAreaElement>(null);
-
-  function toggleStop(id: string) {
-    setExpandedStops((current) => ({ ...current, [id]: !current[id] }));
-  }
-
-  function assignActivity(id: string) {
-    onAssignActivity(id);
-    const activity = romeActivityPool.find((item) => item.id === id);
-    if (assignedActivities.includes(id)) {
-      showToast(`${activity?.title ?? 'Activity'} is already on Wed, Apr 14.`);
-      return;
-    }
-    showToast(`${activity?.title ?? 'Activity'} assigned to Wed, Apr 14 and saved ${storageLabel}.`);
-  }
-
-  function submitPrompt(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!prompt.trim()) return;
-    onRequestProposal(prompt.trim());
-  }
-
-  return (
-    <main id="main-content" className="detail-page" tabIndex={-1}>
-      <div className="detail-topbar">
-        <button className="back-button" type="button" onClick={onBack}>
-          <span aria-hidden="true">←</span> All trips
-        </button>
-        <div className="detail-actions">
-          {proposal.status === 'kept' ? <span className="saved-proposal-pill">✦ {proposal.changes.length} proposed</span> : null}
-          <button className="button-secondary" type="button" onClick={() => showToast('Trip editing is represented by the mock controls below.')}>Edit trip</button>
-          <button
-            className="button-primary button-primary-compact"
-            type="button"
-            onClick={() => {
-              composerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-              promptRef.current?.focus({ preventScroll: true });
-            }}
-          >
-            <span aria-hidden="true">✦</span> Ask TripDock
-          </button>
-        </div>
-      </div>
-
-      <header className="trip-detail-heading">
-        <div>
-          <p className="overline">Upcoming trip</p>
-          <h1>Italy in spring</h1>
-          <p>Apr 11–20, 2027 <span aria-hidden="true">·</span> 9 nights <span aria-hidden="true">·</span> 2 travelers</p>
-        </div>
-        <div className="trip-detail-route" aria-label="Rome to Florence to Venice">
-          <span>Rome</span><i aria-hidden="true" /><span>Florence</span><i aria-hidden="true" /><span>Venice</span>
-        </div>
-      </header>
-
-      <section className="trip-facts" aria-label="Trip summary">
-        <div><strong>3</strong><span>destinations</span></div>
-        <div><strong>9</strong><span>nights</span></div>
-        <div><strong>4</strong><span>transport legs</span></div>
-        <div><strong>2</strong><span>stays booked</span></div>
-        <div className="trip-fact-attention"><strong>2</strong><span>things to arrange</span></div>
-      </section>
-
-      <ProposalBanner
-        status={proposal.status}
-        changeCount={proposal.changes.length}
-        onReview={onReviewProposal}
-      />
-
-      <section className="journey" aria-labelledby="journey-heading">
-        <div className="journey-heading">
-          <div>
-            <p className="overline">The whole journey</p>
-            <h2 id="journey-heading">Your itinerary</h2>
-          </div>
-          <p>Destinations and transport stay in one clear order.</p>
-        </div>
-
-        <div className="journey-spine">
-          <TransportLeg
-            icon="✈"
-            eyebrow="Getting there · Sun, Apr 11"
-            route="Barcelona → Rome"
-            time="09:20–11:05"
-            detail="BCN → FCO · VY 6100"
-            status="Confirmed"
-            onDetails={() => showToast('Flight details: Terminal 1 · booking VY8F2L.')}
-          />
-
-          <div className="spine-connector" aria-hidden="true"><span /></div>
-
-          <DestinationCard
-            id="rome"
-            number="01"
-            city="Rome"
-            country="Italy"
-            dates="Apr 11–15"
-            nights="4 nights"
-            summary="Stay confirmed · 8 planned"
-            status="On track"
-            statusTone="ready"
-            expanded={expandedStops.rome}
-            onToggle={() => toggleStop('rome')}
-          >
-            <RomeContent
-              assigned={assignedActivities}
-              acceptedChanges={acceptedChanges}
-              onAssign={assignActivity}
-              onStayDetails={() => showToast('Casa Navona · Check-in after 15:00 · CN-4821.')}
-              onAddStay={() => showToast('Casa Navona is already saved. Stay editing is next on the prototype list.')}
-              onAddIdea={() => showToast('Idea capture is coming next. For now, assign one of the saved activities.')}
-              onAddActivity={() => showToast('Choose an activity from the Rome pool to add it to Wednesday.')}
-            />
-          </DestinationCard>
-
-          <div className="spine-connector" aria-hidden="true"><span /></div>
-
-          <TransportLeg
-            icon="↗"
-            eyebrow="Changing cities · Thu, Apr 15"
-            route="Rome → Florence"
-            time="08:35–10:11"
-            detail="Roma Termini → Firenze S. M. Novella"
-            status="Booked"
-            onDetails={() => showToast('Italo high-speed train · Seats 8A and 8B.')}
-          />
-
-          <div className="spine-connector" aria-hidden="true"><span /></div>
-
-          <DestinationCard
-            id="florence"
-            number="02"
-            city="Florence"
-            country="Italy"
-            dates="Apr 15–18"
-            nights="3 nights"
-            summary="Arno Rooms · 3 activities"
-            status="Ready"
-            statusTone="ready"
-            expanded={expandedStops.florence}
-            onToggle={() => toggleStop('florence')}
-          >
-            <CompactDestinationContent
-              city="Florence"
-              stay="Arno Rooms"
-              stayStatus="Confirmed"
-              activities={['Uffizi Gallery', 'Duomo', 'Oltrarno evening']}
-              onAction={() => showToast('Arno Rooms · Check-in Thu, Apr 15 after 15:00.')}
-            />
-          </DestinationCard>
-
-          <div className="spine-connector" aria-hidden="true"><span /></div>
-
-          <TransportLeg
-            icon="↗"
-            eyebrow="Changing cities · Sun, Apr 18"
-            route="Florence → Venice"
-            time="09:20–11:34"
-            detail="Firenze S. M. Novella → Venezia S. Lucia"
-            status="Needs booking"
-            attention
-            onDetails={() => showToast('This train is not booked yet. Suggested departure: 09:20.')}
-          />
-
-          <div className="spine-connector" aria-hidden="true"><span /></div>
-
-          <DestinationCard
-            id="venice"
-            number="03"
-            city="Venice"
-            country="Italy"
-            dates="Apr 18–20"
-            nights="2 nights"
-            summary="Stay needed · 3 ideas"
-            status="Needs attention"
-            statusTone="attention"
-            expanded={expandedStops.venice}
-            onToggle={() => toggleStop('venice')}
-          >
-            <CompactDestinationContent
-              city="Venice"
-              stay="No accommodation yet"
-              stayStatus="Accommodation needed"
-              activities={['St Mark’s Basilica', 'Rialto Market', 'Murano']}
-              attention="Choose where to stay"
-              onAction={() => showToast('Accommodation search is not connected in this local prototype yet.')}
-            />
-          </DestinationCard>
-
-          <div className="spine-connector" aria-hidden="true"><span /></div>
-
-          <TransportLeg
-            icon="✈"
-            eyebrow="Heading home · Tue, Apr 20"
-            route="Venice → Barcelona"
-            time="18:10–20:05"
-            detail="VCE → BCN · VY 6405"
-            status="Confirmed"
-            onDetails={() => showToast('Flight details: booking VY9C8P.')}
-          />
-        </div>
-      </section>
-
-      <section className="ai-composer-section" ref={composerRef} aria-labelledby="composer-title">
-        <div className="composer-intro">
-          <span className="proposal-spark" aria-hidden="true">✦</span>
-          <div>
-            <h2 id="composer-title">Ask TripDock</h2>
-            <p>Try the local Vatican and Borghese proposal fixture—no API call is made.</p>
-          </div>
-        </div>
-        <form className="ai-composer" onSubmit={submitPrompt}>
-          <label className="sr-only" htmlFor="trip-prompt">Ask TripDock about this trip</label>
-          <textarea
-            ref={promptRef}
-            id="trip-prompt"
-            value={prompt}
-            maxLength={500}
-            onChange={(event) => setPrompt(event.target.value)}
-            rows={2}
-          />
-          <button className="voice-button" type="button" aria-label="Add a voice note" onClick={() => showToast('Voice input is represented here but is not connected yet.')}>●</button>
-          <button className="composer-send" type="submit" aria-label="Send request">↑</button>
-        </form>
-        <p className="composer-reassurance"><span aria-hidden="true">✓</span> Nothing changes until you approve.</p>
-      </section>
-    </main>
-  );
-}
-
-function TripOutlineDetail({
-  trip,
-  onBack,
-  showToast,
-  storageLabel,
-}: {
-  trip: Trip;
-  onBack: () => void;
-  showToast: (message: string) => void;
-  storageLabel: 'on this device' | 'for this session';
-}) {
-  return (
-    <main id="main-content" className="detail-page" tabIndex={-1}>
-      <div className="detail-topbar">
-        <button className="back-button" type="button" onClick={onBack}>
-          <span aria-hidden="true">←</span> All trips
-        </button>
-        <div className="detail-actions">
-          {trip.createdLocally ? (
-            <span className="saved-proposal-pill local-save-pill">
-              ✓ Saved {storageLabel}
-            </span>
-          ) : null}
-          <button
-            className="button-secondary"
-            type="button"
-            onClick={() => showToast('Trip editing is the next prototype slice. Your current draft is safely saved.')}
-          >
-            Edit trip
-          </button>
-        </div>
-      </div>
-
-      <header className="trip-detail-heading">
-        <div>
-          <p className="overline">{trip.status} trip</p>
-          <h1>{trip.title}</h1>
-          <p>{trip.dates} <span aria-hidden="true">·</span> {trip.duration} <span aria-hidden="true">·</span> {trip.travelers}</p>
-        </div>
-        <div className="trip-detail-route" aria-label={`Route: ${trip.route.join(' to ')}`}>
-          {trip.route.map((stop, index) => (
-            <span className="detail-route-segment" key={`${stop}-${index}`}>
-              <span>{stop}</span>
-              {index < trip.route.length - 1 ? <i aria-hidden="true" /> : null}
-            </span>
-          ))}
-        </div>
-      </header>
-
-      <section className="trip-facts" aria-label="Trip summary">
-        <div><strong>{trip.route.length}</strong><span>{trip.route.length === 1 ? 'destination' : 'destinations'}</span></div>
-        <div><strong>{trip.duration.split(' ')[0]}</strong><span>{trip.duration.includes('night') ? 'nights' : 'days'}</span></div>
-        <div><strong>{Math.max(0, trip.route.length - 1)}</strong><span>transport legs to plan</span></div>
-        <div><strong>0</strong><span>stays added</span></div>
-        <div className="trip-fact-attention"><strong>{trip.route.length + Math.max(0, trip.route.length - 1)}</strong><span>essentials to arrange</span></div>
-      </section>
-
-      <section className="journey outline-journey" aria-labelledby="outline-heading">
-        <div className="journey-heading">
-          <div>
-            <p className="overline">First draft</p>
-            <h2 id="outline-heading">Shape the journey</h2>
-          </div>
-          <p>The route and dates are saved. Add bookings and ideas when you are ready.</p>
-        </div>
-
-        <div className="outline-grid">
-          <article className="outline-panel route-outline-panel">
-            <p className="section-kicker">Route outline</p>
-            <h3>{trip.route.join(' → ')}</h3>
-            <ol>
-              {trip.preview.map((item, index) => (
-                <li key={`${item}-${index}`}>
-                  <span aria-hidden="true">{String(index + 1).padStart(2, '0')}</span>
-                  <strong>{item}</strong>
-                </li>
-              ))}
-            </ol>
-          </article>
-
-          <aside className="outline-panel next-steps-panel">
-            <p className="section-kicker">Planning checklist</p>
-            <h3>Good next steps</h3>
-            <button type="button" onClick={() => showToast('Transport planning will connect to each route leg in a later slice.')}>
-              <span aria-hidden="true">↗</span><span><strong>Add transport</strong><small>Connect each destination</small></span>
-            </button>
-            <button type="button" onClick={() => showToast('Accommodation planning is not connected in this local prototype yet.')}>
-              <span aria-hidden="true">⌂</span><span><strong>Add stays</strong><small>One place for each stop</small></span>
-            </button>
-            <button type="button" onClick={() => showToast('Activity capture is demonstrated in the detailed Italy trip.')}>
-              <span aria-hidden="true">＋</span><span><strong>Save activity ideas</strong><small>Schedule them later</small></span>
-            </button>
-          </aside>
-        </div>
-      </section>
-    </main>
-  );
-}
-
-function ModalFrame({
-  titleId,
   onClose,
-  children,
-  wide,
+  wide = false,
 }: {
-  titleId: string;
-  onClose: () => void;
+  title: string;
+  eyebrow?: string;
   children: ReactNode;
+  onClose: () => void;
   wide?: boolean;
 }) {
-  const dialogRef = useRef<HTMLDivElement>(null);
-  const onCloseRef = useRef(onClose);
+  const ref = useRef<HTMLDialogElement>(null);
 
   useEffect(() => {
-    onCloseRef.current = onClose;
-  }, [onClose]);
-
-  useEffect(() => {
-    const previousFocus = document.activeElement as HTMLElement | null;
-    const bodyOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    const firstControl = dialogRef.current?.querySelector<HTMLElement>('button, input, textarea, select');
-    firstControl?.focus();
-
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === 'Escape') onCloseRef.current();
-      if (event.key !== 'Tab' || !dialogRef.current) return;
-      const controls = Array.from(
-        dialogRef.current.querySelectorAll<HTMLElement>(
-          'button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled])',
-        ),
-      );
-      if (!controls.length) return;
-      const first = controls[0];
-      const last = controls[controls.length - 1];
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
-    }
-
-    document.addEventListener('keydown', onKeyDown);
+    const dialog = ref.current;
+    if (dialog && !dialog.open) dialog.showModal();
     return () => {
-      document.body.style.overflow = bodyOverflow;
-      document.removeEventListener('keydown', onKeyDown);
-      previousFocus?.focus();
+      if (dialog?.open) dialog.close();
     };
   }, []);
 
   return (
-    <div
-      className="modal-backdrop"
-      onMouseDown={(event) => {
-        if (event.currentTarget === event.target) onClose();
+    <dialog
+      ref={ref}
+      className={`app-dialog ${wide ? 'app-dialog-wide' : ''}`}
+      onCancel={(event) => {
+        event.preventDefault();
+        onClose();
       }}
+      onClick={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+      aria-labelledby="dialog-title"
     >
-      <div
-        className={`modal-card ${wide ? 'modal-card-wide' : ''}`}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        ref={dialogRef}
-      >
+      <div className="dialog-panel">
+        <header className="dialog-header">
+          <div>
+            {eyebrow ? <p className="overline">{eyebrow}</p> : null}
+            <h2 id="dialog-title">{title}</h2>
+          </div>
+          <button className="icon-button" type="button" onClick={onClose} aria-label="Close dialog">
+            ×
+          </button>
+        </header>
         {children}
       </div>
+    </dialog>
+  );
+}
+
+function Field({ label, children, hint }: { label: string; children: ReactNode; hint?: string }) {
+  return (
+    <label className="field">
+      <span>{label}</span>
+      {children}
+      {hint ? <small>{hint}</small> : null}
+    </label>
+  );
+}
+
+function TripFields({ value, onChange }: { value: TripInput; onChange: (next: TripInput) => void }) {
+  function updateStop(index: number, patch: Partial<TripDraftStop>) {
+    onChange({
+      ...value,
+      stops: value.stops.map((stop, stopIndex) =>
+        stopIndex === index ? { ...stop, ...patch } : stop,
+      ),
+    });
+  }
+
+  return (
+    <div className="form-stack">
+      <div className="form-grid form-grid-two">
+        <Field label="Trip name">
+          <input required maxLength={160} value={value.name} onChange={(event) => onChange({ ...value, name: event.target.value })} placeholder="A name you’ll recognize" />
+        </Field>
+        <Field label="Destination area">
+          <input required maxLength={200} value={value.destinationArea} onChange={(event) => onChange({ ...value, destinationArea: event.target.value })} placeholder="Country, region, or broad area" />
+        </Field>
+      </div>
+      <div className="form-grid form-grid-three">
+        <Field label="Start date"><input required type="date" value={value.startDate} onChange={(event) => onChange({ ...value, startDate: event.target.value })} /></Field>
+        <Field label="End date"><input required type="date" min={value.startDate || undefined} value={value.endDate} onChange={(event) => onChange({ ...value, endDate: event.target.value })} /></Field>
+        <Field label="Travelers"><input required type="number" min="1" max="20" value={value.travelerCount} onChange={(event) => onChange({ ...value, travelerCount: Number(event.target.value) })} /></Field>
+      </div>
+      <fieldset className="stops-editor">
+        <legend>Ordered destinations</legend>
+        {value.stops.map((stop, index) => (
+          <div className="draft-stop" key={`draft-stop-${index}`}>
+            <span className="position-badge" aria-label={`Destination ${index + 1}`}>{index + 1}</span>
+            <div className="form-grid form-grid-two">
+              <Field label="Stop name"><input required value={stop.name} onChange={(event) => updateStop(index, { name: event.target.value })} placeholder="City or destination" /></Field>
+              <Field label="Location detail"><input value={stop.locationText ?? ''} onChange={(event) => updateStop(index, { locationText: event.target.value || null })} placeholder="Optional region or address" /></Field>
+              <Field label="Arrival"><input type="date" value={stop.arrivalDate ?? ''} onChange={(event) => updateStop(index, { arrivalDate: event.target.value || null })} /></Field>
+              <Field label="Departure"><input type="date" value={stop.departureDate ?? ''} onChange={(event) => updateStop(index, { departureDate: event.target.value || null })} /></Field>
+            </div>
+            <button className="button-text button-danger" type="button" disabled={value.stops.length === 1} onClick={() => onChange({ ...value, stops: value.stops.filter((_, i) => i !== index) })}>Remove</button>
+          </div>
+        ))}
+        <button className="button-secondary" type="button" onClick={() => onChange({ ...value, stops: [...value.stops, blankStop()] })}>+ Add destination</button>
+      </fieldset>
     </div>
   );
 }
 
-function NewTripModal({
-  onClose,
-  onCreate,
-  showToast,
-}: {
-  onClose: () => void;
-  onCreate: (draft: TripDraft) => void;
-  showToast: (message: string) => void;
-}) {
-  const [prompt, setPrompt] = useState(
-    'Ten days in Italy next April for two people. We want Rome, Florence and Venice.',
-  );
-  const [form, setForm] = useState({
-    name: '',
-    area: '',
-    start: '',
-    end: '',
-    travelers: '2',
-    stops: [] as string[],
-  });
-  const [stopInput, setStopInput] = useState('');
-  const [formError, setFormError] = useState<string | null>(null);
-  const stopInputRef = useRef<HTMLInputElement>(null);
-  const endInputRef = useRef<HTMLInputElement>(null);
+function CreateTripDialog({ onClose, onCreated }: { onClose: () => void; onCreated: (trip: Trip) => void }) {
+  const [mode, setMode] = useState<'manual' | 'ai'>('manual');
+  const [form, setForm] = useState<TripInput>(() => blankTrip());
+  const [prompt, setPrompt] = useState('');
+  const [draftNotes, setDraftNotes] = useState<Pick<TripDraft, 'assumptions' | 'warnings'>>({ assumptions: [], warnings: [] });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  function prefill() {
-    setForm({
-      name: 'Italy in spring',
-      area: 'Italy',
-      start: '2027-04-11',
-      end: '2027-04-20',
-      travelers: '2',
-      stops: ['Rome', 'Florence', 'Venice'],
-    });
+  async function generateDraft() {
+    setBusy(true);
+    setError(null);
+    try {
+      const data = await graphqlRequest<{ generateTripDraft: TripDraft }, { prompt: string }>(operations.generateDraft, { prompt });
+      const draft = data.generateTripDraft;
+      setForm(draftToTripInput(draft));
+      setDraftNotes({ assumptions: draft.assumptions, warnings: draft.warnings });
+    } catch (requestError) {
+      setError(errorMessage(requestError));
+    } finally {
+      setBusy(false);
+    }
   }
 
-  function submit(event: FormEvent<HTMLFormElement>) {
+  async function createTrip(event: FormEvent) {
     event.preventDefault();
-    if (!form.stops.length) {
-      setFormError('Add at least one destination before creating the trip.');
-      stopInputRef.current?.focus();
-      return;
+    setBusy(true);
+    setError(null);
+    try {
+      const data = await graphqlRequest<{ createTrip: Trip }, { input: TripInput }>(operations.createTrip, { input: form });
+      onCreated(data.createTrip);
+    } catch (requestError) {
+      setError(errorMessage(requestError));
+    } finally {
+      setBusy(false);
     }
-    if (form.end < form.start) {
-      setFormError('The end date must be after the start date.');
-      endInputRef.current?.focus();
-      return;
-    }
-    setFormError(null);
-    onCreate(form);
-  }
-
-  function addStop() {
-    const stop = stopInput.trim();
-    if (!stop) return;
-    if (form.stops.length >= 8) {
-      setFormError('This first prototype supports up to eight destinations per trip.');
-      return;
-    }
-    setForm((current) => ({
-      ...current,
-      stops: current.stops.some((item) => item.toLocaleLowerCase() === stop.toLocaleLowerCase())
-        ? current.stops
-        : [...current.stops, stop],
-    }));
-    setStopInput('');
-    setFormError(null);
-  }
-
-  function addStopWithKeyboard(event: ReactKeyboardEvent<HTMLInputElement>) {
-    if (event.key !== 'Enter') return;
-    event.preventDefault();
-    addStop();
   }
 
   return (
-    <ModalFrame titleId="new-trip-title" onClose={onClose} wide>
-      <header className="modal-header">
-        <div>
-          <p className="overline">New journey</p>
-          <h2 id="new-trip-title">Create a trip</h2>
-          <p>Start with the essentials. You can shape everything else later.</p>
-        </div>
-        <button className="modal-close" type="button" onClick={onClose} aria-label="Close">×</button>
-      </header>
-
-      <div className="new-trip-layout">
-        <section className="ai-intake">
-          <div className="ai-intake-title">
-            <span className="proposal-spark" aria-hidden="true">✦</span>
-            <div><strong>Describe your trip</strong><small>Type it or add a voice note.</small></div>
-          </div>
-          <label className="sr-only" htmlFor="intake-prompt">Describe your trip</label>
-          <textarea id="intake-prompt" rows={6} value={prompt} maxLength={800} onChange={(event) => setPrompt(event.target.value)} />
-          <div>
-            <button
-              className="voice-button voice-button-light"
-              type="button"
-              aria-label="Add a voice note"
-              onClick={() => showToast('Voice intake is planned, but this permission-free prototype uses text only.')}
-            >
-              ●
-            </button>
-            <button className="button-ai" type="button" onClick={prefill}>✦ Fill the form</button>
-          </div>
-          <p>TripDock will only prefill the form. You still decide what to create.</p>
-        </section>
-
-        <form className="trip-form" onSubmit={submit}>
-          <label>
-            <span>Trip name</span>
-            <input
-              required
-              value={form.name}
-              maxLength={80}
-              placeholder="e.g. Italy in spring"
-              onChange={(event) => setForm({ ...form, name: event.target.value })}
-            />
-          </label>
-          <label>
-            <span>Destination or trip area</span>
-            <input
-              required
-              value={form.area}
-              maxLength={80}
-              placeholder="Country, region, or city"
-              onChange={(event) => setForm({ ...form, area: event.target.value })}
-            />
-          </label>
-          <div className="form-row">
-            <label>
-              <span>Starts</span>
-              <input type="date" required value={form.start} onChange={(event) => setForm({ ...form, start: event.target.value })} />
-            </label>
-            <label>
-              <span>Ends</span>
-              <input
-                ref={endInputRef}
-                type="date"
-                required
-                min={form.start || undefined}
-                value={form.end}
-                aria-invalid={Boolean(formError && form.end < form.start)}
-                aria-describedby={formError ? 'trip-form-error' : undefined}
-                onChange={(event) => setForm({ ...form, end: event.target.value })}
-              />
-            </label>
-          </div>
-          <label>
-            <span>Travelers</span>
-            <input type="number" min="1" max="20" required value={form.travelers} onChange={(event) => setForm({ ...form, travelers: event.target.value })} />
-          </label>
-          <fieldset>
-            <legend>Destinations</legend>
-            {form.stops.length ? (
-              <div className="destination-chips">
-                {form.stops.map((stop, index) => (
-                  <button
-                    type="button"
-                    key={stop}
-                    onClick={() => setForm({ ...form, stops: form.stops.filter((item) => item !== stop) })}
-                    aria-label={`Remove ${stop}`}
-                    title={`Remove ${stop}`}
-                  >
-                    {index + 1}. {stop} <span aria-hidden="true">×</span>
-                  </button>
-                ))}
-              </div>
-            ) : null}
-            <div className="destination-entry">
-              <input
-                ref={stopInputRef}
-                value={stopInput}
-                maxLength={60}
-                placeholder="Add a city or stop"
-                aria-label="Destination name"
-                aria-invalid={Boolean(formError && !form.stops.length)}
-                aria-describedby={formError ? 'trip-form-error' : undefined}
-                onChange={(event) => setStopInput(event.target.value)}
-                onKeyDown={addStopWithKeyboard}
-              />
-              <button className="add-destination" type="button" onClick={addStop}>＋ Add</button>
-            </div>
-          </fieldset>
-          {formError ? <p className="form-error" id="trip-form-error" role="alert">{formError}</p> : null}
-          <div className="modal-footer form-footer">
-            <button className="button-secondary" type="button" onClick={onClose}>Cancel</button>
-            <button className="button-primary" type="submit">Create trip</button>
-          </div>
-        </form>
+    <Dialog title="Create a trip" eyebrow="New plan" onClose={onClose} wide>
+      <div className="mode-switch" aria-label="Trip creation method">
+        <button className={mode === 'manual' ? 'active' : ''} type="button" aria-pressed={mode === 'manual'} onClick={() => setMode('manual')}>Start manually</button>
+        <button className={mode === 'ai' ? 'active' : ''} type="button" aria-pressed={mode === 'ai'} onClick={() => setMode('ai')}>Draft with TripDock AI</button>
       </div>
-    </ModalFrame>
+      {mode === 'ai' ? (
+        <section className="ai-draft-panel">
+          <div><p className="section-kicker">Unpersisted draft</p><h3>Describe the trip you have in mind</h3><p>TripDock will structure the essentials. Nothing is saved until you review and create it.</p></div>
+          <label htmlFor="ai-draft-prompt">Trip description</label>
+          <textarea id="ai-draft-prompt" rows={4} value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder="Include the places, dates, and number of travelers you already know." />
+          <button className="button-secondary" type="button" disabled={busy || prompt.trim().length < 10} onClick={() => void generateDraft()}>{busy ? 'Generating…' : 'Generate structured draft'}</button>
+          {draftNotes.assumptions.length || draftNotes.warnings.length ? <div className="draft-notes">{draftNotes.assumptions.map((note) => <p key={note}>Assumption: {note}</p>)}{draftNotes.warnings.map((note) => <p key={note}>Check: {note}</p>)}</div> : null}
+        </section>
+      ) : null}
+      <form onSubmit={(event) => void createTrip(event)} aria-busy={busy}>
+        <TripFields value={form} onChange={setForm} />
+        {error ? <p className="form-error" role="alert">{error}</p> : null}
+        <footer className="dialog-footer"><button className="button-text" type="button" onClick={onClose}>Cancel</button><button className="button-primary" type="submit" disabled={busy}>{busy ? 'Saving…' : 'Create trip'}</button></footer>
+      </form>
+    </Dialog>
   );
 }
 
-function ProposalReviewModal({
-  prompt,
-  changes,
-  borgheseAssigned,
-  onClose,
-  onDiscard,
-  onKeep,
-  onApply,
-}: {
-  prompt: string;
-  changes: ProposalChangeId[];
-  borgheseAssigned: boolean;
-  onClose: () => void;
-  onDiscard: () => void;
-  onKeep: () => void;
-  onApply: (included: ProposalChangeId[]) => void;
-}) {
-  const [included, setIncluded] = useState<ProposalChangeId[]>(() => [...changes]);
-  const count = included.length;
+function TripEditor({ trip, onClose, onSaved }: { trip: Trip; onClose: () => void; onSaved: (trip: Trip) => void }) {
+  const [input, setInput] = useState(() => ({ name: trip.name, destinationArea: trip.destinationArea, startDate: trip.startDate, endDate: trip.endDate, travelerCount: trip.travelerCount }));
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  async function save(event: FormEvent) {
+    event.preventDefault(); setBusy(true); setError(null);
+    try {
+      const data = await graphqlRequest<{ updateTrip: Trip }, { id: string; expectedRevision: number; input: typeof input }>(operations.updateTrip, { id: trip.id, expectedRevision: trip.revision, input });
+      onSaved(data.updateTrip);
+    } catch (requestError) { setError(errorMessage(requestError)); } finally { setBusy(false); }
+  }
+  return (
+    <Dialog title="Edit trip essentials" onClose={onClose} wide>
+      <form onSubmit={(event) => void save(event)} aria-busy={busy}><div className="form-stack">
+        <div className="form-grid form-grid-two"><Field label="Trip name"><input required value={input.name} onChange={(e) => setInput({ ...input, name: e.target.value })} /></Field><Field label="Destination area"><input required value={input.destinationArea} onChange={(e) => setInput({ ...input, destinationArea: e.target.value })} /></Field></div>
+        <div className="form-grid form-grid-three"><Field label="Start date"><input required type="date" value={input.startDate} onChange={(e) => setInput({ ...input, startDate: e.target.value })} /></Field><Field label="End date"><input required type="date" min={input.startDate} value={input.endDate} onChange={(e) => setInput({ ...input, endDate: e.target.value })} /></Field><Field label="Travelers"><input required type="number" min="1" max="20" value={input.travelerCount} onChange={(e) => setInput({ ...input, travelerCount: Number(e.target.value) })} /></Field></div>
+      </div>{error ? <p className="form-error" role="alert">{error}</p> : null}<footer className="dialog-footer"><button className="button-text" type="button" onClick={onClose}>Cancel</button><button className="button-primary" type="submit" disabled={busy}>{busy ? 'Saving…' : 'Save changes'}</button></footer></form>
+    </Dialog>
+  );
+}
 
-  function toggleChange(change: ProposalChangeId, checked: boolean) {
-    setIncluded((current) => checked
-      ? [...new Set([...current, change])]
-      : current.filter((item) => item !== change));
+type EntityEditor =
+  | { kind: 'trip' }
+  | { kind: 'stop'; value?: TripStop }
+  | { kind: 'transport'; value?: TransportLeg }
+  | { kind: 'stay'; value?: Stay }
+  | { kind: 'activity'; value?: Activity }
+  | null;
+
+function StopEditor({ trip, stop, onClose, onSaved }: { trip: Trip; stop?: TripStop; onClose: () => void; onSaved: (trip: Trip) => void }) {
+  const [input, setInput] = useState<TripDraftStop>(() => stop ? { name: stop.name, locationText: stop.locationText, arrivalDate: stop.arrivalDate, departureDate: stop.departureDate } : blankStop());
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  async function save(event: FormEvent) {
+    event.preventDefault(); setBusy(true); setError(null);
+    try {
+      const variables = stop ? { id: stop.id, expectedRevision: trip.revision, input } : { tripId: trip.id, expectedRevision: trip.revision, input };
+      const data = await graphqlRequest<Record<string, Trip>, Record<string, unknown>>(stop ? operations.updateStop : operations.addStop, variables);
+      onSaved(data[stop ? 'updateTripStop' : 'addTripStop']!);
+    } catch (requestError) { setError(errorMessage(requestError)); } finally { setBusy(false); }
+  }
+  return (
+    <Dialog title={stop ? 'Edit destination' : 'Add destination'} onClose={onClose}>
+      <form onSubmit={(event) => void save(event)} aria-busy={busy}><div className="form-stack">
+        <Field label="Stop name"><input required value={input.name} onChange={(e) => setInput({ ...input, name: e.target.value })} /></Field>
+        <Field label="Location detail"><input value={input.locationText ?? ''} onChange={(e) => setInput({ ...input, locationText: e.target.value || null })} /></Field>
+        <div className="form-grid form-grid-two"><Field label="Arrival"><input type="date" value={input.arrivalDate ?? ''} onChange={(e) => setInput({ ...input, arrivalDate: e.target.value || null })} /></Field><Field label="Departure"><input type="date" value={input.departureDate ?? ''} onChange={(e) => setInput({ ...input, departureDate: e.target.value || null })} /></Field></div>
+      </div>{error ? <p className="form-error" role="alert">{error}</p> : null}<footer className="dialog-footer"><button className="button-text" type="button" onClick={onClose}>Cancel</button><button className="button-primary" disabled={busy} type="submit">{busy ? 'Saving…' : 'Save destination'}</button></footer></form>
+    </Dialog>
+  );
+}
+
+function TransportEditor({ trip, leg, onClose, onSaved }: { trip: Trip; leg?: TransportLeg; onClose: () => void; onSaved: (trip: Trip) => void }) {
+  const [input, setInput] = useState(() => ({ fromStopId: leg?.fromStopId ?? trip.stops[0]?.id ?? '', toStopId: leg?.toStopId ?? trip.stops[1]?.id ?? trip.stops[0]?.id ?? '', mode: leg?.mode ?? '', title: leg?.title ?? '', details: leg?.details ?? null, departureTime: isoToDateTimeLocal(leg?.departureTime ?? null, leg?.timezone ?? null), arrivalTime: isoToDateTimeLocal(leg?.arrivalTime ?? null, leg?.timezone ?? null), timezone: leg?.timezone ?? null }));
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  async function save(event: FormEvent) {
+    event.preventDefault(); setBusy(true); setError(null);
+    try {
+      const normalized = { ...input, departureTime: dateTimeLocalToIso(input.departureTime, input.timezone), arrivalTime: dateTimeLocalToIso(input.arrivalTime, input.timezone) };
+      const variables = leg ? { id: leg.id, expectedRevision: trip.revision, input: normalized } : { tripId: trip.id, expectedRevision: trip.revision, input: normalized };
+      const data = await graphqlRequest<Record<string, Trip>, Record<string, unknown>>(leg ? operations.updateTransport : operations.addTransport, variables);
+      onSaved(data[leg ? 'updateTransportLeg' : 'addTransportLeg']!);
+    } catch (requestError) { setError(errorMessage(requestError)); } finally { setBusy(false); }
+  }
+  return (
+    <Dialog title={leg ? 'Edit transport' : 'Add transport'} onClose={onClose}>
+      <form onSubmit={(event) => void save(event)} aria-busy={busy}><div className="form-stack">
+        <div className="form-grid form-grid-two"><Field label="From"><select value={input.fromStopId} onChange={(e) => setInput({ ...input, fromStopId: e.target.value })}>{trip.stops.map((stop) => <option value={stop.id} key={stop.id}>{stop.name}</option>)}</select></Field><Field label="To"><select value={input.toStopId} onChange={(e) => setInput({ ...input, toStopId: e.target.value })}>{trip.stops.map((stop) => <option value={stop.id} key={stop.id}>{stop.name}</option>)}</select></Field></div>
+        <div className="form-grid form-grid-two"><Field label="Mode"><input required value={input.mode} onChange={(e) => setInput({ ...input, mode: e.target.value })} placeholder="Train, flight, ferry…" /></Field><Field label="Title"><input required value={input.title} onChange={(e) => setInput({ ...input, title: e.target.value })} /></Field></div>
+        <Field label="Details"><textarea rows={2} value={input.details ?? ''} onChange={(e) => setInput({ ...input, details: e.target.value || null })} /></Field>
+        <div className="form-grid form-grid-two"><Field label="Departure"><input type="datetime-local" value={input.departureTime ?? ''} onChange={(e) => setInput({ ...input, departureTime: e.target.value || null })} /></Field><Field label="Arrival"><input type="datetime-local" value={input.arrivalTime ?? ''} onChange={(e) => setInput({ ...input, arrivalTime: e.target.value || null })} /></Field></div>
+        <Field label="IANA timezone" hint="For example Europe/London"><input value={input.timezone ?? ''} onChange={(e) => setInput({ ...input, timezone: e.target.value || null })} /></Field>
+      </div>{error ? <p className="form-error" role="alert">{error}</p> : null}<footer className="dialog-footer"><button className="button-text" type="button" onClick={onClose}>Cancel</button><button className="button-primary" disabled={busy} type="submit">{busy ? 'Saving…' : 'Save transport'}</button></footer></form>
+    </Dialog>
+  );
+}
+
+function StayEditor({ trip, stay, onClose, onSaved }: { trip: Trip; stay?: Stay; onClose: () => void; onSaved: (trip: Trip) => void }) {
+  const [input, setInput] = useState(() => ({ stopId: stay?.stopId ?? trip.stops[0]?.id ?? '', name: stay?.name ?? '', checkIn: isoToDateTimeLocal(stay?.checkIn ?? null, stay?.timezone ?? null), checkOut: isoToDateTimeLocal(stay?.checkOut ?? null, stay?.timezone ?? null), timezone: stay?.timezone ?? null }));
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  async function save(event: FormEvent) {
+    event.preventDefault(); setBusy(true); setError(null);
+    try {
+      const normalized = { ...input, checkIn: dateTimeLocalToIso(input.checkIn, input.timezone), checkOut: dateTimeLocalToIso(input.checkOut, input.timezone) };
+      const variables = stay ? { id: stay.id, expectedRevision: trip.revision, input: normalized } : { tripId: trip.id, expectedRevision: trip.revision, input: normalized };
+      const data = await graphqlRequest<Record<string, Trip>, Record<string, unknown>>(stay ? operations.updateStay : operations.addStay, variables);
+      onSaved(data[stay ? 'updateStay' : 'addStay']!);
+    } catch (requestError) { setError(errorMessage(requestError)); } finally { setBusy(false); }
+  }
+  return (
+    <Dialog title={stay ? 'Edit stay' : 'Add stay'} onClose={onClose}>
+      <form onSubmit={(event) => void save(event)} aria-busy={busy}><div className="form-stack">
+        <Field label="Destination"><select value={input.stopId} onChange={(e) => setInput({ ...input, stopId: e.target.value })}>{trip.stops.map((stop) => <option value={stop.id} key={stop.id}>{stop.name}</option>)}</select></Field>
+        <Field label="Stay name"><input required value={input.name} onChange={(e) => setInput({ ...input, name: e.target.value })} /></Field>
+        <div className="form-grid form-grid-two"><Field label="Check-in"><input type="datetime-local" value={input.checkIn ?? ''} onChange={(e) => setInput({ ...input, checkIn: e.target.value || null })} /></Field><Field label="Check-out"><input type="datetime-local" value={input.checkOut ?? ''} onChange={(e) => setInput({ ...input, checkOut: e.target.value || null })} /></Field></div>
+        <Field label="IANA timezone"><input value={input.timezone ?? ''} onChange={(e) => setInput({ ...input, timezone: e.target.value || null })} /></Field>
+      </div>{error ? <p className="form-error" role="alert">{error}</p> : null}<footer className="dialog-footer"><button className="button-text" type="button" onClick={onClose}>Cancel</button><button className="button-primary" disabled={busy} type="submit">{busy ? 'Saving…' : 'Save stay'}</button></footer></form>
+    </Dialog>
+  );
+}
+
+function ActivityEditor({ trip, activity, onClose, onSaved }: { trip: Trip; activity?: Activity; onClose: () => void; onSaved: (trip: Trip) => void }) {
+  const [input, setInput] = useState(() => ({ stopId: activity?.stopId ?? trip.stops[0]?.id ?? '', title: activity?.title ?? '', status: activity?.status ?? 'IDEA', scheduledAt: isoToDateTimeLocal(activity?.scheduledAt ?? null, activity?.timezone ?? null), timezone: activity?.timezone ?? null }));
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  async function save(event: FormEvent) {
+    event.preventDefault(); setBusy(true); setError(null);
+    try {
+      const normalized = { ...input, scheduledAt: dateTimeLocalToIso(input.scheduledAt, input.timezone) };
+      const variables = activity ? { id: activity.id, expectedRevision: trip.revision, input: normalized } : { tripId: trip.id, expectedRevision: trip.revision, input: normalized };
+      const data = await graphqlRequest<Record<string, Trip>, Record<string, unknown>>(activity ? operations.updateActivity : operations.addActivity, variables);
+      onSaved(data[activity ? 'updateActivity' : 'addActivity']!);
+    } catch (requestError) { setError(errorMessage(requestError)); } finally { setBusy(false); }
+  }
+  return (
+    <Dialog title={activity ? 'Edit activity' : 'Add activity'} onClose={onClose}>
+      <form onSubmit={(event) => void save(event)} aria-busy={busy}><div className="form-stack">
+        <Field label="Destination"><select value={input.stopId} onChange={(e) => setInput({ ...input, stopId: e.target.value })}>{trip.stops.map((stop) => <option value={stop.id} key={stop.id}>{stop.name}</option>)}</select></Field>
+        <Field label="Activity title"><input required value={input.title} onChange={(e) => setInput({ ...input, title: e.target.value })} /></Field>
+        <div className="form-grid form-grid-two"><Field label="Status"><select value={input.status} onChange={(e) => setInput({ ...input, status: e.target.value as Activity['status'] })}><option value="IDEA">Idea</option><option value="PLANNED">Planned</option><option value="BOOKED">Booked</option><option value="DONE">Done</option></select></Field><Field label="Scheduled time"><input type="datetime-local" value={input.scheduledAt ?? ''} onChange={(e) => setInput({ ...input, scheduledAt: e.target.value || null })} /></Field></div>
+        <Field label="IANA timezone"><input value={input.timezone ?? ''} onChange={(e) => setInput({ ...input, timezone: e.target.value || null })} /></Field>
+      </div>{error ? <p className="form-error" role="alert">{error}</p> : null}<footer className="dialog-footer"><button className="button-text" type="button" onClick={onClose}>Cancel</button><button className="button-primary" disabled={busy} type="submit">{busy ? 'Saving…' : 'Save activity'}</button></footer></form>
+    </Dialog>
+  );
+}
+
+function ProposalOperationDetails({ operation, trip }: { operation: ProposalOperation; trip: Trip }) {
+  const stopNames = new Map(trip.stops.map((stop) => [stop.id, stop.name]));
+  const activityNames = new Map(trip.activities.map((activity) => [activity.id, activity.title]));
+  const label = (key: string) => key.replace(/([A-Z])/g, ' $1').replace(/^./, (letter) => letter.toUpperCase());
+  const display = (key: string, value: unknown) => {
+    if (value === null) return 'Not set';
+    if (key === 'stopId' && typeof value === 'string') return stopNames.get(value) ?? value;
+    if (key === 'activityId' && typeof value === 'string') return activityNames.get(value) ?? value;
+    return String(value);
+  };
+  return <dl className="proposal-payload" aria-label="Exact proposed values">{Object.entries(operation.payload).map(([key, value]) => <div key={key}><dt>{label(key)}</dt><dd>{display(key, value)}</dd></div>)}</dl>;
+}
+
+function ProposalDialog({ proposal, trip, onClose, onApplied, onDiscarded, onStale }: { proposal: Proposal; trip: Trip; onClose: () => void; onApplied: (trip: Trip) => void; onDiscarded: (proposal: Proposal) => void; onStale: () => void }) {
+  const [included, setIncluded] = useState(() => new Set(proposal.operations.filter((operation) => operation.status === 'PENDING').map((operation) => operation.id)));
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState(proposal.status);
+  const [error, setError] = useState<string | null>(proposal.status === 'STALE' ? 'This proposal is out of date because the accepted trip changed.' : null);
+  async function apply() {
+    setBusy(true); setError(null);
+    try {
+      const data = await graphqlRequest<{ applyTripProposal: Trip }, { proposalId: string; includedOperationIds: string[] }>(operations.applyProposal, { proposalId: proposal.id, includedOperationIds: [...included] });
+      onApplied(data.applyTripProposal);
+    } catch (requestError) {
+      if (requestError instanceof TripDockGraphQLError && requestError.code === 'STALE_PROPOSAL') {
+        setStatus('STALE');
+        onStale();
+      }
+      setError(errorMessage(requestError));
+    } finally { setBusy(false); }
+  }
+  async function discard() {
+    setBusy(true); setError(null);
+    try {
+      const data = await graphqlRequest<{ discardTripProposal: Proposal }, { proposalId: string }>(operations.discardProposal, { proposalId: proposal.id });
+      onDiscarded(data.discardTripProposal);
+    } catch (requestError) { setError(errorMessage(requestError)); } finally { setBusy(false); }
+  }
+  return (
+    <Dialog title="Review proposed changes" eyebrow="Human approval required" onClose={onClose} wide>
+      <section className="proposal-summary"><div><span className={`proposal-status status-${status.toLowerCase()}`}>{status}</span><h3>{proposal.summary}</h3><p>{proposal.prompt}</p></div><small>Prepared with {proposal.model} from trip revision {proposal.baseTripRevision}. Current revision: {trip.revision}.</small></section>
+      <div className="proposal-operations">
+        {proposal.operations.map((operation) => { const checked = included.has(operation.id); return <label className={`proposal-operation ${checked ? 'selected' : ''}`} key={operation.id}><input type="checkbox" checked={checked} disabled={status !== 'PENDING' || busy} onChange={() => setIncluded((current) => toggleSelectedOperation(current, operation.id))} /><span><small>{operation.operationType.replaceAll('_', ' ')}</small><strong>{operation.description}</strong><ProposalOperationDetails operation={operation} trip={trip} /></span></label>; })}
+      </div>
+      {error ? <p className="form-error" role="alert">{error}</p> : null}
+      <footer className="dialog-footer dialog-footer-split"><button className="button-text button-danger" type="button" disabled={busy || !['PENDING', 'STALE'].includes(status)} onClick={() => void discard()}>Discard proposal</button><div><button className="button-secondary" type="button" onClick={onClose}>Keep for later</button><button className="button-primary" type="button" disabled={busy || status !== 'PENDING' || included.size === 0} onClick={() => void apply()}>{busy ? 'Working…' : `Apply ${included.size} selected`}</button></div></footer>
+    </Dialog>
+  );
+}
+
+function Section({ title, kicker, action, children }: { title: string; kicker: string; action?: ReactNode; children: ReactNode }) {
+  return <section className="detail-section"><header className="section-heading"><div><p className="section-kicker">{kicker}</p><h2>{title}</h2></div>{action}</header>{children}</section>;
+}
+
+function TripDetail({ trip, onBack, onChanged, onDeleted, notify }: { trip: Trip; onBack: () => void; onChanged: (trip: Trip) => void; onDeleted: () => void; notify: (notice: Notice) => void }) {
+  const [editor, setEditor] = useState<EntityEditor>(null);
+  const [proposalPrompt, setProposalPrompt] = useState('');
+  const [reviewProposal, setReviewProposal] = useState<Proposal | null>(null);
+  const [proposalBusy, setProposalBusy] = useState(false);
+  const [proposalError, setProposalError] = useState<string | null>(null);
+  const stopNames = useMemo(() => new Map(trip.stops.map((stop) => [stop.id, stop.name])), [trip.stops]);
+
+  async function removeEntity(kind: 'stop' | 'transport' | 'stay' | 'activity', id: string) {
+    if (!window.confirm(`Remove this ${kind}? This cannot be undone.`)) return;
+    const operation = { stop: operations.removeStop, transport: operations.removeTransport, stay: operations.removeStay, activity: operations.removeActivity }[kind];
+    const field = { stop: 'removeTripStop', transport: 'removeTransportLeg', stay: 'removeStay', activity: 'removeActivity' }[kind];
+    try {
+      const data = await graphqlRequest<Record<string, Trip>, { id: string; expectedRevision: number }>(operation, { id, expectedRevision: trip.revision });
+      onChanged(data[field]!);
+      notify({ tone: 'success', message: `${kind[0]?.toUpperCase()}${kind.slice(1)} removed.` });
+    } catch (requestError) { notify({ tone: 'error', message: errorMessage(requestError) }); }
   }
 
-  function changeIndex(change: ProposalChangeId) {
-    return String(changes.indexOf(change) + 1).padStart(2, '0');
+  async function moveStop(index: number, direction: -1 | 1) {
+    const nextIndex = index + direction;
+    if (nextIndex < 0 || nextIndex >= trip.stops.length) return;
+    const ids = trip.stops.map((stop) => stop.id);
+    [ids[index], ids[nextIndex]] = [ids[nextIndex]!, ids[index]!];
+    try {
+      const data = await graphqlRequest<{ reorderTripStops: Trip }, { tripId: string; expectedRevision: number; stopIds: string[] }>(operations.reorderStops, { tripId: trip.id, expectedRevision: trip.revision, stopIds: ids });
+      onChanged(data.reorderTripStops);
+    } catch (requestError) { notify({ tone: 'error', message: errorMessage(requestError) }); }
+  }
+
+  async function prepareProposal(event: FormEvent) {
+    event.preventDefault(); setProposalBusy(true); setProposalError(null);
+    try {
+      const data = await graphqlRequest<{ prepareTripProposal: Proposal }, { tripId: string; prompt: string }>(operations.prepareProposal, { tripId: trip.id, prompt: proposalPrompt });
+      const proposal = data.prepareTripProposal;
+      onChanged({ ...trip, proposals: [proposal, ...trip.proposals.filter((item) => item.id !== proposal.id)] });
+      setReviewProposal(proposal); setProposalPrompt('');
+    } catch (requestError) { setProposalError(errorMessage(requestError)); } finally { setProposalBusy(false); }
+  }
+
+  async function refreshTrip() {
+    try {
+      const data = await graphqlRequest<{ trip: Trip | null }, { id: string }>(operations.trip, { id: trip.id });
+      if (data.trip) onChanged(data.trip);
+    } catch (requestError) { notify({ tone: 'error', message: errorMessage(requestError) }); }
+  }
+
+  function recordDiscardedProposal(discarded: Proposal) {
+    setReviewProposal(null);
+    onChanged({
+      ...trip,
+      proposals: trip.proposals.map((proposal) => proposal.id === discarded.id ? discarded : proposal),
+    });
+    notify({ tone: 'success', message: 'Proposal discarded. Accepted trip data was unchanged.' });
+  }
+
+  async function deleteTrip() {
+    if (!window.confirm(`Delete “${trip.name}” and all of its itinerary data?`)) return;
+    try {
+      await graphqlRequest<{ deleteTrip: boolean }, { id: string; expectedRevision: number }>(operations.deleteTrip, { id: trip.id, expectedRevision: trip.revision });
+      onDeleted();
+    } catch (requestError) { notify({ tone: 'error', message: errorMessage(requestError) }); }
   }
 
   return (
-    <ModalFrame titleId="review-title" onClose={onClose} wide>
-      <header className="modal-header review-header">
-        <div>
-          <p className="overline">TripDock proposal</p>
-          <h2 id="review-title">Review {count} proposed {count === 1 ? 'change' : 'changes'}</h2>
-          <p>Nothing below is part of the accepted trip yet.</p>
-        </div>
-        <button className="modal-close" type="button" onClick={onClose} aria-label="Close">×</button>
-      </header>
+    <main id="main-content" className="detail-page" tabIndex={-1}>
+      <button className="back-button" type="button" onClick={onBack}>← All trips</button>
+      <section className="trip-hero"><div><p className="overline">{trip.destinationArea}</p><h1>{trip.name}</h1><p>{formatDateRange(trip.startDate, trip.endDate)} · {trip.travelerCount} {trip.travelerCount === 1 ? 'traveler' : 'travelers'} · revision {trip.revision}</p></div><div className="hero-actions"><button className="button-secondary" type="button" onClick={() => setEditor({ kind: 'trip' })}>Edit trip</button><button className="button-text button-danger" type="button" onClick={() => void deleteTrip()}>Delete</button></div></section>
+      <div className="route-ribbon" aria-label={`Route: ${trip.stops.map((stop) => stop.name).join(' to ')}`}>{trip.stops.map((stop, index) => <span key={stop.id}><i aria-hidden="true">{index + 1}</i>{stop.name}</span>)}</div>
 
-      <blockquote className="original-request">
-        “{prompt}”
-      </blockquote>
+      <Section title="Destinations" kicker="Ordered route" action={<button className="button-secondary" type="button" onClick={() => setEditor({ kind: 'stop' })}>+ Add destination</button>}>
+        <div className="entity-list">{trip.stops.map((stop, index) => <article className="entity-card stop-card" key={stop.id}><span className="position-badge">{index + 1}</span><div className="entity-copy"><h3>{stop.name}</h3><p>{stop.locationText ?? 'No location detail'} · {stop.arrivalDate ?? 'Arrival open'} → {stop.departureDate ?? 'Departure open'}</p></div><div className="entity-actions"><button className="icon-button" type="button" disabled={index === 0} aria-label={`Move ${stop.name} earlier`} onClick={() => void moveStop(index, -1)}>↑</button><button className="icon-button" type="button" disabled={index === trip.stops.length - 1} aria-label={`Move ${stop.name} later`} onClick={() => void moveStop(index, 1)}>↓</button><button className="button-text" type="button" aria-label={`Edit destination ${stop.name}`} onClick={() => setEditor({ kind: 'stop', value: stop })}>Edit</button><button className="button-text button-danger" type="button" aria-label={`Remove destination ${stop.name}`} disabled={trip.stops.length === 1} onClick={() => void removeEntity('stop', stop.id)}>Remove</button></div></article>)}</div>
+      </Section>
 
-      <div className="change-list">
-        {changes.includes('move-vatican') ? (
-          <label className={`change-card ${included.includes('move-vatican') ? '' : 'change-card-muted'}`}>
-            <input
-              type="checkbox"
-              checked={included.includes('move-vatican')}
-              onChange={(event) => toggleChange('move-vatican', event.target.checked)}
-            />
-            <span className="change-index">{changeIndex('move-vatican')}</span>
-            <span className="change-copy">
-              <strong>Move Vatican Museums</strong>
-              <span className="before-after">
-                <span><small>Before</small>Tue, Apr 13 · 09:30</span>
-                <i aria-hidden="true">→</i>
-                <span><small>After</small>Wed, Apr 14 · 09:30</span>
-              </span>
-              <em><span aria-hidden="true">!</span> This activity is confirmed. Its booking time will not change automatically.</em>
-            </span>
-          </label>
-        ) : null}
+      <Section title="Transport" kicker="Between destinations" action={<button className="button-secondary" type="button" disabled={trip.stops.length < 2} onClick={() => setEditor({ kind: 'transport' })}>+ Add transport</button>}>
+        {trip.transportLegs.length ? <div className="entity-list">{trip.transportLegs.map((leg) => <article className="entity-card" key={leg.id}><div className="entity-icon" aria-hidden="true">↗</div><div className="entity-copy"><span className="entity-label">{leg.mode}</span><h3>{leg.title}</h3><p>{stopNames.get(leg.fromStopId)} → {stopNames.get(leg.toStopId)}</p><small>{formatDateTime(leg.departureTime, leg.timezone)}{leg.details ? ` · ${leg.details}` : ''}</small></div><div className="entity-actions"><button className="button-text" type="button" aria-label={`Edit transport ${leg.title}`} onClick={() => setEditor({ kind: 'transport', value: leg })}>Edit</button><button className="button-text button-danger" type="button" aria-label={`Remove transport ${leg.title}`} onClick={() => void removeEntity('transport', leg.id)}>Remove</button></div></article>)}</div> : <p className="section-empty">No transport legs yet. Add one when you know how you’ll move between stops.</p>}
+      </Section>
 
-        {changes.includes('schedule-borghese') ? (
-          <label className={`change-card ${included.includes('schedule-borghese') ? '' : 'change-card-muted'}`}>
-            <input
-              type="checkbox"
-              checked={included.includes('schedule-borghese')}
-              onChange={(event) => toggleChange('schedule-borghese', event.target.checked)}
-            />
-            <span className="change-index">{changeIndex('schedule-borghese')}</span>
-            <span className="change-copy">
-              <strong>{borgheseAssigned ? 'Move Borghese Gallery' : 'Schedule Borghese Gallery'}</strong>
-              <span className="before-after">
-                <span><small>Before</small>{borgheseAssigned ? 'Wed, Apr 14 · 14:00' : 'Unscheduled idea'}</span>
-                <i aria-hidden="true">→</i>
-                <span><small>After</small>Tue, Apr 13 · 15:00</span>
-              </span>
-              {borgheseAssigned ? (
-                <em><span aria-hidden="true">!</span> This replaces the Wednesday assignment you already accepted.</em>
-              ) : null}
-            </span>
-          </label>
-        ) : null}
+      <div className="detail-columns">
+        <Section title="Stays" kicker="Accommodation" action={<button className="button-secondary" type="button" onClick={() => setEditor({ kind: 'stay' })}>+ Add stay</button>}>
+          {trip.stays.length ? <div className="entity-list compact-list">{trip.stays.map((stay) => <article className="entity-card" key={stay.id}><div className="entity-copy"><span className="entity-label">{stopNames.get(stay.stopId)}</span><h3>{stay.name}</h3><small>{formatDateTime(stay.checkIn, stay.timezone)} → {formatDateTime(stay.checkOut, stay.timezone)}</small></div><div className="entity-actions"><button className="button-text" type="button" aria-label={`Edit stay ${stay.name}`} onClick={() => setEditor({ kind: 'stay', value: stay })}>Edit</button><button className="button-text button-danger" type="button" aria-label={`Remove stay ${stay.name}`} onClick={() => void removeEntity('stay', stay.id)}>Remove</button></div></article>)}</div> : <p className="section-empty">No stays added.</p>}
+        </Section>
+        <Section title="Activities" kicker="Ideas and plans" action={<button className="button-secondary" type="button" onClick={() => setEditor({ kind: 'activity' })}>+ Add activity</button>}>
+          {trip.activities.length ? <div className="entity-list compact-list">{trip.activities.map((activity) => <article className="entity-card" key={activity.id}><div className="entity-copy"><span className={`entity-label activity-${activity.status.toLowerCase()}`}>{activity.status} · {stopNames.get(activity.stopId)}</span><h3>{activity.title}</h3><small>{formatDateTime(activity.scheduledAt, activity.timezone)}</small></div><div className="entity-actions"><button className="button-text" type="button" aria-label={`Edit activity ${activity.title}`} onClick={() => setEditor({ kind: 'activity', value: activity })}>Edit</button><button className="button-text button-danger" type="button" aria-label={`Remove activity ${activity.title}`} onClick={() => void removeEntity('activity', activity.id)}>Remove</button></div></article>)}</div> : <p className="section-empty">No activities added.</p>}
+        </Section>
       </div>
 
-      <footer className="modal-footer review-footer">
-        <button className="button-text button-danger" type="button" onClick={onDiscard}>Discard</button>
-        <div>
-          <button className="button-secondary" type="button" onClick={onKeep}>Keep for later</button>
-          <button className="button-primary" type="button" disabled={!count} onClick={() => onApply(included)}>
-            Apply {count} {count === 1 ? 'change' : 'changes'}
-          </button>
-        </div>
-      </footer>
-    </ModalFrame>
+      <Section title="Ask TripDock to adjust this trip" kicker="AI proposals">
+        <form className="proposal-composer" onSubmit={(event) => void prepareProposal(event)} aria-busy={proposalBusy}><Logo compact /><div><label htmlFor="proposal-prompt">Describe a change</label><textarea id="proposal-prompt" rows={3} value={proposalPrompt} onChange={(event) => setProposalPrompt(event.target.value)} placeholder="Ask for a trip-essential or activity change. You’ll review every operation before anything is applied." /></div><button className="button-primary" type="submit" disabled={proposalBusy || proposalPrompt.trim().length < 3}>{proposalBusy ? 'Preparing…' : 'Prepare proposal'}</button></form>
+        {proposalError ? <p className="form-error" role="alert">{proposalError}</p> : null}
+        {trip.proposals.filter((proposal) => ['PENDING', 'STALE'].includes(proposal.status)).length ? <div className="saved-proposals"><h3>Saved for review</h3>{trip.proposals.filter((proposal) => ['PENDING', 'STALE'].includes(proposal.status)).map((proposal) => <button type="button" key={proposal.id} onClick={() => setReviewProposal(proposal)}><span><strong>{proposal.summary}</strong><small>{proposal.status} · {proposal.operations.length} operations</small></span><span aria-hidden="true">Review →</span></button>)}</div> : null}
+      </Section>
+
+      {editor?.kind === 'trip' ? <TripEditor trip={trip} onClose={() => setEditor(null)} onSaved={(updated) => { setEditor(null); onChanged(updated); }} /> : null}
+      {editor?.kind === 'stop' ? <StopEditor trip={trip} stop={editor.value} onClose={() => setEditor(null)} onSaved={(updated) => { setEditor(null); onChanged(updated); }} /> : null}
+      {editor?.kind === 'transport' ? <TransportEditor trip={trip} leg={editor.value} onClose={() => setEditor(null)} onSaved={(updated) => { setEditor(null); onChanged(updated); }} /> : null}
+      {editor?.kind === 'stay' ? <StayEditor trip={trip} stay={editor.value} onClose={() => setEditor(null)} onSaved={(updated) => { setEditor(null); onChanged(updated); }} /> : null}
+      {editor?.kind === 'activity' ? <ActivityEditor trip={trip} activity={editor.value} onClose={() => setEditor(null)} onSaved={(updated) => { setEditor(null); onChanged(updated); }} /> : null}
+      {reviewProposal ? <ProposalDialog proposal={reviewProposal} trip={trip} onClose={() => setReviewProposal(null)} onApplied={(updated) => { setReviewProposal(null); onChanged(updated); notify({ tone: 'success', message: 'Selected proposal operations were applied.' }); }} onDiscarded={recordDiscardedProposal} onStale={() => void refreshTrip()} /> : null}
+    </main>
+  );
+}
+
+function TripsOverview({ trips, onCreate, onOpen }: { trips: Trip[]; onCreate: () => void; onOpen: (id: string) => void }) {
+  return (
+    <main id="main-content" className="page-wrap" tabIndex={-1}>
+      <section className="page-heading"><div><p className="overline">Your travel plans</p><h1>Your trips</h1><p className="page-intro">Real plans, in the order you’ll need them.</p></div><button className="button-primary" type="button" onClick={onCreate}>+ New trip</button></section>
+      {trips.length === 0 ? (
+        <section className="empty-state"><Logo /><span className="empty-mark" aria-hidden="true">01</span><h2>Your first trip starts here</h2><p>Create the essentials yourself or ask TripDock AI for a structured draft. Your accepted plan will be stored in PostgreSQL.</p><button className="button-primary" type="button" onClick={onCreate}>Create your first trip</button></section>
+      ) : (
+        <section className="trips-grid" aria-label="Trips">{trips.map((trip) => <article className="trip-card-real" key={trip.id}><div className="trip-card-art" aria-hidden="true"><span>{trip.stops[0]?.name.slice(0, 2).toUpperCase() ?? 'TD'}</span><small>{trip.destinationArea}</small></div><div className="trip-card-content"><div><p className="trip-eyebrow">{formatDateRange(trip.startDate, trip.endDate)}</p><h2>{trip.name}</h2><p>{trip.travelerCount} {trip.travelerCount === 1 ? 'traveler' : 'travelers'} · {trip.stops.length} {trip.stops.length === 1 ? 'destination' : 'destinations'}</p></div><div className="route-ribbon route-ribbon-card">{trip.stops.map((stop, index) => <span key={stop.id}><i>{index + 1}</i>{stop.name}</span>)}</div><div className="trip-card-stats"><span>{trip.transportLegs.length} transport</span><span>{trip.stays.length} stays</span><span>{trip.activities.length} activities</span></div><button className="button-text trip-open" type="button" onClick={() => onOpen(trip.id)}>Open trip <span aria-hidden="true">→</span></button></div></article>)}</section>
+      )}
+    </main>
   );
 }
 
 export function TripDockApp() {
-  const [prototype, setPrototype] = useState<PrototypeState>(() => createInitialPrototypeState());
-  const [stateLoaded, setStateLoaded] = useState(false);
-  const [storageMode, setStorageMode] = useState<'durable' | 'memory'>('durable');
-  const [view, setView] = useState<'trips' | 'detail'>('trips');
+  const [state, setState] = useState<LoadState>({ kind: 'loading' });
   const [selectedTripId, setSelectedTripId] = useState<string | null>(null);
-  const [newTripOpen, setNewTripOpen] = useState(false);
-  const [reviewOpen, setReviewOpen] = useState(false);
-  const [toast, setToast] = useState<string | null>(null);
-  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const proposalTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [notice, setNotice] = useState<Notice>(null);
 
   useEffect(() => {
-    try {
-      setPrototype(restorePrototypeState(window.localStorage.getItem(PROTOTYPE_STORAGE_KEY)));
-      setStorageMode('durable');
-    } catch {
-      setPrototype(createInitialPrototypeState());
-      setStorageMode('memory');
-    } finally {
-      setStateLoaded(true);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!stateLoaded) return;
-    try {
-      const serialized = JSON.stringify(prototype);
-      if (window.localStorage.getItem(PROTOTYPE_STORAGE_KEY) !== serialized) {
-        window.localStorage.setItem(PROTOTYPE_STORAGE_KEY, serialized);
-      }
-      setStorageMode('durable');
-    } catch {
-      setStorageMode('memory');
-    }
-  }, [prototype, stateLoaded]);
-
-  useEffect(() => {
-    function syncExternalPrototype(event: StorageEvent) {
-      if (event.key !== PROTOTYPE_STORAGE_KEY || !event.newValue) return;
-      setPrototype(restorePrototypeState(event.newValue));
-      setStorageMode('durable');
-    }
-
-    window.addEventListener('storage', syncExternalPrototype);
-    return () => window.removeEventListener('storage', syncExternalPrototype);
-  }, []);
-
-  useEffect(() => () => {
-    if (toastTimer.current) clearTimeout(toastTimer.current);
-    if (proposalTimer.current) clearTimeout(proposalTimer.current);
-  }, []);
-
-  function showToast(message: string) {
-    setToast(message);
-    if (toastTimer.current) clearTimeout(toastTimer.current);
-    toastTimer.current = setTimeout(() => setToast(null), 3200);
-  }
-
-  function showTrips() {
-    setView('trips');
-    setSelectedTripId(null);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-    window.requestAnimationFrame(() => document.getElementById('main-content')?.focus());
-  }
-
-  function showDetail(tripId: string) {
-    setSelectedTripId(tripId);
-    setView('detail');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-    window.requestAnimationFrame(() => document.getElementById('main-content')?.focus());
-  }
-
-  function assignRomeActivity(id: string) {
-    setPrototype((current) => ({
-      ...current,
-      assignedRomeActivities: current.assignedRomeActivities.includes(id)
-        ? current.assignedRomeActivities
-        : [...current.assignedRomeActivities, id],
-    }));
-  }
-
-  function requestProposal(prompt: string) {
-    const recognizedChanges = proposalChangesFromPrompt(prompt);
-    const pendingChanges = recognizedChanges.filter(
-      (change) => !prototype.acceptedRomeChanges.includes(change),
+    const controller = new AbortController();
+    graphqlRequest<{ trips: Trip[] }, Record<string, never>>(operations.trips, {}, controller.signal).then(
+      (data) => setState({ kind: 'ready', trips: data.trips }),
+      (error) => {
+        if (!(error instanceof DOMException && error.name === 'AbortError')) setState({ kind: 'error', message: errorMessage(error) });
+      },
     );
-    if (!recognizedChanges.length) {
-      showToast('This local fixture recognizes requests about the Vatican Museums and Borghese Gallery.');
-      return;
-    }
-    if (!pendingChanges.length) {
-      showToast('Those itinerary changes are already part of the accepted trip.');
-      return;
-    }
-    if (proposalTimer.current) clearTimeout(proposalTimer.current);
-    setPrototype((current) => ({
-      ...current,
-      proposal: { status: 'loading', prompt, changes: pendingChanges },
-    }));
-    proposalTimer.current = setTimeout(() => {
-      setPrototype((current) => ({
-        ...current,
-        proposal: current.proposal.status === 'loading'
-          ? { ...current.proposal, status: 'ready' }
-          : current.proposal,
-      }));
-    }, 900);
+    return () => controller.abort();
+  }, []);
+
+  useEffect(() => {
+    if (state.kind !== 'ready') return;
+    window.scrollTo({ top: 0, behavior: 'auto' });
+    const frame = window.requestAnimationFrame(() => {
+      document.getElementById('main-content')?.focus();
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [selectedTripId, state.kind]);
+
+  function replaceTrip(trip: Trip) {
+    setState((current) => {
+      if (current.kind !== 'ready') return current;
+      const exists = current.trips.some((item) => item.id === trip.id);
+      return { kind: 'ready', trips: exists ? current.trips.map((item) => item.id === trip.id ? trip : item) : [trip, ...current.trips] };
+    });
   }
 
-  function createTrip(draft: TripDraft) {
-    try {
-      const trip = createTripFromDraft(draft);
-      setPrototype((current) => ({ ...current, trips: [trip, ...current.trips] }));
-      setNewTripOpen(false);
-      showDetail(trip.id);
-      showToast(`Trip created and saved ${storageMode === 'durable' ? 'on this device' : 'for this session'}.`);
-    } catch (error) {
-      showToast(error instanceof Error ? error.message : 'The trip could not be created.');
-    }
+  function retry() {
+    setState({ kind: 'loading' });
+    graphqlRequest<{ trips: Trip[] }, Record<string, never>>(operations.trips, {}).then(
+      (data) => setState({ kind: 'ready', trips: data.trips }),
+      (error) => setState({ kind: 'error', message: errorMessage(error) }),
+    );
   }
 
-  const selectedTrip = prototype.trips.find((trip) => trip.id === selectedTripId);
-  const storageLabel = storageMode === 'durable' ? 'on this device' : 'for this session';
+  const selectedTrip = state.kind === 'ready' ? state.trips.find((trip) => trip.id === selectedTripId) : undefined;
 
   return (
-    <div id="top" className="app-shell">
+    <div className="app-shell">
       <a className="skip-link" href="#main-content">Skip to main content</a>
-      <AppHeader
-        detail={view === 'detail'}
-        onHome={showTrips}
-        onProfile={() => showToast(`Local prototype mode · Trip data is saved ${storageLabel}.`)}
-      />
-
-      {view === 'trips' ? (
-        <TripsOverview
-          trips={prototype.trips}
-          onNewTrip={() => setNewTripOpen(true)}
-          onOpenTrip={showDetail}
-        />
-      ) : selectedTrip?.id === 'italy-spring-2027' ? (
-        <TripDetail
-          onBack={showTrips}
-          showToast={showToast}
-          proposal={prototype.proposal}
-          acceptedChanges={prototype.acceptedRomeChanges}
-          assignedActivities={prototype.assignedRomeActivities}
-          storageLabel={storageLabel}
-          onAssignActivity={assignRomeActivity}
-          onRequestProposal={requestProposal}
-          onReviewProposal={() => setReviewOpen(true)}
-        />
-      ) : selectedTrip ? (
-        <TripOutlineDetail
-          trip={selectedTrip}
-          onBack={showTrips}
-          showToast={showToast}
-          storageLabel={storageLabel}
-        />
-      ) : (
-        <TripsOverview
-          trips={prototype.trips}
-          onNewTrip={() => setNewTripOpen(true)}
-          onOpenTrip={showDetail}
-        />
-      )}
-
-      <footer className="site-footer">
-        <p>TripDock · A calmer place for the whole journey.</p>
-      </footer>
-
-      {newTripOpen ? (
-        <NewTripModal
-          onClose={() => setNewTripOpen(false)}
-          onCreate={createTrip}
-          showToast={showToast}
-        />
-      ) : null}
-
-      {reviewOpen ? (
-        <ProposalReviewModal
-          prompt={prototype.proposal.prompt}
-          changes={prototype.proposal.changes}
-          borgheseAssigned={prototype.assignedRomeActivities.includes('borghese')}
-          onClose={() => setReviewOpen(false)}
-          onDiscard={() => {
-            setReviewOpen(false);
-            setPrototype((current) => ({
-              ...current,
-              proposal: { ...current.proposal, status: 'idle', changes: [] },
-            }));
-            showToast('Proposal discarded. The trip was not changed.');
-            window.requestAnimationFrame(() => document.getElementById('main-content')?.focus());
-          }}
-          onKeep={() => {
-            setReviewOpen(false);
-            setPrototype((current) => ({
-              ...current,
-              proposal: { ...current.proposal, status: 'kept' },
-            }));
-            showToast(`Proposal saved ${storageLabel}.`);
-          }}
-          onApply={(included) => {
-            setReviewOpen(false);
-            setPrototype((current) => applyProposalChanges(current, included));
-            showToast(`${included.length} ${included.length === 1 ? 'change' : 'changes'} applied and saved ${storageLabel}.`);
-            window.requestAnimationFrame(() => document.getElementById('main-content')?.focus());
-          }}
-        />
-      ) : null}
-
-      {toast ? <div className="toast" role="status"><span aria-hidden="true">✓</span>{toast}</div> : null}
+      <header className="site-header"><div className="header-inner"><button className="logo-button" type="button" onClick={() => setSelectedTripId(null)} aria-label="TripDock trips home"><Logo /></button><nav aria-label="Primary"><button type="button" className="nav-link nav-link-active" onClick={() => setSelectedTripId(null)}>Trips</button></nav><span className="local-badge">Local workspace</span></div></header>
+      {state.kind === 'loading' ? <main id="main-content" className="state-page" aria-busy="true"><Logo /><div className="loader" aria-hidden="true" /><h1>Opening your trips</h1><p>Connecting to the local TripDock database…</p></main> : null}
+      {state.kind === 'error' ? <main id="main-content" className="state-page error-state"><Logo /><h1>TripDock could not open your data</h1><p role="alert">{state.message}</p><button className="button-primary" type="button" onClick={retry}>Retry connection</button></main> : null}
+      {state.kind === 'ready' && !selectedTrip ? <TripsOverview trips={state.trips} onCreate={() => setCreateOpen(true)} onOpen={setSelectedTripId} /> : null}
+      {state.kind === 'ready' && selectedTrip ? <TripDetail trip={selectedTrip} onBack={() => setSelectedTripId(null)} onChanged={replaceTrip} onDeleted={() => { setState({ kind: 'ready', trips: state.trips.filter((trip) => trip.id !== selectedTrip.id) }); setSelectedTripId(null); setNotice({ tone: 'success', message: 'Trip deleted.' }); }} notify={setNotice} /> : null}
+      <footer className="site-footer"><p>TripDock · PostgreSQL keeps the plan; you approve every AI change.</p></footer>
+      {createOpen ? <CreateTripDialog onClose={() => setCreateOpen(false)} onCreated={(trip) => { setCreateOpen(false); replaceTrip(trip); setSelectedTripId(trip.id); setNotice({ tone: 'success', message: 'Trip created and saved to PostgreSQL.' }); }} /> : null}
+      {notice ? <div className={`notice notice-${notice.tone}`} role={notice.tone === 'error' ? 'alert' : 'status'}><span>{notice.message}</span><button type="button" onClick={() => setNotice(null)} aria-label="Dismiss message">×</button></div> : null}
     </div>
   );
 }
