@@ -10,6 +10,7 @@ import {
   trips,
   tripStops,
 } from './db/schema.js';
+import { compareStopsByDate } from './domain.js';
 
 export type ProposalView = typeof aiProposals.$inferSelect & {
   operations: Array<typeof aiProposalOperations.$inferSelect>;
@@ -44,7 +45,7 @@ export async function loadTrip(
   const [trip] = await db.select().from(trips).where(eq(trips.id, id)).limit(1);
   if (!trip) return null;
 
-  const [stopsList, transportList, staysList, activityList, proposalList] =
+  const [storedStops, transportList, staysList, activityList, proposalList] =
     await Promise.all([
       db
         .select()
@@ -72,6 +73,10 @@ export async function loadTrip(
         .where(eq(aiProposals.tripId, id))
         .orderBy(desc(aiProposals.createdAt)),
     ]);
+
+  const stopsList = [...storedStops]
+    .sort(compareStopsByDate)
+    .map((stop, position) => ({ ...stop, position }));
 
   const proposalViews = await Promise.all(
     proposalList.map(async (proposal) => {

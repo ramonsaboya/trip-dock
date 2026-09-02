@@ -159,7 +159,13 @@ type TripResult = {
   endDate: string;
   travelerCount: number;
   revision: number;
-  stops: Array<{ id: string; name: string; position: number }>;
+  stops: Array<{
+    id: string;
+    name: string;
+    position: number;
+    arrivalDate: string | null;
+    departureDate: string | null;
+  }>;
   transportLegs: Array<{ id: string }>;
   stays: Array<{ id: string }>;
   activities: Array<{ id: string; title: string }>;
@@ -236,6 +242,8 @@ test('manual GraphQL data persists across API instances and every edit bumps rev
     trip = addStop.data!.addTripStop;
     assert.equal(trip.revision, 1);
     assert.equal(trip.stops.at(-1)?.name, 'Clifftop');
+    assert.equal(trip.stops.at(-1)?.arrivalDate, '2027-06-06');
+    assert.equal(trip.stops.at(-1)?.departureDate, null);
 
     const reordered = await gql<{ reorderTripStops: TripResult }>(
       restartedApi,
@@ -250,7 +258,7 @@ test('manual GraphQL data persists across API instances and every edit bumps rev
     );
     trip = reordered.data!.reorderTripStops;
     assert.equal(trip.revision, 2);
-    assert.equal(trip.stops[0]?.name, 'Clifftop');
+    assert.deepEqual(trip.stops.map((stop) => stop.name), ['Harbor', 'Old town', 'Clifftop']);
 
     const [from, to] = trip.stops;
     const transport = await gql<{ addTransportLeg: TripResult }>(
@@ -306,6 +314,228 @@ test('manual GraphQL data persists across API instances and every edit bumps rev
     trip = activity.data!.addActivity;
     assert.equal(trip.revision, 5);
     assert.equal(trip.activities[0]?.title, 'Sunset walk');
+  } finally {
+    await harness.pool.end();
+  }
+});
+
+test('trip boundaries and destination dates synchronize while destinations stay date-ordered', async () => {
+  const harness = await createHarness();
+  try {
+    const inferred = await gql<{ createTrip: TripResult }>(harness.yoga, createTripMutation, {
+      input: {
+        name: 'Chronological journey',
+        destinationArea: 'Two places',
+        startDate: null,
+        endDate: null,
+        travelerCount: 2,
+        stops: [
+          {
+            name: 'Later place',
+            locationText: null,
+            arrivalDate: '2027-06-04',
+            departureDate: '2027-06-07',
+          },
+          {
+            name: 'Earlier place',
+            locationText: null,
+            arrivalDate: '2027-06-01',
+            departureDate: '2027-06-04',
+          },
+        ],
+      },
+    });
+    assert.equal(inferred.errors, undefined);
+    let trip = inferred.data!.createTrip;
+    assert.equal(trip.startDate, '2027-06-01');
+    assert.equal(trip.endDate, '2027-06-07');
+    assert.deepEqual(
+      trip.stops.map(({ name, position }) => ({ name, position })),
+      [
+        { name: 'Earlier place', position: 0 },
+        { name: 'Later place', position: 1 },
+      ],
+    );
+
+    const changedTripDates = await gql<{ updateTrip: TripResult }>(
+      harness.yoga,
+      `mutation Update($id: ID!, $revision: Int!, $input: UpdateTripInput!) {
+        updateTrip(id: $id, expectedRevision: $revision, input: $input) { ${tripFields} }
+      }`,
+      {
+        id: trip.id,
+        revision: trip.revision,
+        input: {
+          name: trip.name,
+          destinationArea: trip.destinationArea,
+          startDate: '2027-05-31',
+          endDate: '2027-06-08',
+          travelerCount: trip.travelerCount,
+        },
+      },
+    );
+    assert.equal(changedTripDates.errors, undefined);
+    trip = changedTripDates.data!.updateTrip;
+    assert.equal(trip.stops[0]?.arrivalDate, '2027-05-31');
+    assert.equal(trip.stops.at(-1)?.departureDate, '2027-06-08');
+
+    const formerLast = trip.stops.at(-1)!;
+    const movedEarlier = await gql<{ updateTripStop: TripResult }>(
+      harness.yoga,
+      `mutation Update($id: ID!, $revision: Int!, $input: TripStopInput!) {
+        updateTripStop(id: $id, expectedRevision: $revision, input: $input) { ${tripFields} }
+      }`,
+      {
+        id: formerLast.id,
+        revision: trip.revision,
+        input: {
+          name: formerLast.name,
+          locationText: null,
+          arrivalDate: '2027-05-29',
+          departureDate: '2027-05-30',
+        },
+      },
+    );
+    assert.equal(movedEarlier.errors, undefined);
+    trip = movedEarlier.data!.updateTripStop;
+    assert.deepEqual(trip.stops.map((stop) => stop.name), ['Later place', 'Earlier place']);
+    assert.deepEqual(trip.stops.map((stop) => stop.position), [0, 1]);
+    assert.equal(trip.startDate, '2027-05-29');
+    assert.equal(trip.endDate, '2027-06-04');
+
+    const added = await gql<{ addTripStop: TripResult }>(
+      harness.yoga,
+      `mutation Add($tripId: ID!, $revision: Int!, $input: TripStopInput!) {
+        addTripStop(tripId: $tripId, expectedRevision: $revision, input: $input) { ${tripFields} }
+      }`,
+      {
+        tripId: trip.id,
+        revision: trip.revision,
+        input: {
+          name: 'Final place',
+          locationText: null,
+          arrivalDate: null,
+          departureDate: '2027-06-06',
+        },
+      },
+    );
+    assert.equal(added.errors, undefined);
+    trip = added.data!.addTripStop;
+    assert.equal(trip.stops.at(-1)?.name, 'Final place');
+    assert.equal(trip.stops.at(-1)?.arrivalDate, '2027-06-04');
+    assert.equal(trip.endDate, '2027-06-06');
+
+    const removed = await gql<{ removeTripStop: TripResult }>(
+      harness.yoga,
+      `mutation Remove($id: ID!, $revision: Int!) {
+        removeTripStop(id: $id, expectedRevision: $revision) { ${tripFields} }
+      }`,
+      { id: trip.stops.at(-1)!.id, revision: trip.revision },
+    );
+    assert.equal(removed.errors, undefined);
+    trip = removed.data!.removeTripStop;
+    assert.equal(trip.endDate, '2027-06-04');
+    assert.equal(trip.stops.at(-1)?.departureDate, '2027-06-04');
+  } finally {
+    await harness.pool.end();
+  }
+});
+
+test('createTrip fills missing first and last destination boundaries from trip dates', async () => {
+  const harness = await createHarness();
+  try {
+    const result = await gql<{ createTrip: TripResult }>(harness.yoga, createTripMutation, {
+      input: {
+        name: 'Boundary defaults',
+        destinationArea: 'One place',
+        startDate: '2027-08-10',
+        endDate: '2027-08-14',
+        travelerCount: 1,
+        stops: [
+          {
+            name: 'Only place',
+            locationText: null,
+            arrivalDate: null,
+            departureDate: null,
+          },
+        ],
+      },
+    });
+    assert.equal(result.errors, undefined);
+    assert.equal(result.data?.createTrip.stops[0]?.arrivalDate, '2027-08-10');
+    assert.equal(result.data?.createTrip.stops[0]?.departureDate, '2027-08-14');
+  } finally {
+    await harness.pool.end();
+  }
+});
+
+test('explicit destination boundary dates can diverge while linked edits still flow both ways', async () => {
+  const harness = await createHarness();
+  try {
+    const created = await gql<{ createTrip: TripResult }>(harness.yoga, createTripMutation, {
+      input: {
+        name: 'Travel-day buffer',
+        destinationArea: 'One place',
+        startDate: '2027-08-10',
+        endDate: '2027-08-20',
+        travelerCount: 1,
+        stops: [
+          {
+            name: 'The stay',
+            locationText: null,
+            arrivalDate: '2027-08-12',
+            departureDate: '2027-08-18',
+          },
+        ],
+      },
+    });
+    assert.equal(created.errors, undefined);
+    let trip = created.data!.createTrip;
+    assert.equal(trip.stops[0]?.arrivalDate, '2027-08-12');
+    assert.equal(trip.stops[0]?.departureDate, '2027-08-18');
+
+    const tripEdit = await gql<{ updateTrip: TripResult }>(
+      harness.yoga,
+      `mutation Update($id: ID!, $revision: Int!, $input: UpdateTripInput!) {
+        updateTrip(id: $id, expectedRevision: $revision, input: $input) { ${tripFields} }
+      }`,
+      {
+        id: trip.id,
+        revision: trip.revision,
+        input: {
+          name: trip.name,
+          destinationArea: trip.destinationArea,
+          startDate: '2027-08-09',
+          endDate: '2027-08-21',
+          travelerCount: trip.travelerCount,
+        },
+      },
+    );
+    assert.equal(tripEdit.errors, undefined);
+    trip = tripEdit.data!.updateTrip;
+    assert.equal(trip.stops[0]?.arrivalDate, '2027-08-12');
+    assert.equal(trip.stops[0]?.departureDate, '2027-08-18');
+
+    const stop = trip.stops[0]!;
+    const stopEdit = await gql<{ updateTripStop: TripResult }>(
+      harness.yoga,
+      `mutation Update($id: ID!, $revision: Int!, $input: TripStopInput!) {
+        updateTripStop(id: $id, expectedRevision: $revision, input: $input) { ${tripFields} }
+      }`,
+      {
+        id: stop.id,
+        revision: trip.revision,
+        input: {
+          name: stop.name,
+          locationText: null,
+          arrivalDate: '2027-08-11',
+          departureDate: stop.departureDate,
+        },
+      },
+    );
+    assert.equal(stopEdit.errors, undefined);
+    assert.equal(stopEdit.data?.updateTripStop.startDate, '2027-08-11');
+    assert.equal(stopEdit.data?.updateTripStop.endDate, '2027-08-21');
   } finally {
     await harness.pool.end();
   }

@@ -155,6 +155,27 @@ export type TripDraft = z.infer<typeof tripDraftSchema>;
 export type ProposalOperation = z.infer<typeof proposalOperationSchema>;
 export type ProposalOutput = z.infer<typeof proposalOutputSchema>;
 
+export type DatedStop = {
+  arrivalDate: string | null;
+  departureDate: string | null;
+  position: number;
+};
+
+export function compareStopsByDate(left: DatedStop, right: DatedStop): number {
+  const leftStart = left.arrivalDate ?? left.departureDate;
+  const rightStart = right.arrivalDate ?? right.departureDate;
+  if (leftStart && rightStart && leftStart !== rightStart) return leftStart.localeCompare(rightStart);
+  if (leftStart && !rightStart) return -1;
+  if (!leftStart && rightStart) return 1;
+
+  const leftEnd = left.departureDate ?? left.arrivalDate;
+  const rightEnd = right.departureDate ?? right.arrivalDate;
+  if (leftEnd && rightEnd && leftEnd !== rightEnd) return leftEnd.localeCompare(rightEnd);
+  if (leftEnd && !rightEnd) return -1;
+  if (!leftEnd && rightEnd) return 1;
+  return left.position - right.position;
+}
+
 export function validateDateRange(
   startDate: string | null | undefined,
   endDate: string | null | undefined,

@@ -122,7 +122,7 @@ export class OpenAiGateway implements AiGateway {
         model: this.model,
         store: false,
         instructions:
-          'Create a concise travel-plan draft for human review. Never invent missing dates or traveler counts; use null and explain uncertainty in warnings. Keep stops ordered. Do not include bookings, credentials, or prose outside the schema.',
+          'Create a concise travel-plan draft for human review. Never invent missing dates or traveler counts; use null and explain uncertainty in warnings. Keep stops ordered. destinationArea is internal compatibility metadata: derive it quietly and never mention it in assumptions or warnings. Do not include bookings, credentials, or prose outside the schema.',
         input: prompt,
         text: { format: zodTextFormat(tripDraftSchema, 'tripdock_trip_draft_v1') },
       });
@@ -148,7 +148,7 @@ export class OpenAiGateway implements AiGateway {
         model: this.model,
         store: false,
         instructions:
-          'Prepare reviewable operations only. You may update the trip essentials, add an activity, replace an existing activity with a complete desired value, or remove an activity. Reference only IDs in the supplied context. Never claim a change is already applied.',
+          'Prepare reviewable operations only. You may update the trip essentials, add an activity, replace an existing activity with a complete desired value, or remove an activity. Reference only IDs in the supplied context. destinationArea is internal compatibility metadata: preserve its current value and never mention it in summaries or descriptions. Never claim a change is already applied.',
         input: `Accepted trip context:\n${JSON.stringify(context)}\n\nRequested change:\n${prompt}`,
         text: { format: zodTextFormat(proposalOutputSchema, 'tripdock_trip_proposal_v1') },
       });

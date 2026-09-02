@@ -155,13 +155,13 @@ export async function graphqlRequest<TData, TVariables extends Record<string, un
   } catch (error) {
     if (error instanceof DOMException && error.name === 'AbortError') throw error;
     throw new TripDockGraphQLError(
-      'TripDock could not reach the local API. Start PostgreSQL and the API, then retry.',
+      'TripDock could not connect. Check that the app services are running, then retry.',
       'NETWORK_ERROR',
     );
   }
   if (!response.ok) {
     throw new TripDockGraphQLError(
-      `The local API returned HTTP ${response.status}.`,
+      `TripDock returned HTTP ${response.status}.`,
       'HTTP_ERROR',
       { status: response.status },
     );
@@ -173,7 +173,7 @@ export async function graphqlRequest<TData, TVariables extends Record<string, un
     throw new TripDockGraphQLError(firstError.message, code, details);
   }
   if (!payload.data) {
-    throw new TripDockGraphQLError('The local API returned no data.', 'EMPTY_RESPONSE');
+    throw new TripDockGraphQLError('TripDock returned no data.', 'EMPTY_RESPONSE');
   }
   return payload.data;
 }
@@ -356,14 +356,111 @@ export function dateTimeLocalToIso(value: string | null, timezone: string | null
 }
 
 export function draftToTripInput(draft: TripDraft): TripInput {
+  const startDate = draft.startDate ?? draft.stops[0]?.arrivalDate ?? '';
+  const endDate = draft.endDate ?? draft.stops.at(-1)?.departureDate ?? '';
+  const stops = draft.stops.map((stop, index) => ({
+    ...stop,
+    arrivalDate: index === 0 ? (stop.arrivalDate ?? startDate) || null : stop.arrivalDate,
+    departureDate:
+      index === draft.stops.length - 1 ? (stop.departureDate ?? endDate) || null : stop.departureDate,
+  }));
   return {
     name: draft.name,
     destinationArea: draft.destinationArea,
-    startDate: draft.startDate ?? '',
-    endDate: draft.endDate ?? '',
+    startDate,
+    endDate,
     travelerCount: draft.travelerCount ?? 2,
-    stops: draft.stops.map((stop) => ({ ...stop })),
+    stops,
   };
+}
+
+export function updateTripBoundaryDate(
+  input: TripInput,
+  boundary: 'start' | 'end',
+  date: string,
+): TripInput {
+  const dateKey = boundary === 'start' ? 'startDate' : 'endDate';
+  const stopKey = boundary === 'start' ? 'arrivalDate' : 'departureDate';
+  const stopIndex = boundary === 'start' ? 0 : input.stops.length - 1;
+  const previousDate = input[dateKey];
+  return {
+    ...input,
+    [dateKey]: date,
+    stops: input.stops.map((stop, index) =>
+      index === stopIndex && (!stop[stopKey] || stop[stopKey] === previousDate)
+        ? { ...stop, [stopKey]: date || null }
+        : stop,
+    ),
+  };
+}
+
+export function updateTripStopDate(
+  input: TripInput,
+  index: number,
+  field: 'arrivalDate' | 'departureDate',
+  date: string | null,
+): TripInput {
+  const next: TripInput = {
+    ...input,
+    stops: input.stops.map((stop, stopIndex) =>
+      stopIndex === index ? { ...stop, [field]: date } : stop,
+    ),
+  };
+  if (index === 0 && field === 'arrivalDate' && date) next.startDate = date;
+  if (index === input.stops.length - 1 && field === 'departureDate' && date) next.endDate = date;
+  return next;
+}
+
+export function appendTripStop(input: TripInput): TripInput {
+  const previous = input.stops.at(-1);
+  return {
+    ...input,
+    stops: [
+      ...input.stops,
+      {
+        name: '',
+        locationText: null,
+        arrivalDate: previous?.departureDate ?? null,
+        departureDate: null,
+      },
+    ],
+  };
+}
+
+export function removeTripStop(input: TripInput, index: number): TripInput {
+  const removed = input.stops[index];
+  const stops = input.stops.filter((_, stopIndex) => stopIndex !== index);
+  const removedLinkedStart = index === 0 && removed?.arrivalDate === input.startDate;
+  const removedLinkedEnd = index === input.stops.length - 1 && removed?.departureDate === input.endDate;
+  return {
+    ...input,
+    stops,
+    startDate: removedLinkedStart ? stops[0]?.arrivalDate ?? input.startDate : input.startDate,
+    endDate: removedLinkedEnd ? stops.at(-1)?.departureDate ?? input.endDate : input.endDate,
+  };
+}
+
+export function destinationAreaFromStops(input: Pick<TripInput, 'name' | 'stops'>): string {
+  const names = input.stops.map((stop) => stop.name.trim()).filter(Boolean);
+  return (names.join(' · ') || input.name.trim() || 'Trip').slice(0, 200);
+}
+
+export function sortStopsByDate<T extends Pick<TripStop, 'arrivalDate' | 'departureDate' | 'position'>>(
+  stops: readonly T[],
+): T[] {
+  return [...stops].sort((left, right) => {
+    const leftDate = left.arrivalDate ?? left.departureDate;
+    const rightDate = right.arrivalDate ?? right.departureDate;
+    if (leftDate && rightDate && leftDate !== rightDate) return leftDate.localeCompare(rightDate);
+    if (leftDate && !rightDate) return -1;
+    if (!leftDate && rightDate) return 1;
+    const leftEnd = left.departureDate ?? left.arrivalDate;
+    const rightEnd = right.departureDate ?? right.arrivalDate;
+    if (leftEnd && rightEnd && leftEnd !== rightEnd) return leftEnd.localeCompare(rightEnd);
+    if (leftEnd && !rightEnd) return -1;
+    if (!leftEnd && rightEnd) return 1;
+    return left.position - right.position;
+  });
 }
 
 export function toggleSelectedOperation(

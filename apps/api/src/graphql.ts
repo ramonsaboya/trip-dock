@@ -23,12 +23,14 @@ import {
 import {
   activityStatusSchema,
   AppError,
+  compareStopsByDate,
   isoDateSchema,
   isoDateTimeSchema,
   proposalOperationSchema,
   timezoneSchema,
   tripDraftStopSchema,
   validateDateRange,
+  type DatedStop,
   type ProposalOperation,
 } from './domain.js';
 
@@ -50,6 +52,7 @@ const typeDefs = /* GraphQL */ `
     updateTripStop(id: ID!, expectedRevision: Int!, input: TripStopInput!): Trip!
     removeTripStop(id: ID!, expectedRevision: Int!): Trip!
     reorderTripStops(tripId: ID!, expectedRevision: Int!, stopIds: [ID!]!): Trip!
+      @deprecated(reason: "Destinations are ordered automatically by date.")
 
     addTransportLeg(tripId: ID!, expectedRevision: Int!, input: TransportLegInput!): Trip!
     updateTransportLeg(id: ID!, expectedRevision: Int!, input: TransportLegInput!): Trip!
@@ -191,8 +194,8 @@ const typeDefs = /* GraphQL */ `
   input CreateTripInput {
     name: String!
     destinationArea: String!
-    startDate: String!
-    endDate: String!
+    startDate: String
+    endDate: String
     travelerCount: Int!
     stops: [TripStopDraftInput!]!
   }
@@ -268,14 +271,22 @@ const createTripInputSchema = z
   .object({
     name: requiredText.max(160),
     destinationArea: requiredText.max(200),
-    startDate: isoDateSchema,
-    endDate: isoDateSchema,
+    startDate: isoDateSchema.nullish(),
+    endDate: isoDateSchema.nullish(),
     travelerCount: z.number().int().min(1).max(20),
     stops: z.array(tripDraftStopSchema).min(1).max(20),
   })
   .strict();
 
-const updateTripInputSchema = createTripInputSchema.omit({ stops: true });
+const updateTripInputSchema = z
+  .object({
+    name: requiredText.max(160),
+    destinationArea: requiredText.max(200),
+    startDate: isoDateSchema,
+    endDate: isoDateSchema,
+    travelerCount: z.number().int().min(1).max(20),
+  })
+  .strict();
 const stopInputSchema = tripDraftStopSchema;
 const transportInputSchema = z
   .object({
@@ -400,6 +411,134 @@ function validateTimestampRange(start: string | null, end: string | null, label:
   }
 }
 
+function orderStopsByDate<T extends DatedStop>(stops: T[]): T[] {
+  return [...stops].sort(compareStopsByDate);
+}
+
+function withLinkedTripBoundaryDates<T extends DatedStop>(
+  stops: T[],
+  oldStartDate: string | null,
+  oldEndDate: string | null,
+  newStartDate: string,
+  newEndDate: string,
+): T[] {
+  const ordered = stops.map((stop) => ({ ...stop }));
+  const first = ordered[0];
+  const last = ordered.at(-1);
+  if (!first || !last) {
+    throw new AppError('A trip must keep at least one destination.', 'BAD_USER_INPUT');
+  }
+  if (!first.arrivalDate || first.arrivalDate === oldStartDate) {
+    first.arrivalDate = newStartDate;
+  }
+  if (!last.departureDate || last.departureDate === oldEndDate) {
+    last.departureDate = newEndDate;
+  }
+  return ordered;
+}
+
+function validateStopsWithinTrip(
+  stops: DatedStop[],
+  startDate: string,
+  endDate: string,
+  errorCode: 'BAD_USER_INPUT' | 'AI_INVALID_OUTPUT' = 'BAD_USER_INPUT',
+): void {
+  validateDateRange(startDate, endDate, 'trip date range');
+  for (const stop of stops) {
+    try {
+      validateDateRange(stop.arrivalDate, stop.departureDate, 'destination date range');
+    } catch (error) {
+      if (errorCode === 'AI_INVALID_OUTPUT') {
+        throw new AppError('The proposed trip creates an invalid destination date range.', errorCode);
+      }
+      throw error;
+    }
+    for (const date of [stop.arrivalDate, stop.departureDate]) {
+      if (date && (date < startDate || date > endDate)) {
+        throw new AppError(
+          errorCode === 'AI_INVALID_OUTPUT'
+            ? 'The proposed trip dates exclude an existing destination date.'
+            : 'A destination date falls outside the trip dates.',
+          errorCode,
+        );
+      }
+    }
+  }
+}
+
+async function orderedTripStops(tx: DbTransaction, tripId: string) {
+  const rows = await tx.select().from(tripStops).where(eq(tripStops.tripId, tripId));
+  return orderStopsByDate(rows);
+}
+
+async function resequenceTripStops(
+  tx: DbTransaction,
+  tripId: string,
+  ordered: Array<typeof tripStops.$inferSelect>,
+): Promise<void> {
+  if (ordered.every((stop, position) => stop.position === position)) return;
+  await tx
+    .update(tripStops)
+    .set({ position: sql`${tripStops.position} + ${ordered.length}` })
+    .where(eq(tripStops.tripId, tripId));
+  for (const [position, stop] of ordered.entries()) {
+    await tx.update(tripStops).set({ position }).where(eq(tripStops.id, stop.id));
+  }
+}
+
+async function synchronizeStopsFromTripDates(
+  tx: DbTransaction,
+  trip: typeof trips.$inferSelect,
+  startDate: string,
+  endDate: string,
+): Promise<void> {
+  const current = await orderedTripStops(tx, trip.id);
+  const linked = withLinkedTripBoundaryDates(
+    current,
+    trip.startDate,
+    trip.endDate,
+    startDate,
+    endDate,
+  );
+  validateStopsWithinTrip(linked, startDate, endDate);
+  const currentFirst = current[0]!;
+  const currentLast = current.at(-1)!;
+  const linkedFirst = linked[0]!;
+  const linkedLast = linked.at(-1)!;
+  const now = new Date().toISOString();
+  if (currentFirst.arrivalDate !== linkedFirst.arrivalDate) {
+    await tx
+      .update(tripStops)
+      .set({ arrivalDate: linkedFirst.arrivalDate, updatedAt: now })
+      .where(eq(tripStops.id, linkedFirst.id));
+  }
+  if (currentLast.departureDate !== linkedLast.departureDate) {
+    await tx
+      .update(tripStops)
+      .set({ departureDate: linkedLast.departureDate, updatedAt: now })
+      .where(eq(tripStops.id, linkedLast.id));
+  }
+  await resequenceTripStops(tx, trip.id, linked);
+}
+
+async function persistStopChronology(
+  tx: DbTransaction,
+  trip: typeof trips.$inferSelect,
+  startDate = trip.startDate,
+  endDate = trip.endDate,
+): Promise<Array<typeof tripStops.$inferSelect>> {
+  const ordered = await orderedTripStops(tx, trip.id);
+  validateStopsWithinTrip(ordered, startDate, endDate);
+  await resequenceTripStops(tx, trip.id, ordered);
+  if (startDate !== trip.startDate || endDate !== trip.endDate) {
+    await tx
+      .update(trips)
+      .set({ startDate, endDate, updatedAt: new Date().toISOString() })
+      .where(eq(trips.id, trip.id));
+  }
+  return ordered;
+}
+
 function buildAiContext(trip: TripView): TripAiContext {
   return {
     id: trip.id,
@@ -473,13 +612,19 @@ function validateProposalSemantics(trip: TripView, operations: ProposalOperation
       }
       updatesTrip = true;
       validateDateRange(operation.payload.startDate, operation.payload.endDate, 'trip date range');
-      for (const stop of trip.stops) {
-        for (const date of [stop.arrivalDate, stop.departureDate]) {
-          if (date && (date < operation.payload.startDate || date > operation.payload.endDate)) {
-            throw new AppError('The proposed trip dates exclude an existing destination date.', 'AI_INVALID_OUTPUT');
-          }
-        }
-      }
+      const boundedStops = withLinkedTripBoundaryDates(
+        orderStopsByDate(trip.stops),
+        trip.startDate,
+        trip.endDate,
+        operation.payload.startDate,
+        operation.payload.endDate,
+      );
+      validateStopsWithinTrip(
+        boundedStops,
+        operation.payload.startDate,
+        operation.payload.endDate,
+        'AI_INVALID_OUTPUT',
+      );
       for (const activity of trip.activities) {
         if (!activity.scheduledAt) continue;
         const date = calendarDateForTimestamp(activity.scheduledAt, activity.timezone);
@@ -531,6 +676,9 @@ async function applyProposalOperation(
   const now = new Date().toISOString();
   if (operation.type === 'UPDATE_TRIP') {
     validateDateRange(operation.payload.startDate, operation.payload.endDate, 'trip date range');
+    const [trip] = await tx.select().from(trips).where(eq(trips.id, tripId)).limit(1);
+    if (!trip) throw new AppError('Trip not found.', 'NOT_FOUND');
+    await synchronizeStopsFromTripDates(tx, trip, operation.payload.startDate, operation.payload.endDate);
     await tx.update(trips).set({ ...operation.payload, updatedAt: now }).where(eq(trips.id, tripId));
     return;
   }
@@ -584,24 +732,62 @@ function buildResolvers(db: AppDatabase, aiGateway: AiGateway) {
       createTrip: (_root: unknown, args: { input: unknown }) =>
         handle(async () => {
           const input = parse(createTripInputSchema, args.input);
-          validateDateRange(input.startDate, input.endDate, 'trip date range');
-          for (const stop of input.stops) {
-            validateDateRange(stop.arrivalDate, stop.departureDate, 'stop date range');
+          const enteredStops = input.stops.map((stop, position) => {
+            const previous = position > 0 ? input.stops[position - 1] : undefined;
+            return {
+              ...stop,
+              position,
+              arrivalDate: stop.arrivalDate ?? previous?.departureDate ?? null,
+            };
+          });
+          const chronologicallyOrdered = orderStopsByDate(enteredStops);
+          const startDate = input.startDate ?? chronologicallyOrdered[0]?.arrivalDate;
+          const endDate = input.endDate ?? chronologicallyOrdered.at(-1)?.departureDate;
+          if (!startDate) {
+            throw new AppError(
+              'Provide either a trip start date or an arrival date for the first destination.',
+              'BAD_USER_INPUT',
+            );
           }
+          if (!endDate) {
+            throw new AppError(
+              'Provide either a trip end date or a departure date for the last destination.',
+              'BAD_USER_INPUT',
+            );
+          }
+          const linkedEnteredStops = withLinkedTripBoundaryDates(
+            enteredStops,
+            null,
+            null,
+            startDate,
+            endDate,
+          );
+          const preparedStops = withLinkedTripBoundaryDates(
+            orderStopsByDate(linkedEnteredStops),
+            null,
+            null,
+            startDate,
+            endDate,
+          ).map((stop, position) => ({ ...stop, position }));
+          validateStopsWithinTrip(preparedStops, startDate, endDate);
           const tripId = await db.transaction(async (tx) => {
             const [trip] = await tx
               .insert(trips)
               .values({
                 name: input.name,
                 destinationArea: input.destinationArea,
-                startDate: input.startDate,
-                endDate: input.endDate,
+                startDate,
+                endDate,
                 travelerCount: input.travelerCount,
               })
               .returning({ id: trips.id });
             if (!trip) throw new Error('Trip insert did not return an identifier.');
             await tx.insert(tripStops).values(
-              input.stops.map((stop, position) => ({ tripId: trip.id, position, ...stop })),
+              preparedStops.map(({ position, ...stop }) => ({
+                tripId: trip.id,
+                position,
+                ...stop,
+              })),
             );
             return trip.id;
           });
@@ -620,6 +806,7 @@ function buildResolvers(db: AppDatabase, aiGateway: AiGateway) {
           validateDateRange(input.startDate, input.endDate, 'trip date range');
           await db.transaction(async (tx) => {
             const trip = await lockTrip(tx, id, expectedRevision);
+            await synchronizeStopsFromTripDates(tx, trip, input.startDate, input.endDate);
             await tx.update(trips).set({ ...input, updatedAt: new Date().toISOString() }).where(eq(trips.id, id));
             await finishManualMutation(tx, id, trip.revision);
           });
@@ -648,18 +835,36 @@ function buildResolvers(db: AppDatabase, aiGateway: AiGateway) {
           const tripId = parse(idSchema, args.tripId);
           const expectedRevision = parse(revisionSchema, args.expectedRevision);
           const input = parse(stopInputSchema, args.input);
-          validateDateRange(input.arrivalDate, input.departureDate, 'stop date range');
           await db.transaction(async (tx) => {
             const trip = await lockTrip(tx, tripId, expectedRevision);
+            const currentStops = await orderedTripStops(tx, tripId);
+            const previous = currentStops.at(-1);
+            const stop = {
+              ...input,
+              arrivalDate: input.arrivalDate ?? previous?.departureDate ?? null,
+            };
+            validateDateRange(stop.arrivalDate, stop.departureDate, 'destination date range');
             const [positionRow] = await tx
               .select({ value: max(tripStops.position) })
               .from(tripStops)
               .where(eq(tripStops.tripId, tripId));
-            await tx.insert(tripStops).values({
-              tripId,
-              position: (positionRow?.value ?? -1) + 1,
-              ...input,
-            });
+            const [inserted] = await tx
+              .insert(tripStops)
+              .values({
+                tripId,
+                position: (positionRow?.value ?? -1) + 1,
+                ...stop,
+              })
+              .returning();
+            if (!inserted) throw new Error('Destination insert did not return a row.');
+            const ordered = await orderedTripStops(tx, tripId);
+            const startDate = ordered[0]?.id === inserted.id && inserted.arrivalDate
+              ? inserted.arrivalDate
+              : trip.startDate;
+            const endDate = ordered.at(-1)?.id === inserted.id && inserted.departureDate
+              ? inserted.departureDate
+              : trip.endDate;
+            await persistStopChronology(tx, trip, startDate, endDate);
             await finishManualMutation(tx, tripId, trip.revision);
           });
           return (await loadTrip(db, tripId))!;
@@ -677,7 +882,40 @@ function buildResolvers(db: AppDatabase, aiGateway: AiGateway) {
           if (!stop) throw new AppError('Stop not found.', 'NOT_FOUND');
           await db.transaction(async (tx) => {
             const trip = await lockTrip(tx, stop.tripId, expectedRevision);
+            const before = await orderedTripStops(tx, stop.tripId);
+            const existing = before.find((item) => item.id === id);
+            if (!existing) throw new AppError('Stop not found.', 'NOT_FOUND');
+            const previousFirst = before[0]!;
+            const previousLast = before.at(-1)!;
+            const changedArrival = input.arrivalDate !== existing.arrivalDate;
+            const changedDeparture = input.departureDate !== existing.departureDate;
             await tx.update(tripStops).set({ ...input, updatedAt: new Date().toISOString() }).where(eq(tripStops.id, id));
+            const after = await orderedTripStops(tx, stop.tripId);
+            const nextFirst = after[0]!;
+            const nextLast = after.at(-1)!;
+            let startDate = trip.startDate;
+            let endDate = trip.endDate;
+            if (changedArrival && input.arrivalDate && nextFirst.id === id) {
+              startDate = input.arrivalDate;
+            } else if (
+              previousFirst.id === id &&
+              previousFirst.arrivalDate === trip.startDate &&
+              nextFirst.id !== id &&
+              nextFirst.arrivalDate
+            ) {
+              startDate = nextFirst.arrivalDate;
+            }
+            if (changedDeparture && input.departureDate && nextLast.id === id) {
+              endDate = input.departureDate;
+            } else if (
+              previousLast.id === id &&
+              previousLast.departureDate === trip.endDate &&
+              nextLast.id !== id &&
+              nextLast.departureDate
+            ) {
+              endDate = nextLast.departureDate;
+            }
+            await persistStopChronology(tx, trip, startDate, endDate);
             await finishManualMutation(tx, stop.tripId, trip.revision);
           });
           return (await loadTrip(db, stop.tripId))!;
@@ -693,19 +931,27 @@ function buildResolvers(db: AppDatabase, aiGateway: AiGateway) {
           if (!stop) throw new AppError('Stop not found.', 'NOT_FOUND');
           await db.transaction(async (tx) => {
             const trip = await lockTrip(tx, stop.tripId, expectedRevision);
-            const allStops = await tx.select({ id: tripStops.id }).from(tripStops).where(eq(tripStops.tripId, stop.tripId));
-            if (allStops.length <= 1) {
+            const before = await orderedTripStops(tx, stop.tripId);
+            if (before.length <= 1) {
               throw new AppError('A trip must keep at least one stop.', 'BAD_USER_INPUT');
             }
+            const previousFirst = before[0]!;
+            const previousLast = before.at(-1)!;
             await tx.delete(tripStops).where(eq(tripStops.id, id));
-            const remaining = await tx
-              .select({ id: tripStops.id })
-              .from(tripStops)
-              .where(eq(tripStops.tripId, stop.tripId))
-              .orderBy(asc(tripStops.position));
-            for (const [position, item] of remaining.entries()) {
-              await tx.update(tripStops).set({ position }).where(eq(tripStops.id, item.id));
-            }
+            const after = await orderedTripStops(tx, stop.tripId);
+            const nextFirst = after[0]!;
+            const nextLast = after.at(-1)!;
+            const startDate = previousFirst.id === id &&
+              previousFirst.arrivalDate === trip.startDate &&
+              nextFirst.arrivalDate
+              ? nextFirst.arrivalDate
+              : trip.startDate;
+            const endDate = previousLast.id === id &&
+              previousLast.departureDate === trip.endDate &&
+              nextLast.departureDate
+              ? nextLast.departureDate
+              : trip.endDate;
+            await persistStopChronology(tx, trip, startDate, endDate);
             await finishManualMutation(tx, stop.tripId, trip.revision);
           });
           return (await loadTrip(db, stop.tripId))!;
@@ -720,7 +966,7 @@ function buildResolvers(db: AppDatabase, aiGateway: AiGateway) {
           const stopIds = parse(z.array(idSchema).min(1).max(20), args.stopIds);
           await db.transaction(async (tx) => {
             const trip = await lockTrip(tx, tripId, expectedRevision);
-            const current = await tx.select({ id: tripStops.id }).from(tripStops).where(eq(tripStops.tripId, tripId));
+            const current = await tx.select().from(tripStops).where(eq(tripStops.tripId, tripId));
             if (
               new Set(stopIds).size !== stopIds.length ||
               stopIds.length !== current.length ||
@@ -728,13 +974,7 @@ function buildResolvers(db: AppDatabase, aiGateway: AiGateway) {
             ) {
               throw new AppError('The new order must contain every stop exactly once.', 'BAD_USER_INPUT');
             }
-            await tx
-              .update(tripStops)
-              .set({ position: sql`${tripStops.position} + ${stopIds.length}` })
-              .where(eq(tripStops.tripId, tripId));
-            for (const [position, id] of stopIds.entries()) {
-              await tx.update(tripStops).set({ position, updatedAt: new Date().toISOString() }).where(eq(tripStops.id, id));
-            }
+            await resequenceTripStops(tx, tripId, orderStopsByDate(current));
             await finishManualMutation(tx, tripId, trip.revision);
           });
           return (await loadTrip(db, tripId))!;
