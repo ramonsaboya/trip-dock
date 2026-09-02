@@ -1,7 +1,7 @@
 {
   "name": "TripDock",
   "short_name": "TripDock",
-  "description": "A calm, structured place for destinations, transport, stays, activities, and reviewable AI trip changes.",
+  "description": "A calm, structured place for destinations, transport, stays, activities, and editable AI trip drafts.",
   "id": "/",
   "start_url": "/",
   "scope": "/",

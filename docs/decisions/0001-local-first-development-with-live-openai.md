@@ -1,7 +1,11 @@
 # ADR 0001: Local-first development with live OpenAI
 
-- Status: Accepted
+- Status: Partially superseded
 - Date: 2026-08-31
+
+## 2026-09-02 amendment
+
+The existing-trip proposal design recorded below is no longer part of the current product. Its UI, GraphQL operations, and runtime implementation were removed; OpenAI is now used only to produce editable, unpersisted drafts in the new-trip flow. The original text remains below as decision history rather than current behavior.
 
 ## Context
 

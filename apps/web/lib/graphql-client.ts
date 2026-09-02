@@ -44,34 +44,6 @@ export type Activity = {
   timezone: string | null;
 };
 
-export type ProposalOperation = {
-  id: string;
-  proposalId: string;
-  position: number;
-  operationType: 'UPDATE_TRIP' | 'ADD_ACTIVITY' | 'UPDATE_ACTIVITY' | 'REMOVE_ACTIVITY';
-  description: string;
-  payload: Record<string, unknown>;
-  status: 'PENDING' | 'APPLIED' | 'EXCLUDED';
-};
-
-export type Proposal = {
-  id: string;
-  tripId: string;
-  prompt: string;
-  summary: string;
-  status: 'PENDING' | 'APPLIED' | 'DISCARDED' | 'STALE';
-  baseTripRevision: number;
-  model: string;
-  openaiResponseId: string | null;
-  schemaVersion: string;
-  promptVersion: string;
-  createdAt: string;
-  updatedAt: string;
-  appliedAt: string | null;
-  discardedAt: string | null;
-  operations: ProposalOperation[];
-};
-
 export type Trip = {
   id: string;
   name: string;
@@ -86,7 +58,6 @@ export type Trip = {
   transportLegs: TransportLeg[];
   stays: Stay[];
   activities: Activity[];
-  proposals: Proposal[];
 };
 
 export type TripDraftStop = {
@@ -178,12 +149,6 @@ export async function graphqlRequest<TData, TVariables extends Record<string, un
   return payload.data;
 }
 
-const PROPOSAL_FIELDS = `
-  id tripId prompt summary status baseTripRevision model openaiResponseId
-  schemaVersion promptVersion createdAt updatedAt appliedAt discardedAt
-  operations { id proposalId position operationType description payload status }
-`;
-
 const TRIP_FIELDS = `
   id name destinationArea startDate endDate travelerCount revision createdAt updatedAt
   stops { id tripId name locationText position arrivalDate departureDate }
@@ -193,13 +158,11 @@ const TRIP_FIELDS = `
   }
   stays { id tripId stopId position name checkIn checkOut timezone }
   activities { id tripId stopId position title status scheduledAt timezone }
-  proposals { ${PROPOSAL_FIELDS} }
 `;
 
 export const operations = {
   trips: `query Trips { trips { ${TRIP_FIELDS} } }`,
   trip: `query Trip($id: ID!) { trip(id: $id) { ${TRIP_FIELDS} } }`,
-  proposal: `query Proposal($id: ID!) { proposal(id: $id) { ${PROPOSAL_FIELDS} } }`,
   createTrip: `mutation CreateTrip($input: CreateTripInput!) { createTrip(input: $input) { ${TRIP_FIELDS} } }`,
   updateTrip: `mutation UpdateTrip($id: ID!, $expectedRevision: Int!, $input: UpdateTripInput!) {
     updateTrip(id: $id, expectedRevision: $expectedRevision, input: $input) { ${TRIP_FIELDS} }
@@ -207,8 +170,8 @@ export const operations = {
   deleteTrip: `mutation DeleteTrip($id: ID!, $expectedRevision: Int!) {
     deleteTrip(id: $id, expectedRevision: $expectedRevision)
   }`,
-  addStop: `mutation AddStop($tripId: ID!, $expectedRevision: Int!, $input: TripStopInput!) {
-    addTripStop(tripId: $tripId, expectedRevision: $expectedRevision, input: $input) { ${TRIP_FIELDS} }
+  addStop: `mutation AddStop($tripId: ID!, $expectedRevision: Int!, $input: TripStopInput!, $moveTripEnd: Boolean) {
+    addTripStop(tripId: $tripId, expectedRevision: $expectedRevision, input: $input, moveTripEnd: $moveTripEnd) { ${TRIP_FIELDS} }
   }`,
   updateStop: `mutation UpdateStop($id: ID!, $expectedRevision: Int!, $input: TripStopInput!) {
     updateTripStop(id: $id, expectedRevision: $expectedRevision, input: $input) { ${TRIP_FIELDS} }
@@ -251,15 +214,6 @@ export const operations = {
       name destinationArea startDate endDate travelerCount assumptions warnings
       stops { name locationText arrivalDate departureDate }
     }
-  }`,
-  prepareProposal: `mutation PrepareProposal($tripId: ID!, $prompt: String!) {
-    prepareTripProposal(tripId: $tripId, prompt: $prompt) { ${PROPOSAL_FIELDS} }
-  }`,
-  applyProposal: `mutation ApplyProposal($proposalId: ID!, $includedOperationIds: [ID!]!) {
-    applyTripProposal(proposalId: $proposalId, includedOperationIds: $includedOperationIds) { ${TRIP_FIELDS} }
-  }`,
-  discardProposal: `mutation DiscardProposal($proposalId: ID!) {
-    discardTripProposal(proposalId: $proposalId) { ${PROPOSAL_FIELDS} }
   }`,
 } as const;
 
@@ -355,6 +309,48 @@ export function dateTimeLocalToIso(value: string | null, timezone: string | null
   return new Date(candidate).toISOString();
 }
 
+export function dateTimeLocalToIsoPreserving(
+  value: string | null,
+  timezone: string | null,
+  originalIso: string | null,
+): string | null {
+  if (originalIso && isoToDateTimeLocal(originalIso, timezone) === value) return originalIso;
+  return dateTimeLocalToIso(value, timezone);
+}
+
+export function stayDateTimesForStop(
+  stop: Pick<TripStop, 'arrivalDate' | 'departureDate'> | undefined,
+): { checkIn: string | null; checkOut: string | null } {
+  return {
+    checkIn: stop?.arrivalDate ? `${stop.arrivalDate}T15:00` : null,
+    checkOut: stop?.departureDate
+      ? `${stop.departureDate}T${stop.departureDate === stop.arrivalDate ? '17:00' : '11:00'}`
+      : null,
+  };
+}
+
+export function transportDateTimesForStops(
+  fromStop: Pick<TripStop, 'arrivalDate' | 'departureDate'> | undefined,
+  toStop: Pick<TripStop, 'arrivalDate' | 'departureDate'> | undefined,
+): { departureTime: string | null; arrivalTime: string | null } {
+  const departureDate = fromStop?.departureDate ?? fromStop?.arrivalDate;
+  const destinationDate = toStop?.arrivalDate ?? toStop?.departureDate;
+  const arrivalDate = departureDate && destinationDate && destinationDate < departureDate
+    ? departureDate
+    : destinationDate;
+  return {
+    departureTime: departureDate ? `${departureDate}T09:00` : null,
+    arrivalTime: arrivalDate ? `${arrivalDate}T17:00` : null,
+  };
+}
+
+export function activityDateTimeForStop(
+  stop: Pick<TripStop, 'arrivalDate' | 'departureDate'> | undefined,
+): string | null {
+  const date = stop?.arrivalDate ?? stop?.departureDate;
+  return date ? `${date}T09:00` : null;
+}
+
 export function draftToTripInput(draft: TripDraft): TripInput {
   const startDate = draft.startDate ?? draft.stops[0]?.arrivalDate ?? '';
   const endDate = draft.endDate ?? draft.stops.at(-1)?.departureDate ?? '';
@@ -378,6 +374,7 @@ export function updateTripBoundaryDate(
   input: TripInput,
   boundary: 'start' | 'end',
   date: string,
+  options: { stopDateDirty?: boolean } = {},
 ): TripInput {
   const dateKey = boundary === 'start' ? 'startDate' : 'endDate';
   const stopKey = boundary === 'start' ? 'arrivalDate' : 'departureDate';
@@ -387,7 +384,9 @@ export function updateTripBoundaryDate(
     ...input,
     [dateKey]: date,
     stops: input.stops.map((stop, index) =>
-      index === stopIndex && (!stop[stopKey] || stop[stopKey] === previousDate)
+      index === stopIndex &&
+      !options.stopDateDirty &&
+      (!stop[stopKey] || stop[stopKey] === previousDate)
         ? { ...stop, [stopKey]: date || null }
         : stop,
     ),
@@ -399,44 +398,91 @@ export function updateTripStopDate(
   index: number,
   field: 'arrivalDate' | 'departureDate',
   date: string | null,
+  options: { nextArrivalDirty?: boolean; tripBoundaryDirty?: boolean } = {},
 ): TripInput {
+  const previousDate = input.stops[index]?.[field] ?? null;
   const next: TripInput = {
     ...input,
     stops: input.stops.map((stop, stopIndex) =>
-      stopIndex === index ? { ...stop, [field]: date } : stop,
+      stopIndex === index
+        ? { ...stop, [field]: date }
+        : field === 'departureDate' &&
+            stopIndex === index + 1 &&
+            !options.nextArrivalDirty &&
+            (!stop.arrivalDate || stop.arrivalDate === previousDate)
+          ? { ...stop, arrivalDate: date }
+          : stop,
     ),
   };
-  if (index === 0 && field === 'arrivalDate' && date) next.startDate = date;
-  if (index === input.stops.length - 1 && field === 'departureDate' && date) next.endDate = date;
+  if (index === 0 && field === 'arrivalDate' && date && !options.tripBoundaryDirty) {
+    next.startDate = date;
+  }
+  if (
+    index === input.stops.length - 1 &&
+    field === 'departureDate' &&
+    date &&
+    !options.tripBoundaryDirty
+  ) {
+    next.endDate = date;
+  }
   return next;
 }
 
-export function appendTripStop(input: TripInput): TripInput {
+export function appendTripStop(
+  input: TripInput,
+  options: { lastDepartureDirty?: boolean } = {},
+): TripInput {
   const previous = input.stops.at(-1);
+  const movesLinkedTripEnd = Boolean(
+    previous &&
+    input.endDate &&
+    !options.lastDepartureDirty &&
+    previous.departureDate === input.endDate,
+  );
   return {
     ...input,
     stops: [
-      ...input.stops,
+      ...input.stops.map((stop, index) =>
+        movesLinkedTripEnd && index === input.stops.length - 1
+          ? { ...stop, departureDate: null }
+          : stop,
+      ),
       {
         name: '',
         locationText: null,
-        arrivalDate: previous?.departureDate ?? null,
-        departureDate: null,
+        arrivalDate: movesLinkedTripEnd ? null : previous?.departureDate ?? null,
+        departureDate: input.endDate || null,
       },
     ],
   };
 }
 
-export function removeTripStop(input: TripInput, index: number): TripInput {
+export function removeTripStop(
+  input: TripInput,
+  index: number,
+  options: { preserveTripEnd?: boolean; survivingDepartureDirty?: boolean } = {},
+): TripInput {
   const removed = input.stops[index];
-  const stops = input.stops.filter((_, stopIndex) => stopIndex !== index);
+  let stops = input.stops.filter((_, stopIndex) => stopIndex !== index);
   const removedLinkedStart = index === 0 && removed?.arrivalDate === input.startDate;
   const removedLinkedEnd = index === input.stops.length - 1 && removed?.departureDate === input.endDate;
+  if (
+    removedLinkedEnd &&
+    stops.length &&
+    !options.survivingDepartureDirty &&
+    !stops.at(-1)?.departureDate
+  ) {
+    stops = stops.map((stop, stopIndex) =>
+      stopIndex === stops.length - 1 ? { ...stop, departureDate: input.endDate || null } : stop,
+    );
+  }
   return {
     ...input,
     stops,
     startDate: removedLinkedStart ? stops[0]?.arrivalDate ?? input.startDate : input.startDate,
-    endDate: removedLinkedEnd ? stops.at(-1)?.departureDate ?? input.endDate : input.endDate,
+    endDate: removedLinkedEnd && !options.preserveTripEnd
+      ? stops.at(-1)?.departureDate ?? input.endDate
+      : input.endDate,
   };
 }
 
@@ -461,14 +507,4 @@ export function sortStopsByDate<T extends Pick<TripStop, 'arrivalDate' | 'depart
     if (!leftEnd && rightEnd) return 1;
     return left.position - right.position;
   });
-}
-
-export function toggleSelectedOperation(
-  current: ReadonlySet<string>,
-  operationId: string,
-): Set<string> {
-  const next = new Set(current);
-  if (next.has(operationId)) next.delete(operationId);
-  else next.add(operationId);
-  return next;
 }

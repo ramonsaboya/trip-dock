@@ -6,20 +6,17 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { drizzle } from 'drizzle-orm/node-postgres';
-import { eq } from 'drizzle-orm';
 import { DataType, newDb } from 'pg-mem';
 import type { Pool } from 'pg';
 
 import { FixtureAiGateway, UnconfiguredAiGateway, type AiGateway } from '../src/ai.js';
 import type { AppDatabase } from '../src/db/client.js';
 import * as schema from '../src/db/schema.js';
-import { aiProposalOperations } from '../src/db/schema.js';
 import { createApi } from '../src/graphql.js';
 
 type Yoga = ReturnType<typeof createApi>;
 
 type Harness = {
-  db: AppDatabase;
   pool: Pool;
   yoga: Yoga;
   withGateway(gateway: AiGateway): Yoga;
@@ -93,7 +90,7 @@ async function createHarness(gateway: AiGateway = new UnconfiguredAiGateway()): 
   const db = drizzle(pool, { schema }) as AppDatabase;
   const withGateway = (aiGateway: AiGateway) =>
     createApi({ db, aiGateway, webOrigin: 'http://localhost:3000', graphiql: false });
-  return { db, pool, yoga: withGateway(gateway), withGateway };
+  return { pool, yoga: withGateway(gateway), withGateway };
 }
 
 async function gql<T>(
@@ -119,10 +116,6 @@ const tripFields = `
   transportLegs { id fromStopId toStopId mode title }
   stays { id stopId name }
   activities { id stopId title status scheduledAt }
-  proposals {
-    id status baseTripRevision summary
-    operations { id position operationType description status payload }
-  }
 `;
 
 const createTripMutation = `mutation Create($input: CreateTripInput!) {
@@ -169,12 +162,6 @@ type TripResult = {
   transportLegs: Array<{ id: string }>;
   stays: Array<{ id: string }>;
   activities: Array<{ id: string; title: string }>;
-  proposals: Array<{
-    id: string;
-    status: string;
-    baseTripRevision: number;
-    operations: Array<{ id: string; operationType: string; status: string }>;
-  }>;
 };
 
 async function createTrip(yoga: Yoga): Promise<TripResult> {
@@ -242,7 +229,7 @@ test('manual GraphQL data persists across API instances and every edit bumps rev
     trip = addStop.data!.addTripStop;
     assert.equal(trip.revision, 1);
     assert.equal(trip.stops.at(-1)?.name, 'Clifftop');
-    assert.equal(trip.stops.at(-1)?.arrivalDate, '2027-06-06');
+    assert.equal(trip.stops.at(-1)?.arrivalDate, null);
     assert.equal(trip.stops.at(-1)?.departureDate, null);
 
     const reordered = await gql<{ reorderTripStops: TripResult }>(
@@ -314,6 +301,200 @@ test('manual GraphQL data persists across API instances and every edit bumps rev
     trip = activity.data!.addActivity;
     assert.equal(trip.revision, 5);
     assert.equal(trip.activities[0]?.title, 'Sunset walk');
+
+    const removedLinkedLast = await gql<{ removeTripStop: TripResult }>(
+      restartedApi,
+      `mutation Remove($id: ID!, $revision: Int!) {
+        removeTripStop(id: $id, expectedRevision: $revision) { ${tripFields} }
+      }`,
+      { id: trip.stops.at(-1)!.id, revision: trip.revision },
+    );
+    assert.equal(removedLinkedLast.errors, undefined);
+    trip = removedLinkedLast.data!.removeTripStop;
+    assert.equal(trip.revision, 6);
+    assert.equal(trip.stops.at(-1)?.departureDate, '2027-06-06');
+  } finally {
+    await harness.pool.end();
+  }
+});
+
+test('destination departure changes keep only an untouched next arrival linked', async () => {
+  const harness = await createHarness();
+  try {
+    let trip = await createTrip(harness.yoga);
+    const [first, second] = trip.stops;
+    const updateStopMutation = `mutation Update($id: ID!, $revision: Int!, $input: TripStopInput!) {
+      updateTripStop(id: $id, expectedRevision: $revision, input: $input) { ${tripFields} }
+    }`;
+
+    const linked = await gql<{ updateTripStop: TripResult }>(harness.yoga, updateStopMutation, {
+      id: first!.id,
+      revision: trip.revision,
+      input: {
+        name: first!.name,
+        locationText: null,
+        arrivalDate: first!.arrivalDate,
+        departureDate: '2027-06-04',
+      },
+    });
+    assert.equal(linked.errors, undefined);
+    trip = linked.data!.updateTripStop;
+    assert.equal(trip.stops.find((stop) => stop.id === second!.id)?.arrivalDate, '2027-06-04');
+
+    const customNext = await gql<{ updateTripStop: TripResult }>(harness.yoga, updateStopMutation, {
+      id: second!.id,
+      revision: trip.revision,
+      input: {
+        name: second!.name,
+        locationText: null,
+        arrivalDate: '2027-06-05',
+        departureDate: second!.departureDate,
+      },
+    });
+    assert.equal(customNext.errors, undefined);
+    trip = customNext.data!.updateTripStop;
+
+    const preserved = await gql<{ updateTripStop: TripResult }>(harness.yoga, updateStopMutation, {
+      id: first!.id,
+      revision: trip.revision,
+      input: {
+        name: first!.name,
+        locationText: null,
+        arrivalDate: first!.arrivalDate,
+        departureDate: '2027-06-02',
+      },
+    });
+    assert.equal(preserved.errors, undefined);
+    assert.equal(
+      preserved.data!.updateTripStop.stops.find((stop) => stop.id === second!.id)?.arrivalDate,
+      '2027-06-05',
+    );
+
+    trip = preserved.data!.updateTripStop;
+    const clearedNext = await gql<{ updateTripStop: TripResult }>(harness.yoga, updateStopMutation, {
+      id: second!.id,
+      revision: trip.revision,
+      input: {
+        name: second!.name,
+        locationText: null,
+        arrivalDate: null,
+        departureDate: second!.departureDate,
+      },
+    });
+    assert.equal(clearedNext.errors, undefined);
+    trip = clearedNext.data!.updateTripStop;
+
+    const keptClear = await gql<{ updateTripStop: TripResult }>(harness.yoga, updateStopMutation, {
+      id: first!.id,
+      revision: trip.revision,
+      input: {
+        name: first!.name,
+        locationText: null,
+        arrivalDate: first!.arrivalDate,
+        departureDate: '2027-06-03',
+      },
+    });
+    assert.equal(keptClear.errors, undefined);
+    assert.equal(
+      keptClear.data!.updateTripStop.stops.find((stop) => stop.id === second!.id)?.arrivalDate,
+      null,
+    );
+  } finally {
+    await harness.pool.end();
+  }
+});
+
+test('adding a destination transfers an explicitly linked trip end without inventing a link on removal', async () => {
+  const harness = await createHarness();
+  try {
+    let trip = await createTrip(harness.yoga);
+    const previousLastId = trip.stops.at(-1)!.id;
+    const added = await gql<{ addTripStop: TripResult }>(
+      harness.yoga,
+      `mutation Add($tripId: ID!, $revision: Int!, $input: TripStopInput!, $moveTripEnd: Boolean) {
+        addTripStop(tripId: $tripId, expectedRevision: $revision, input: $input, moveTripEnd: $moveTripEnd) { ${tripFields} }
+      }`,
+      {
+        tripId: trip.id,
+        revision: trip.revision,
+        moveTripEnd: true,
+        input: {
+          name: 'Clifftop',
+          locationText: null,
+          arrivalDate: null,
+          departureDate: trip.endDate,
+        },
+      },
+    );
+    assert.equal(added.errors, undefined);
+    trip = added.data!.addTripStop;
+    assert.equal(trip.stops.find((stop) => stop.id === previousLastId)?.departureDate, null);
+    assert.equal(trip.stops.at(-1)?.arrivalDate, null);
+    assert.equal(trip.stops.at(-1)?.departureDate, trip.endDate);
+
+    const removed = await gql<{ removeTripStop: TripResult }>(
+      harness.yoga,
+      `mutation Remove($id: ID!, $revision: Int!) {
+        removeTripStop(id: $id, expectedRevision: $revision) { ${tripFields} }
+      }`,
+      { id: trip.stops.at(-1)!.id, revision: trip.revision },
+    );
+    assert.equal(removed.errors, undefined);
+    assert.equal(removed.data!.removeTripStop.stops.at(-1)?.departureDate, null);
+    assert.equal(removed.data!.removeTripStop.endDate, trip.endDate);
+  } finally {
+    await harness.pool.end();
+  }
+});
+
+test('adding a destination preserves explicit date intent when no end transfer occurs', async () => {
+  const harness = await createHarness();
+  try {
+    const addMutation = `mutation Add($tripId: ID!, $revision: Int!, $input: TripStopInput!, $moveTripEnd: Boolean) {
+      addTripStop(tripId: $tripId, expectedRevision: $revision, input: $input, moveTripEnd: $moveTripEnd) { ${tripFields} }
+    }`;
+    let trip = await createTrip(harness.yoga);
+    const previousLastId = trip.stops.at(-1)!.id;
+    const explicitBlank = await gql<{ addTripStop: TripResult }>(harness.yoga, addMutation, {
+      tripId: trip.id,
+      revision: trip.revision,
+      moveTripEnd: false,
+      input: {
+        name: 'Open dates',
+        locationText: null,
+        arrivalDate: null,
+        departureDate: null,
+      },
+    });
+    assert.equal(explicitBlank.errors, undefined);
+    trip = explicitBlank.data!.addTripStop;
+    assert.equal(trip.stops.find((stop) => stop.name === 'Open dates')?.arrivalDate, null);
+    assert.equal(trip.stops.find((stop) => stop.id === previousLastId)?.departureDate, trip.endDate);
+
+    const harnessTwo = await createHarness();
+    try {
+      const secondTrip = await createTrip(harnessTwo.yoga);
+      const secondPreviousLastId = secondTrip.stops.at(-1)!.id;
+      const insertedEarlier = await gql<{ addTripStop: TripResult }>(harnessTwo.yoga, addMutation, {
+        tripId: secondTrip.id,
+        revision: secondTrip.revision,
+        moveTripEnd: true,
+        input: {
+          name: 'Mid-route',
+          locationText: null,
+          arrivalDate: '2027-06-02',
+          departureDate: secondTrip.endDate,
+        },
+      });
+      assert.equal(insertedEarlier.errors, undefined);
+      assert.notEqual(insertedEarlier.data!.addTripStop.stops.at(-1)?.name, 'Mid-route');
+      assert.equal(
+        insertedEarlier.data!.addTripStop.stops.find((stop) => stop.id === secondPreviousLastId)?.departureDate,
+        secondTrip.endDate,
+      );
+    } finally {
+      await harnessTwo.pool.end();
+    }
   } finally {
     await harness.pool.end();
   }
@@ -422,7 +603,7 @@ test('trip boundaries and destination dates synchronize while destinations stay 
     assert.equal(added.errors, undefined);
     trip = added.data!.addTripStop;
     assert.equal(trip.stops.at(-1)?.name, 'Final place');
-    assert.equal(trip.stops.at(-1)?.arrivalDate, '2027-06-04');
+    assert.equal(trip.stops.at(-1)?.arrivalDate, null);
     assert.equal(trip.endDate, '2027-06-06');
 
     const removed = await gql<{ removeTripStop: TripResult }>(
@@ -441,7 +622,7 @@ test('trip boundaries and destination dates synchronize while destinations stay 
   }
 });
 
-test('createTrip fills missing first and last destination boundaries from trip dates', async () => {
+test('createTrip preserves intentionally blank destination boundaries', async () => {
   const harness = await createHarness();
   try {
     const result = await gql<{ createTrip: TripResult }>(harness.yoga, createTripMutation, {
@@ -462,8 +643,8 @@ test('createTrip fills missing first and last destination boundaries from trip d
       },
     });
     assert.equal(result.errors, undefined);
-    assert.equal(result.data?.createTrip.stops[0]?.arrivalDate, '2027-08-10');
-    assert.equal(result.data?.createTrip.stops[0]?.departureDate, '2027-08-14');
+    assert.equal(result.data?.createTrip.stops[0]?.arrivalDate, null);
+    assert.equal(result.data?.createTrip.stops[0]?.departureDate, null);
   } finally {
     await harness.pool.end();
   }
@@ -541,155 +722,74 @@ test('explicit destination boundary dates can diverge while linked edits still f
   }
 });
 
-test('proposal preparation is persisted without changing accepted data and selective apply is atomic', async () => {
-  const harness = await createHarness();
+test('homepage AI draft generation remains available without persisting a trip', async () => {
+  const draft = {
+    name: 'Coastal draft',
+    destinationArea: 'Atlantic coast',
+    startDate: '2027-09-10',
+    endDate: '2027-09-15',
+    travelerCount: 2,
+    stops: [{
+      name: 'Harbor',
+      locationText: null,
+      arrivalDate: '2027-09-10',
+      departureDate: '2027-09-15',
+    }],
+    assumptions: [],
+    warnings: [],
+  };
+  const gateway = new FixtureAiGateway(draft);
+  const harness = await createHarness(gateway);
   try {
-    const trip = await createTrip(harness.yoga);
-    const gateway = new FixtureAiGateway(
-      {
-        name: 'Unused fixture draft',
-        destinationArea: 'Fixture',
-        startDate: null,
-        endDate: null,
-        travelerCount: null,
-        stops: [{ name: 'Fixture', locationText: null, arrivalDate: null, departureDate: null }],
-        assumptions: [],
-        warnings: [],
-      },
-      {
-        summary: 'Two independent changes.',
-        operations: [
-          {
-            type: 'UPDATE_TRIP',
-            description: 'Rename the trip.',
-            payload: {
-              name: 'AI proposed name',
-              destinationArea: trip.destinationArea,
-              startDate: trip.startDate,
-              endDate: trip.endDate,
-              travelerCount: trip.travelerCount,
-            },
-          },
-          {
-            type: 'ADD_ACTIVITY',
-            description: 'Add a dock walk.',
-            payload: {
-              stopId: trip.stops[0]!.id,
-              title: 'Dock walk',
-              status: 'IDEA',
-              scheduledAt: null,
-              timezone: null,
-            },
-          },
-        ],
-      },
-    );
-    const api = harness.withGateway(gateway);
-    const prepared = await gql<{ prepareTripProposal: TripResult['proposals'][number] }>(
-      api,
-      `mutation Prepare($tripId: ID!, $prompt: String!) {
-        prepareTripProposal(tripId: $tripId, prompt: $prompt) {
-          id status baseTripRevision summary operations { id position operationType description status payload }
+    const result = await gql<{ generateTripDraft: typeof draft }>(
+      harness.yoga,
+      `mutation($prompt: String!) {
+        generateTripDraft(prompt: $prompt) {
+          name destinationArea startDate endDate travelerCount assumptions warnings
+          stops { name locationText arrivalDate departureDate }
         }
       }`,
-      { tripId: trip.id, prompt: 'Rename this trip and add a dock walk.' },
+      { prompt: 'Plan a detailed five-day coastal trip for two people.' },
     );
-    const proposal = prepared.data!.prepareTripProposal;
-    assert.equal(proposal.status, 'PENDING');
-    assert.equal(proposal.baseTripRevision, 0);
-    const beforeApply = await gql<{ trip: TripResult }>(api, `query($id: ID!) { trip(id: $id) { ${tripFields} } }`, { id: trip.id });
-    assert.equal(beforeApply.data?.trip.name, 'Database journey');
-    assert.equal(beforeApply.data?.trip.revision, 0);
-    assert.equal(beforeApply.data?.trip.activities.length, 0);
+    assert.equal(result.errors, undefined);
+    assert.deepEqual(result.data?.generateTripDraft, draft);
+    assert.deepEqual(gateway.calls, [{
+      kind: 'draft',
+      prompt: 'Plan a detailed five-day coastal trip for two people.',
+    }]);
+    const tripsResult = await gql<{ trips: Array<{ id: string }> }>(
+      harness.yoga,
+      'query { trips { id } }',
+    );
+    assert.deepEqual(tripsResult.data?.trips, []);
+  } finally {
+    await harness.pool.end();
+  }
+});
 
-    const addOperation = proposal.operations.find((operation) => operation.operationType === 'ADD_ACTIVITY')!;
-    const applied = await gql<{ applyTripProposal: TripResult }>(
-      api,
-      `mutation Apply($id: ID!, $operations: [ID!]!) {
-        applyTripProposal(proposalId: $id, includedOperationIds: $operations) { ${tripFields} }
+test('existing-trip AI proposal fields are absent from the GraphQL schema', async () => {
+  const harness = await createHarness();
+  try {
+    const result = await gql<{
+      mutation: { fields: Array<{ name: string }> };
+      query: { fields: Array<{ name: string }> };
+      trip: { fields: Array<{ name: string }> };
+    }>(
+      harness.yoga,
+      `query {
+        mutation: __type(name: "Mutation") { fields { name } }
+        query: __type(name: "Query") { fields { name } }
+        trip: __type(name: "Trip") { fields { name } }
       }`,
-      { id: proposal.id, operations: [addOperation.id] },
     );
-    assert.equal(applied.data?.applyTripProposal.name, 'Database journey');
-    assert.equal(applied.data?.applyTripProposal.activities[0]?.title, 'Dock walk');
-    assert.equal(applied.data?.applyTripProposal.revision, 1);
-    const appliedProposal = applied.data?.applyTripProposal.proposals.find((item) => item.id === proposal.id);
-    assert.equal(appliedProposal?.status, 'APPLIED');
-    assert.deepEqual(
-      appliedProposal?.operations.map((operation) => operation.status),
-      ['EXCLUDED', 'APPLIED'],
-    );
-  } finally {
-    await harness.pool.end();
-  }
-});
-
-test('manual edits stale proposals; discard never changes accepted trip data', async () => {
-  const harness = await createHarness();
-  try {
-    const trip = await createTrip(harness.yoga);
-    const gateway = new FixtureAiGateway(
-      {
-        name: 'Unused', destinationArea: 'Unused', startDate: null, endDate: null, travelerCount: null,
-        stops: [{ name: 'Unused', locationText: null, arrivalDate: null, departureDate: null }], assumptions: [], warnings: [],
-      },
-      {
-        summary: 'Rename the trip.',
-        operations: [{
-          type: 'UPDATE_TRIP', description: 'Use a proposed name.',
-          payload: { name: 'Proposed name', destinationArea: trip.destinationArea, startDate: trip.startDate, endDate: trip.endDate, travelerCount: trip.travelerCount },
-        }],
-      },
-    );
-    const api = harness.withGateway(gateway);
-    const prepared = await gql<{ prepareTripProposal: { id: string; operations: Array<{ id: string }> } }>(api, `mutation($id: ID!) { prepareTripProposal(tripId: $id, prompt: "Rename it") { id operations { id } } }`, { id: trip.id });
-    const proposal = prepared.data!.prepareTripProposal;
-    const edited = await gql<{ updateTrip: TripResult }>(api, `mutation($id: ID!, $revision: Int!, $input: UpdateTripInput!) { updateTrip(id: $id, expectedRevision: $revision, input: $input) { ${tripFields} } }`, {
-      id: trip.id,
-      revision: 0,
-      input: { name: 'Manual name', destinationArea: trip.destinationArea, startDate: trip.startDate, endDate: trip.endDate, travelerCount: trip.travelerCount },
-    });
-    assert.equal(edited.data?.updateTrip.revision, 1);
-    assert.equal(edited.data?.updateTrip.proposals[0]?.status, 'STALE');
-    const staleApply = await gql(api, `mutation($id: ID!, $ops: [ID!]!) { applyTripProposal(proposalId: $id, includedOperationIds: $ops) { id } }`, { id: proposal.id, ops: [proposal.operations[0]!.id] });
-    assert.equal(staleApply.errors?.[0]?.extensions.code, 'STALE_PROPOSAL');
-    const discarded = await gql<{ discardTripProposal: { status: string } }>(api, `mutation($id: ID!) { discardTripProposal(proposalId: $id) { status } }`, { id: proposal.id });
-    assert.equal(discarded.data?.discardTripProposal.status, 'DISCARDED');
-    const after = await gql<{ trip: TripResult }>(api, `query($id: ID!) { trip(id: $id) { ${tripFields} } }`, { id: trip.id });
-    assert.equal(after.data?.trip.name, 'Manual name');
-    assert.equal(after.data?.trip.revision, 1);
-  } finally {
-    await harness.pool.end();
-  }
-});
-
-test('a corrupted selected operation rolls back earlier operations and proposal status', async () => {
-  const harness = await createHarness();
-  try {
-    const trip = await createTrip(harness.yoga);
-    const gateway = new FixtureAiGateway(
-      {
-        name: 'Unused', destinationArea: 'Unused', startDate: null, endDate: null, travelerCount: null,
-        stops: [{ name: 'Unused', locationText: null, arrivalDate: null, departureDate: null }], assumptions: [], warnings: [],
-      },
-      {
-        summary: 'Two operations for rollback.',
-        operations: [
-          { type: 'UPDATE_TRIP', description: 'Rename first.', payload: { name: 'Should roll back', destinationArea: trip.destinationArea, startDate: trip.startDate, endDate: trip.endDate, travelerCount: trip.travelerCount } },
-          { type: 'ADD_ACTIVITY', description: 'Then add.', payload: { stopId: trip.stops[0]!.id, title: 'Corrupt me', status: 'IDEA', scheduledAt: null, timezone: null } },
-        ],
-      },
-    );
-    const api = harness.withGateway(gateway);
-    const prepared = await gql<{ prepareTripProposal: { id: string; operations: Array<{ id: string }> } }>(api, `mutation($id: ID!) { prepareTripProposal(tripId: $id, prompt: "Prepare rollback") { id operations { id } } }`, { id: trip.id });
-    const proposal = prepared.data!.prepareTripProposal;
-    await harness.db.update(aiProposalOperations).set({ payload: { invalid: true } }).where(eq(aiProposalOperations.id, proposal.operations[1]!.id));
-    const failed = await gql(api, `mutation($id: ID!, $ops: [ID!]!) { applyTripProposal(proposalId: $id, includedOperationIds: $ops) { id } }`, { id: proposal.id, ops: proposal.operations.map((operation) => operation.id) });
-    assert.equal(failed.errors?.[0]?.extensions.code, 'AI_INVALID_OUTPUT');
-    const after = await gql<{ trip: TripResult }>(api, `query($id: ID!) { trip(id: $id) { ${tripFields} } }`, { id: trip.id });
-    assert.equal(after.data?.trip.name, 'Database journey');
-    assert.equal(after.data?.trip.revision, 0);
-    assert.equal(after.data?.trip.proposals[0]?.status, 'PENDING');
+    assert.equal(result.errors, undefined);
+    const mutationFields = result.data!.mutation.fields.map(({ name }) => name);
+    assert.ok(mutationFields.includes('generateTripDraft'));
+    assert.ok(!mutationFields.includes('prepareTripProposal'));
+    assert.ok(!mutationFields.includes('applyTripProposal'));
+    assert.ok(!mutationFields.includes('discardTripProposal'));
+    assert.ok(!result.data!.query.fields.some(({ name }) => name === 'proposal'));
+    assert.ok(!result.data!.trip.fields.some(({ name }) => name === 'proposals'));
   } finally {
     await harness.pool.end();
   }

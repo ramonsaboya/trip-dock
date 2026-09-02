@@ -1,20 +1,13 @@
 import { createSchema, createYoga } from 'graphql-yoga';
-import { GraphQLError, GraphQLScalarType, Kind } from 'graphql';
-import { and, asc, eq, inArray, max, ne, sql } from 'drizzle-orm';
+import { GraphQLError } from 'graphql';
+import { and, eq, inArray, max, sql } from 'drizzle-orm';
 import { z, ZodError } from 'zod';
 
-import {
-  AI_PROMPT_VERSION,
-  AI_SCHEMA_VERSION,
-  type AiGateway,
-  type TripAiContext,
-} from './ai.js';
-import { loadProposal, loadTrip, loadTrips, type TripView } from './data.js';
+import type { AiGateway } from './ai.js';
+import { loadTrip, loadTrips } from './data.js';
 import type { AppDatabase } from './db/client.js';
 import {
   activities,
-  aiProposalOperations,
-  aiProposals,
   stays,
   transportLegs,
   trips,
@@ -26,21 +19,16 @@ import {
   compareStopsByDate,
   isoDateSchema,
   isoDateTimeSchema,
-  proposalOperationSchema,
   timezoneSchema,
   tripDraftStopSchema,
   validateDateRange,
   type DatedStop,
-  type ProposalOperation,
 } from './domain.js';
 
 const typeDefs = /* GraphQL */ `
-  scalar JSON
-
   type Query {
     trips: [Trip!]!
     trip(id: ID!): Trip
-    proposal(id: ID!): AiProposal
   }
 
   type Mutation {
@@ -48,7 +36,7 @@ const typeDefs = /* GraphQL */ `
     updateTrip(id: ID!, expectedRevision: Int!, input: UpdateTripInput!): Trip!
     deleteTrip(id: ID!, expectedRevision: Int!): Boolean!
 
-    addTripStop(tripId: ID!, expectedRevision: Int!, input: TripStopInput!): Trip!
+    addTripStop(tripId: ID!, expectedRevision: Int!, input: TripStopInput!, moveTripEnd: Boolean = false): Trip!
     updateTripStop(id: ID!, expectedRevision: Int!, input: TripStopInput!): Trip!
     removeTripStop(id: ID!, expectedRevision: Int!): Trip!
     reorderTripStops(tripId: ID!, expectedRevision: Int!, stopIds: [ID!]!): Trip!
@@ -67,9 +55,6 @@ const typeDefs = /* GraphQL */ `
     removeActivity(id: ID!, expectedRevision: Int!): Trip!
 
     generateTripDraft(prompt: String!): TripDraft!
-    prepareTripProposal(tripId: ID!, prompt: String!): AiProposal!
-    applyTripProposal(proposalId: ID!, includedOperationIds: [ID!]!): Trip!
-    discardTripProposal(proposalId: ID!): AiProposal!
   }
 
   type Trip {
@@ -86,7 +71,6 @@ const typeDefs = /* GraphQL */ `
     transportLegs: [TransportLeg!]!
     stays: [Stay!]!
     activities: [Activity!]!
-    proposals: [AiProposal!]!
   }
 
   type TripStop {
@@ -139,36 +123,6 @@ const typeDefs = /* GraphQL */ `
     status: String!
     scheduledAt: String
     timezone: String
-    createdAt: String!
-    updatedAt: String!
-  }
-
-  type AiProposal {
-    id: ID!
-    tripId: ID!
-    prompt: String!
-    summary: String!
-    status: String!
-    baseTripRevision: Int!
-    model: String!
-    openaiResponseId: String
-    schemaVersion: String!
-    promptVersion: String!
-    createdAt: String!
-    updatedAt: String!
-    appliedAt: String
-    discardedAt: String
-    operations: [AiProposalOperation!]!
-  }
-
-  type AiProposalOperation {
-    id: ID!
-    proposalId: ID!
-    position: Int!
-    operationType: String!
-    description: String!
-    payload: JSON!
-    status: String!
     createdAt: String!
     updatedAt: String!
   }
@@ -249,18 +203,6 @@ const typeDefs = /* GraphQL */ `
     timezone: String
   }
 `;
-
-const jsonScalar = new GraphQLScalarType({
-  name: 'JSON',
-  serialize: (value) => value,
-  parseValue: (value) => value,
-  parseLiteral(ast) {
-    if (ast.kind === Kind.STRING || ast.kind === Kind.BOOLEAN) return ast.value;
-    if (ast.kind === Kind.INT || ast.kind === Kind.FLOAT) return Number(ast.value);
-    if (ast.kind === Kind.NULL) return null;
-    return null;
-  },
-});
 
 const requiredText = z.string().trim().min(1).max(240);
 const nullableText = z.string().trim().min(1).max(500).nullable();
@@ -382,10 +324,6 @@ async function finishManualMutation(
     .update(trips)
     .set({ revision: revision + 1, updatedAt: now })
     .where(and(eq(trips.id, tripId), eq(trips.revision, revision)));
-  await tx
-    .update(aiProposals)
-    .set({ status: 'STALE', updatedAt: now })
-    .where(and(eq(aiProposals.tripId, tripId), eq(aiProposals.status, 'PENDING')));
 }
 
 async function assertStopsBelong(
@@ -428,10 +366,10 @@ function withLinkedTripBoundaryDates<T extends DatedStop>(
   if (!first || !last) {
     throw new AppError('A trip must keep at least one destination.', 'BAD_USER_INPUT');
   }
-  if (!first.arrivalDate || first.arrivalDate === oldStartDate) {
+  if (first.arrivalDate === oldStartDate) {
     first.arrivalDate = newStartDate;
   }
-  if (!last.departureDate || last.departureDate === oldEndDate) {
+  if (last.departureDate === oldEndDate) {
     last.departureDate = newEndDate;
   }
   return ordered;
@@ -449,7 +387,7 @@ function validateStopsWithinTrip(
       validateDateRange(stop.arrivalDate, stop.departureDate, 'destination date range');
     } catch (error) {
       if (errorCode === 'AI_INVALID_OUTPUT') {
-        throw new AppError('The proposed trip creates an invalid destination date range.', errorCode);
+        throw new AppError('The generated draft creates an invalid destination date range.', errorCode);
       }
       throw error;
     }
@@ -457,7 +395,7 @@ function validateStopsWithinTrip(
       if (date && (date < startDate || date > endDate)) {
         throw new AppError(
           errorCode === 'AI_INVALID_OUTPUT'
-            ? 'The proposed trip dates exclude an existing destination date.'
+            ? 'The generated draft dates exclude a destination date.'
             : 'A destination date falls outside the trip dates.',
           errorCode,
         );
@@ -539,207 +477,18 @@ async function persistStopChronology(
   return ordered;
 }
 
-function buildAiContext(trip: TripView): TripAiContext {
-  return {
-    id: trip.id,
-    revision: trip.revision,
-    name: trip.name,
-    destinationArea: trip.destinationArea,
-    startDate: trip.startDate,
-    endDate: trip.endDate,
-    travelerCount: trip.travelerCount,
-    stops: trip.stops.map(({ id, name, position }) => ({ id, name, position })),
-    activities: trip.activities.map(
-      ({ id, stopId, title, status, scheduledAt, timezone }) => ({
-        id,
-        stopId,
-        title,
-        status,
-        scheduledAt,
-        timezone,
-      }),
-    ),
-  };
-}
-
-function calendarDateForTimestamp(value: string, timezone: string | null): string {
-  const date = new Date(value);
-  if (!timezone) return date.toISOString().slice(0, 10);
-  const parts = Object.fromEntries(
-    new Intl.DateTimeFormat('en-GB', {
-      timeZone: timezone,
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-    })
-      .formatToParts(date)
-      .filter((part) => part.type !== 'literal')
-      .map((part) => [part.type, part.value]),
-  );
-  return `${parts.year}-${parts.month}-${parts.day}`;
-}
-
-function validateActivitySchedule(
-  trip: TripView,
-  stopId: string,
-  scheduledAt: string | null,
-  timezone: string | null,
-): void {
-  if (!scheduledAt) return;
-  const date = calendarDateForTimestamp(scheduledAt, timezone);
-  if (date < trip.startDate || date > trip.endDate) {
-    throw new AppError('A proposed activity falls outside the trip dates.', 'AI_INVALID_OUTPUT');
-  }
-  const stop = trip.stops.find((item) => item.id === stopId);
-  if (!stop) throw new AppError('The proposal references a stop outside this trip.', 'AI_INVALID_OUTPUT');
-  if (
-    (stop.arrivalDate && date < stop.arrivalDate) ||
-    (stop.departureDate && date > stop.departureDate)
-  ) {
-    throw new AppError('A proposed activity falls outside its destination dates.', 'AI_INVALID_OUTPUT');
-  }
-}
-
-function validateProposalSemantics(trip: TripView, operations: ProposalOperation[]): void {
-  const stopIds = new Set(trip.stops.map((stop) => stop.id));
-  const activityIds = new Set(trip.activities.map((activity) => activity.id));
-  const targeted = new Set<string>();
-  let updatesTrip = false;
-  for (const operation of operations) {
-    if (operation.type === 'UPDATE_TRIP') {
-      if (updatesTrip) {
-        throw new AppError('A proposal may update trip essentials only once.', 'AI_INVALID_OUTPUT');
-      }
-      updatesTrip = true;
-      validateDateRange(operation.payload.startDate, operation.payload.endDate, 'trip date range');
-      const boundedStops = withLinkedTripBoundaryDates(
-        orderStopsByDate(trip.stops),
-        trip.startDate,
-        trip.endDate,
-        operation.payload.startDate,
-        operation.payload.endDate,
-      );
-      validateStopsWithinTrip(
-        boundedStops,
-        operation.payload.startDate,
-        operation.payload.endDate,
-        'AI_INVALID_OUTPUT',
-      );
-      for (const activity of trip.activities) {
-        if (!activity.scheduledAt) continue;
-        const date = calendarDateForTimestamp(activity.scheduledAt, activity.timezone);
-        if (date < operation.payload.startDate || date > operation.payload.endDate) {
-          throw new AppError('The proposed trip dates exclude an existing activity.', 'AI_INVALID_OUTPUT');
-        }
-      }
-      continue;
-    }
-    if (operation.type === 'ADD_ACTIVITY') {
-      if (!stopIds.has(operation.payload.stopId)) {
-        throw new AppError('The proposal references a stop outside this trip.', 'AI_INVALID_OUTPUT');
-      }
-      validateActivitySchedule(
-        trip,
-        operation.payload.stopId,
-        operation.payload.scheduledAt,
-        operation.payload.timezone,
-      );
-      continue;
-    }
-    const activityId = operation.payload.activityId;
-    if (!activityIds.has(activityId)) {
-      throw new AppError('The proposal references an activity outside this trip.', 'AI_INVALID_OUTPUT');
-    }
-    if (targeted.has(activityId)) {
-      throw new AppError('The proposal changes the same activity more than once.', 'AI_INVALID_OUTPUT');
-    }
-    targeted.add(activityId);
-    if (operation.type === 'UPDATE_ACTIVITY' && !stopIds.has(operation.payload.stopId)) {
-      throw new AppError('The proposal moves an activity to a stop outside this trip.', 'AI_INVALID_OUTPUT');
-    }
-    if (operation.type === 'UPDATE_ACTIVITY') {
-      validateActivitySchedule(
-        trip,
-        operation.payload.stopId,
-        operation.payload.scheduledAt,
-        operation.payload.timezone,
-      );
-    }
-  }
-}
-
-async function applyProposalOperation(
-  tx: DbTransaction,
-  tripId: string,
-  operation: ProposalOperation,
-): Promise<void> {
-  const now = new Date().toISOString();
-  if (operation.type === 'UPDATE_TRIP') {
-    validateDateRange(operation.payload.startDate, operation.payload.endDate, 'trip date range');
-    const [trip] = await tx.select().from(trips).where(eq(trips.id, tripId)).limit(1);
-    if (!trip) throw new AppError('Trip not found.', 'NOT_FOUND');
-    await synchronizeStopsFromTripDates(tx, trip, operation.payload.startDate, operation.payload.endDate);
-    await tx.update(trips).set({ ...operation.payload, updatedAt: now }).where(eq(trips.id, tripId));
-    return;
-  }
-  if (operation.type === 'ADD_ACTIVITY') {
-    await assertStopsBelong(tx, tripId, [operation.payload.stopId]);
-    const [positionRow] = await tx
-      .select({ value: max(activities.position) })
-      .from(activities)
-      .where(and(eq(activities.tripId, tripId), eq(activities.stopId, operation.payload.stopId)));
-    await tx.insert(activities).values({
-      tripId,
-      position: (positionRow?.value ?? -1) + 1,
-      ...operation.payload,
-    });
-    return;
-  }
-  const [existing] = await tx
-    .select()
-    .from(activities)
-    .where(and(eq(activities.id, operation.payload.activityId), eq(activities.tripId, tripId)))
-    .limit(1);
-  if (!existing) throw new AppError('A proposed activity no longer exists.', 'STALE_PROPOSAL');
-  if (operation.type === 'REMOVE_ACTIVITY') {
-    await tx.delete(activities).where(eq(activities.id, operation.payload.activityId));
-    return;
-  }
-  await assertStopsBelong(tx, tripId, [operation.payload.stopId]);
-  const { activityId: _activityId, ...values } = operation.payload;
-  let position = existing.position;
-  if (values.stopId !== existing.stopId) {
-    const [positionRow] = await tx
-      .select({ value: max(activities.position) })
-      .from(activities)
-      .where(eq(activities.stopId, values.stopId));
-    position = (positionRow?.value ?? -1) + 1;
-  }
-  await tx.update(activities).set({ ...values, position, updatedAt: now }).where(eq(activities.id, existing.id));
-}
-
 function buildResolvers(db: AppDatabase, aiGateway: AiGateway) {
   return {
-    JSON: jsonScalar,
     Query: {
       trips: () => handle(() => loadTrips(db)),
       trip: (_root: unknown, args: { id: string }) =>
         handle(async () => loadTrip(db, parse(idSchema, args.id))),
-      proposal: (_root: unknown, args: { id: string }) =>
-        handle(async () => loadProposal(db, parse(idSchema, args.id))),
     },
     Mutation: {
       createTrip: (_root: unknown, args: { input: unknown }) =>
         handle(async () => {
           const input = parse(createTripInputSchema, args.input);
-          const enteredStops = input.stops.map((stop, position) => {
-            const previous = position > 0 ? input.stops[position - 1] : undefined;
-            return {
-              ...stop,
-              position,
-              arrivalDate: stop.arrivalDate ?? previous?.departureDate ?? null,
-            };
-          });
+          const enteredStops = input.stops.map((stop, position) => ({ ...stop, position }));
           const chronologicallyOrdered = orderStopsByDate(enteredStops);
           const startDate = input.startDate ?? chronologicallyOrdered[0]?.arrivalDate;
           const endDate = input.endDate ?? chronologicallyOrdered.at(-1)?.departureDate;
@@ -755,20 +504,7 @@ function buildResolvers(db: AppDatabase, aiGateway: AiGateway) {
               'BAD_USER_INPUT',
             );
           }
-          const linkedEnteredStops = withLinkedTripBoundaryDates(
-            enteredStops,
-            null,
-            null,
-            startDate,
-            endDate,
-          );
-          const preparedStops = withLinkedTripBoundaryDates(
-            orderStopsByDate(linkedEnteredStops),
-            null,
-            null,
-            startDate,
-            endDate,
-          ).map((stop, position) => ({ ...stop, position }));
+          const preparedStops = chronologicallyOrdered.map((stop, position) => ({ ...stop, position }));
           validateStopsWithinTrip(preparedStops, startDate, endDate);
           const tripId = await db.transaction(async (tx) => {
             const [trip] = await tx
@@ -829,7 +565,7 @@ function buildResolvers(db: AppDatabase, aiGateway: AiGateway) {
         }),
       addTripStop: (
         _root: unknown,
-        args: { tripId: string; expectedRevision: number; input: unknown },
+        args: { tripId: string; expectedRevision: number; input: unknown; moveTripEnd?: boolean },
       ) =>
         handle(async () => {
           const tripId = parse(idSchema, args.tripId);
@@ -839,9 +575,16 @@ function buildResolvers(db: AppDatabase, aiGateway: AiGateway) {
             const trip = await lockTrip(tx, tripId, expectedRevision);
             const currentStops = await orderedTripStops(tx, tripId);
             const previous = currentStops.at(-1);
+            const canMoveLinkedTripEnd = Boolean(
+              args.moveTripEnd === true &&
+              previous &&
+              previous.departureDate === trip.endDate &&
+              input.departureDate === trip.endDate,
+            );
             const stop = {
               ...input,
-              arrivalDate: input.arrivalDate ?? previous?.departureDate ?? null,
+              arrivalDate: input.arrivalDate,
+              departureDate: input.departureDate,
             };
             validateDateRange(stop.arrivalDate, stop.departureDate, 'destination date range');
             const [positionRow] = await tx
@@ -857,7 +600,19 @@ function buildResolvers(db: AppDatabase, aiGateway: AiGateway) {
               })
               .returning();
             if (!inserted) throw new Error('Destination insert did not return a row.');
-            const ordered = await orderedTripStops(tx, tripId);
+            let ordered = await orderedTripStops(tx, tripId);
+            const movesLinkedTripEnd = Boolean(
+              canMoveLinkedTripEnd &&
+              previous &&
+              ordered.at(-1)?.id === inserted.id,
+            );
+            if (movesLinkedTripEnd && previous) {
+              await tx
+                .update(tripStops)
+                .set({ departureDate: null, updatedAt: new Date().toISOString() })
+                .where(eq(tripStops.id, previous.id));
+              ordered = await orderedTripStops(tx, tripId);
+            }
             const startDate = ordered[0]?.id === inserted.id && inserted.arrivalDate
               ? inserted.arrivalDate
               : trip.startDate;
@@ -885,11 +640,27 @@ function buildResolvers(db: AppDatabase, aiGateway: AiGateway) {
             const before = await orderedTripStops(tx, stop.tripId);
             const existing = before.find((item) => item.id === id);
             if (!existing) throw new AppError('Stop not found.', 'NOT_FOUND');
+            const existingIndex = before.findIndex((item) => item.id === id);
+            const linkedNext = before[existingIndex + 1];
             const previousFirst = before[0]!;
             const previousLast = before.at(-1)!;
             const changedArrival = input.arrivalDate !== existing.arrivalDate;
             const changedDeparture = input.departureDate !== existing.departureDate;
+            const updatesLinkedNext = Boolean(
+              changedDeparture &&
+              linkedNext &&
+              linkedNext.arrivalDate === existing.departureDate,
+            );
+            if (updatesLinkedNext && linkedNext) {
+              validateDateRange(input.departureDate, linkedNext.departureDate, 'destination date range');
+            }
             await tx.update(tripStops).set({ ...input, updatedAt: new Date().toISOString() }).where(eq(tripStops.id, id));
+            if (updatesLinkedNext && linkedNext) {
+              await tx
+                .update(tripStops)
+                .set({ arrivalDate: input.departureDate, updatedAt: new Date().toISOString() })
+                .where(eq(tripStops.id, linkedNext.id));
+            }
             const after = await orderedTripStops(tx, stop.tripId);
             const nextFirst = after[0]!;
             const nextLast = after.at(-1)!;
@@ -941,13 +712,13 @@ function buildResolvers(db: AppDatabase, aiGateway: AiGateway) {
             const after = await orderedTripStops(tx, stop.tripId);
             const nextFirst = after[0]!;
             const nextLast = after.at(-1)!;
+            const removedLinkedEnd = previousLast.id === id && previousLast.departureDate === trip.endDate;
             const startDate = previousFirst.id === id &&
               previousFirst.arrivalDate === trip.startDate &&
               nextFirst.arrivalDate
               ? nextFirst.arrivalDate
               : trip.startDate;
-            const endDate = previousLast.id === id &&
-              previousLast.departureDate === trip.endDate &&
+            const endDate = removedLinkedEnd &&
               nextLast.departureDate
               ? nextLast.departureDate
               : trip.endDate;
@@ -1177,164 +948,6 @@ function buildResolvers(db: AppDatabase, aiGateway: AiGateway) {
             throw new AppError('OpenAI returned a draft with inconsistent dates.', 'AI_INVALID_OUTPUT');
           }
           return result.value;
-        }),
-      prepareTripProposal: (_root: unknown, args: { tripId: string; prompt: string }) =>
-        handle(async () => {
-          const tripId = parse(idSchema, args.tripId);
-          const prompt = parse(z.string().trim().min(3).max(4_000), args.prompt);
-          const snapshot = await loadTrip(db, tripId);
-          if (!snapshot) throw new AppError('Trip not found.', 'NOT_FOUND');
-          const result = await aiGateway.prepareTripProposal(buildAiContext(snapshot), prompt);
-          validateProposalSemantics(snapshot, result.value.operations);
-          const proposalId = await db.transaction(async (tx) => {
-            await lockTrip(tx, tripId, snapshot.revision);
-            const [proposal] = await tx
-              .insert(aiProposals)
-              .values({
-                tripId,
-                prompt,
-                summary: result.value.summary,
-                status: 'PENDING',
-                baseTripRevision: snapshot.revision,
-                model: result.model,
-                openaiResponseId: result.responseId,
-                schemaVersion: AI_SCHEMA_VERSION,
-                promptVersion: AI_PROMPT_VERSION,
-              })
-              .returning({ id: aiProposals.id });
-            if (!proposal) throw new Error('Proposal insert did not return an identifier.');
-            await tx.insert(aiProposalOperations).values(
-              result.value.operations.map((operation, position) => ({
-                proposalId: proposal.id,
-                position,
-                operationType: operation.type,
-                description: operation.description,
-                payload: operation.payload,
-              })),
-            );
-            return proposal.id;
-          });
-          const proposal = await loadProposal(db, proposalId);
-          if (!proposal) throw new Error('Created proposal could not be loaded.');
-          return proposal;
-        }),
-      applyTripProposal: (
-        _root: unknown,
-        args: { proposalId: string; includedOperationIds: string[] },
-      ) =>
-        handle(async () => {
-          const proposalId = parse(idSchema, args.proposalId);
-          const includedIds = parse(z.array(idSchema).min(1).max(12), args.includedOperationIds);
-          if (new Set(includedIds).size !== includedIds.length) {
-            throw new AppError('Select each proposal operation at most once.', 'BAD_USER_INPUT');
-          }
-          const [proposalHint] = await db
-            .select({ tripId: aiProposals.tripId })
-            .from(aiProposals)
-            .where(eq(aiProposals.id, proposalId))
-            .limit(1);
-          if (!proposalHint) throw new AppError('Proposal not found.', 'NOT_FOUND');
-          const acceptedSnapshot = await loadTrip(db, proposalHint.tripId);
-          if (!acceptedSnapshot) throw new AppError('Trip not found.', 'NOT_FOUND');
-          const tripId = await db.transaction(async (tx) => {
-            // All accepted-data mutations lock the trip before proposal rows. A
-            // consistent lock order prevents manual/apply and apply/apply deadlocks.
-            const [trip] = await tx
-              .select()
-              .from(trips)
-              .where(eq(trips.id, proposalHint.tripId))
-              .limit(1)
-              .for('update');
-            if (!trip) throw new AppError('Trip not found.', 'NOT_FOUND');
-            const [proposal] = await tx
-              .select()
-              .from(aiProposals)
-              .where(eq(aiProposals.id, proposalId))
-              .limit(1)
-              .for('update');
-            if (!proposal) throw new AppError('Proposal not found.', 'NOT_FOUND');
-            if (proposal.tripId !== trip.id) {
-              throw new AppError('The proposal no longer belongs to this trip.', 'STALE_PROPOSAL');
-            }
-            if (proposal.status === 'STALE') throw new AppError('This proposal is out of date. Prepare a new one.', 'STALE_PROPOSAL');
-            if (proposal.status !== 'PENDING') throw new AppError('Only pending proposals can be applied.', 'BAD_USER_INPUT');
-            if (trip.revision !== proposal.baseTripRevision) {
-              throw new AppError('This proposal is out of date. Prepare a new one.', 'STALE_PROPOSAL');
-            }
-            const rows = await tx
-              .select()
-              .from(aiProposalOperations)
-              .where(eq(aiProposalOperations.proposalId, proposalId))
-              .orderBy(asc(aiProposalOperations.position));
-            if (includedIds.some((id) => !rows.some((row) => row.id === id))) {
-              throw new AppError('Every selected operation must belong to this proposal.', 'BAD_USER_INPUT');
-            }
-            let selectedTripUpdate = false;
-            const selectedActivityTargets = new Set<string>();
-            for (const row of rows) {
-              if (!includedIds.includes(row.id)) continue;
-              const operation = proposalOperationSchema.safeParse({
-                type: row.operationType,
-                description: row.description,
-                payload: row.payload,
-              });
-              if (!operation.success) throw new AppError('A stored proposal operation is invalid.', 'AI_INVALID_OUTPUT');
-              if (operation.data.type === 'UPDATE_TRIP') {
-                if (selectedTripUpdate) {
-                  throw new AppError('A proposal may update trip essentials only once.', 'AI_INVALID_OUTPUT');
-                }
-                selectedTripUpdate = true;
-              }
-              if (
-                operation.data.type === 'UPDATE_ACTIVITY' ||
-                operation.data.type === 'REMOVE_ACTIVITY'
-              ) {
-                const activityId = operation.data.payload.activityId;
-                if (selectedActivityTargets.has(activityId)) {
-                  throw new AppError('A proposal may change an activity only once.', 'AI_INVALID_OUTPUT');
-                }
-                selectedActivityTargets.add(activityId);
-              }
-              validateProposalSemantics(acceptedSnapshot, [operation.data]);
-              await applyProposalOperation(tx, proposal.tripId, operation.data);
-            }
-            const now = new Date().toISOString();
-            await tx
-              .update(aiProposalOperations)
-              .set({ status: 'APPLIED', updatedAt: now })
-              .where(and(eq(aiProposalOperations.proposalId, proposalId), inArray(aiProposalOperations.id, includedIds)));
-            await tx
-              .update(aiProposalOperations)
-              .set({ status: 'EXCLUDED', updatedAt: now })
-              .where(and(eq(aiProposalOperations.proposalId, proposalId), ne(aiProposalOperations.status, 'APPLIED')));
-            await tx.update(aiProposals).set({ status: 'APPLIED', appliedAt: now, updatedAt: now }).where(eq(aiProposals.id, proposalId));
-            await tx.update(trips).set({ revision: trip.revision + 1, updatedAt: now }).where(eq(trips.id, proposal.tripId));
-            await tx
-              .update(aiProposals)
-              .set({ status: 'STALE', updatedAt: now })
-              .where(and(eq(aiProposals.tripId, proposal.tripId), eq(aiProposals.status, 'PENDING'), ne(aiProposals.id, proposalId)));
-            return proposal.tripId;
-          });
-          const updated = await loadTrip(db, tripId);
-          if (!updated) throw new AppError('Trip not found.', 'NOT_FOUND');
-          return updated;
-        }),
-      discardTripProposal: (_root: unknown, args: { proposalId: string }) =>
-        handle(async () => {
-          const proposalId = parse(idSchema, args.proposalId);
-          await db.transaction(async (tx) => {
-            const [proposal] = await tx.select().from(aiProposals).where(eq(aiProposals.id, proposalId)).limit(1).for('update');
-            if (!proposal) throw new AppError('Proposal not found.', 'NOT_FOUND');
-            if (!['PENDING', 'STALE'].includes(proposal.status)) {
-              throw new AppError('Only pending or stale proposals can be discarded.', 'BAD_USER_INPUT');
-            }
-            const now = new Date().toISOString();
-            await tx.update(aiProposals).set({ status: 'DISCARDED', discardedAt: now, updatedAt: now }).where(eq(aiProposals.id, proposalId));
-            await tx.update(aiProposalOperations).set({ status: 'EXCLUDED', updatedAt: now }).where(eq(aiProposalOperations.proposalId, proposalId));
-          });
-          const discarded = await loadProposal(db, proposalId);
-          if (!discarded) throw new AppError('Proposal not found.', 'NOT_FOUND');
-          return discarded;
         }),
     },
   };

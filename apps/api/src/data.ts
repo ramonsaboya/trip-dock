@@ -1,10 +1,8 @@
-import { asc, desc, eq } from 'drizzle-orm';
+import { asc, eq } from 'drizzle-orm';
 
 import type { AppDatabase } from './db/client.js';
 import {
   activities,
-  aiProposalOperations,
-  aiProposals,
   stays,
   transportLegs,
   trips,
@@ -12,31 +10,12 @@ import {
 } from './db/schema.js';
 import { compareStopsByDate } from './domain.js';
 
-export type ProposalView = typeof aiProposals.$inferSelect & {
-  operations: Array<typeof aiProposalOperations.$inferSelect>;
-};
-
 export type TripView = typeof trips.$inferSelect & {
   stops: Array<typeof tripStops.$inferSelect>;
   transportLegs: Array<typeof transportLegs.$inferSelect>;
   stays: Array<typeof stays.$inferSelect>;
   activities: Array<typeof activities.$inferSelect>;
-  proposals: ProposalView[];
 };
-
-export async function loadProposal(
-  db: Pick<AppDatabase, 'select'>,
-  id: string,
-): Promise<ProposalView | null> {
-  const [proposal] = await db.select().from(aiProposals).where(eq(aiProposals.id, id)).limit(1);
-  if (!proposal) return null;
-  const operations = await db
-    .select()
-    .from(aiProposalOperations)
-    .where(eq(aiProposalOperations.proposalId, id))
-    .orderBy(asc(aiProposalOperations.position));
-  return { ...proposal, operations };
-}
 
 export async function loadTrip(
   db: Pick<AppDatabase, 'select'>,
@@ -45,7 +24,7 @@ export async function loadTrip(
   const [trip] = await db.select().from(trips).where(eq(trips.id, id)).limit(1);
   if (!trip) return null;
 
-  const [storedStops, transportList, staysList, activityList, proposalList] =
+  const [storedStops, transportList, staysList, activityList] =
     await Promise.all([
       db
         .select()
@@ -67,27 +46,11 @@ export async function loadTrip(
         .from(activities)
         .where(eq(activities.tripId, id))
         .orderBy(asc(activities.position)),
-      db
-        .select()
-        .from(aiProposals)
-        .where(eq(aiProposals.tripId, id))
-        .orderBy(desc(aiProposals.createdAt)),
     ]);
 
   const stopsList = [...storedStops]
     .sort(compareStopsByDate)
     .map((stop, position) => ({ ...stop, position }));
-
-  const proposalViews = await Promise.all(
-    proposalList.map(async (proposal) => {
-      const operations = await db
-        .select()
-        .from(aiProposalOperations)
-        .where(eq(aiProposalOperations.proposalId, proposal.id))
-        .orderBy(asc(aiProposalOperations.position));
-      return { ...proposal, operations };
-    }),
-  );
 
   return {
     ...trip,
@@ -95,7 +58,6 @@ export async function loadTrip(
     transportLegs: transportList,
     stays: staysList,
     activities: activityList,
-    proposals: proposalViews,
   };
 }
 

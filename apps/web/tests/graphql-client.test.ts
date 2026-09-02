@@ -4,17 +4,21 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import {
+  activityDateTimeForStop,
   appendTripStop,
   dateTimeLocalToIso,
+  dateTimeLocalToIsoPreserving,
   destinationAreaFromStops,
   draftToTripInput,
   formatDateRange,
   graphqlRequest,
   isoToDateTimeLocal,
+  operations,
   removeTripStop,
   sortStopsByDate,
+  stayDateTimesForStop,
+  transportDateTimesForStops,
   TripDockGraphQLError,
-  toggleSelectedOperation,
   updateTripBoundaryDate,
   updateTripStopDate,
   type TripDraft,
@@ -38,6 +42,11 @@ function tripInput(overrides: Partial<TripInput> = {}): TripInput {
     ...overrides,
   };
 }
+
+test('add-stop operation declares and forwards optional trip-end movement intent', () => {
+  assert.match(operations.addStop, /\$moveTripEnd: Boolean/);
+  assert.match(operations.addStop, /moveTripEnd: \$moveTripEnd/);
+});
 
 test('GraphQL client preserves a genuine empty trips result', async () => {
   const originalFetch = globalThis.fetch;
@@ -178,8 +187,9 @@ test('trip and boundary-destination dates stay in sync without overwriting an ex
   assert.equal(preserved.stops[0]?.arrivalDate, '2028-04-05');
 });
 
-test('a newly appended destination inherits the previous destination departure date', () => {
+test('a newly appended destination inherits an explicit previous departure date', () => {
   const input = tripInput({
+    endDate: '2028-04-11',
     stops: [{
       name: 'Porto',
       locationText: null,
@@ -190,7 +200,131 @@ test('a newly appended destination inherits the previous destination departure d
   const appended = appendTripStop(input);
   assert.equal(appended.stops.length, 2);
   assert.equal(appended.stops[1]?.arrivalDate, '2028-04-06');
-  assert.equal(appended.stops[1]?.departureDate, null);
+  assert.equal(appended.stops[1]?.departureDate, '2028-04-11');
+});
+
+test('adding a destination moves an untouched trip end to the new last destination', () => {
+  const input = tripInput({
+    endDate: '2028-04-11',
+    stops: [{
+      name: 'Porto',
+      locationText: null,
+      arrivalDate: '2028-04-02',
+      departureDate: '2028-04-11',
+    }],
+  });
+
+  const appended = appendTripStop(input);
+  assert.equal(appended.stops[0]?.departureDate, null);
+  assert.equal(appended.stops[1]?.arrivalDate, null);
+  assert.equal(appended.stops[1]?.departureDate, '2028-04-11');
+
+  const preserved = appendTripStop(input, { lastDepartureDirty: true });
+  assert.equal(preserved.stops[0]?.departureDate, '2028-04-11');
+  assert.equal(preserved.stops[1]?.arrivalDate, '2028-04-11');
+  assert.equal(preserved.stops[1]?.departureDate, '2028-04-11');
+});
+
+test('a destination end keeps the next untouched destination start linked', () => {
+  const input = tripInput({
+    stops: [
+      { name: 'Porto', locationText: null, arrivalDate: '2028-04-02', departureDate: null },
+      { name: 'Lisbon', locationText: null, arrivalDate: null, departureDate: '2028-04-11' },
+    ],
+  });
+
+  const linked = updateTripStopDate(input, 0, 'departureDate', '2028-04-06');
+  assert.equal(linked.stops[1]?.arrivalDate, '2028-04-06');
+
+  const moved = updateTripStopDate(linked, 0, 'departureDate', '2028-04-07');
+  assert.equal(moved.stops[1]?.arrivalDate, '2028-04-07');
+
+  const preserved = updateTripStopDate(
+    linked,
+    0,
+    'departureDate',
+    '2028-04-08',
+    { nextArrivalDirty: true },
+  );
+  assert.equal(preserved.stops[1]?.arrivalDate, '2028-04-06');
+});
+
+test('a dirty main trip boundary is not overwritten by a destination edit', () => {
+  const input = tripInput({
+    endDate: '2028-04-11',
+    stops: [{
+      name: 'Porto',
+      locationText: null,
+      arrivalDate: '2028-04-02',
+      departureDate: '2028-04-11',
+    }],
+  });
+  const next = updateTripStopDate(
+    input,
+    0,
+    'departureDate',
+    '2028-04-10',
+    { tripBoundaryDirty: true },
+  );
+  assert.equal(next.endDate, '2028-04-11');
+  assert.equal(next.stops[0]?.departureDate, '2028-04-10');
+});
+
+test('a cleared destination date remains untouched by later boundary changes once dirty', () => {
+  const input = tripInput({
+    endDate: '2028-04-11',
+    stops: [{
+      name: 'Porto',
+      locationText: null,
+      arrivalDate: '2028-04-02',
+      departureDate: null,
+    }],
+  });
+  const changed = updateTripBoundaryDate(
+    input,
+    'end',
+    '2028-04-12',
+    { stopDateDirty: true },
+  );
+  assert.equal(changed.stops[0]?.departureDate, null);
+});
+
+test('removing an auto-linked last destination restores the trip end to its predecessor', () => {
+  const initial = tripInput({
+    endDate: '2028-04-11',
+    stops: [{
+      name: 'Porto',
+      locationText: null,
+      arrivalDate: '2028-04-02',
+      departureDate: '2028-04-11',
+    }],
+  });
+  const appended = appendTripStop(initial);
+  const restored = removeTripStop(appended, 1, { preserveTripEnd: true });
+  assert.equal(restored.endDate, '2028-04-11');
+  assert.equal(restored.stops[0]?.departureDate, '2028-04-11');
+});
+
+test('removing an auto-linked last destination preserves explicit predecessor state', () => {
+  const appended = appendTripStop(tripInput({
+    endDate: '2028-04-11',
+    stops: [{
+      name: 'Porto',
+      locationText: null,
+      arrivalDate: '2028-04-02',
+      departureDate: '2028-04-06',
+    }],
+  }));
+  const restored = removeTripStop(appended, 1, { preserveTripEnd: true });
+  assert.equal(restored.endDate, '2028-04-11');
+  assert.equal(restored.stops[0]?.departureDate, '2028-04-06');
+
+  const cleared = removeTripStop({
+    ...appended,
+    stops: [{ ...appended.stops[0]!, departureDate: null }, appended.stops[1]!],
+  }, 1, { preserveTripEnd: true, survivingDepartureDirty: true });
+  assert.equal(cleared.endDate, '2028-04-11');
+  assert.equal(cleared.stops[0]?.departureDate, null);
 });
 
 test('removing a boundary destination derives trip boundaries from the remaining route', () => {
@@ -255,14 +389,6 @@ test('destinations sort chronologically without mutating the server-provided col
   assert.deepEqual(stops.map((stop) => stop.id), ['undated', 'later', 'earlier', 'earlier-shorter']);
 });
 
-test('proposal operation selection is independent and reversible', () => {
-  let selected = new Set(['operation-a', 'operation-b']);
-  selected = toggleSelectedOperation(selected, 'operation-a');
-  assert.deepEqual([...selected], ['operation-b']);
-  selected = toggleSelectedOperation(selected, 'operation-c');
-  assert.deepEqual([...selected], ['operation-b', 'operation-c']);
-});
-
 test('presentation helpers derive labels from arbitrary persisted dates', () => {
   assert.equal(formatDateRange('2028-01-30', '2028-02-03'), '30 Jan–3 Feb 2028');
 });
@@ -274,6 +400,63 @@ test('IANA timezone helpers preserve wall time across UTC conversion', () => {
   assert.throws(
     () => dateTimeLocalToIso('2028-07-12T10:30', 'Europe/Londn'),
     /valid IANA timezone/,
+  );
+});
+
+test('unchanged ambiguous local times preserve their original instant', () => {
+  const earlyOccurrence = '2025-10-26T00:30:00.000Z';
+  const lateOccurrence = '2025-10-26T01:30:00.000Z';
+  assert.equal(isoToDateTimeLocal(earlyOccurrence, 'Europe/London'), '2025-10-26T01:30');
+  assert.equal(isoToDateTimeLocal(lateOccurrence, 'Europe/London'), '2025-10-26T01:30');
+  assert.equal(
+    dateTimeLocalToIsoPreserving('2025-10-26T01:30', 'Europe/London', earlyOccurrence),
+    earlyOccurrence,
+  );
+  assert.equal(
+    dateTimeLocalToIsoPreserving('2025-10-26T01:30', 'Europe/London', lateOccurrence),
+    lateOccurrence,
+  );
+});
+
+test('new stay date-times use the destination dates with practical suggested times', () => {
+  assert.deepEqual(stayDateTimesForStop({
+    arrivalDate: '2028-07-12',
+    departureDate: '2028-07-16',
+  }), {
+    checkIn: '2028-07-12T15:00',
+    checkOut: '2028-07-16T11:00',
+  });
+  assert.deepEqual(stayDateTimesForStop(undefined), { checkIn: null, checkOut: null });
+  assert.deepEqual(stayDateTimesForStop({
+    arrivalDate: '2028-07-12',
+    departureDate: '2028-07-12',
+  }), {
+    checkIn: '2028-07-12T15:00',
+    checkOut: '2028-07-12T17:00',
+  });
+});
+
+test('transport and activity suggestions stay anchored to their destinations', () => {
+  const from = { arrivalDate: '2028-07-12', departureDate: '2028-07-14' };
+  const to = { arrivalDate: '2028-07-14', departureDate: '2028-07-16' };
+  assert.deepEqual(transportDateTimesForStops(from, to), {
+    departureTime: '2028-07-14T09:00',
+    arrivalTime: '2028-07-14T17:00',
+  });
+  assert.equal(activityDateTimeForStop(to), '2028-07-14T09:00');
+  assert.equal(activityDateTimeForStop(undefined), null);
+});
+
+test('transport suggestions never invert the timing for overlapping or reverse routes', () => {
+  assert.deepEqual(
+    transportDateTimesForStops(
+      { arrivalDate: '2028-07-01', departureDate: '2028-07-10' },
+      { arrivalDate: '2028-07-05', departureDate: '2028-07-07' },
+    ),
+    {
+      departureTime: '2028-07-10T09:00',
+      arrivalTime: '2028-07-10T17:00',
+    },
   );
 });
 
@@ -290,5 +473,10 @@ test('production web code contains no fixture or browser-storage fallback', asyn
   assert.doesNotMatch(
     source,
     /PostgreSQL|Local workspace|Destination area|Location detail|Start manually|Draft with TripDock AI/i,
+  );
+  assert.doesNotMatch(source, /<Field label="[^"]*timezone/i);
+  assert.doesNotMatch(
+    source,
+    /prepareTripProposal|applyTripProposal|discardTripProposal|proposal-prompt|Open TripDock AI/i,
   );
 });

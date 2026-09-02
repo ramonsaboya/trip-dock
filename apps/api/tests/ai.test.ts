@@ -21,25 +21,8 @@ const draft = {
   warnings: [],
 };
 
-const proposal = {
-  summary: 'Add one reviewable activity.',
-  operations: [
-    {
-      type: 'ADD_ACTIVITY' as const,
-      description: 'Add a fixture activity.',
-      payload: {
-        stopId: '00000000-0000-4000-8000-000000000001',
-        title: 'Fixture activity',
-        status: 'IDEA' as const,
-        scheduledAt: null,
-        timezone: null,
-      },
-    },
-  ],
-};
-
 test('FixtureAiGateway is explicit, deterministic, and records calls', async () => {
-  const gateway = new FixtureAiGateway(draft, proposal);
+  const gateway = new FixtureAiGateway(draft);
   const first = await gateway.generateTripDraft('A deterministic fixture prompt');
   const second = await gateway.generateTripDraft('A deterministic fixture prompt');
 

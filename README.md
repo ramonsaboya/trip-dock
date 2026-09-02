@@ -1,6 +1,6 @@
 # TripDock
 
-TripDock is a local-first trip planner for multi-stop journeys. This repository contains a complete local vertical slice: a responsive web app, a GraphQL Yoga API, PostgreSQL persistence through Drizzle, and server-side OpenAI Structured Outputs for draft generation and reviewable change proposals.
+TripDock is a local-first trip planner for multi-stop journeys. This repository contains a complete local vertical slice: a responsive web app, a GraphQL Yoga API, PostgreSQL persistence through Drizzle, and server-side OpenAI Structured Outputs for editable new-trip drafts.
 
 Canonical trip data lives only in PostgreSQL. The browser contains no trip fixtures, local-storage state, provider key, or AI mutation shortcut.
 
@@ -10,9 +10,7 @@ Canonical trip data lives only in PostgreSQL. The browser contains no trip fixtu
 - Add, edit, remove, and reorder destinations.
 - Add, edit, and remove transport legs, stays, and activities.
 - Generate an unpersisted trip draft from natural language, edit it, and explicitly create it.
-- Prepare and persist an AI proposal without changing accepted trip data.
-- Select individual proposal operations, apply them in one transaction, keep a proposal for later, or discard it.
-- Reject stale edits and proposals with trip revision checks.
+- Reject stale manual edits with trip revision checks.
 - Start from a genuinely empty database with polished loading, error, and empty UI states.
 - Use the supplied TripDock logo throughout the header, favicon, Apple icon, PWA icons, manifest, and social preview.
 
@@ -55,7 +53,7 @@ OPENAI_API_KEY=your-project-key
 OPENAI_MODEL=your-structured-outputs-capable-model
 ```
 
-The API uses the OpenAI Responses API with strict Zod-backed Structured Outputs and `store: false`. The key is read only by `apps/api`; it is never sent to or embedded in the web app. If either setting is missing, all manual functionality remains available and AI mutations return a clear configuration error. There is no silent fixture fallback.
+The API uses the OpenAI Responses API with strict Zod-backed Structured Outputs and `store: false`. The key is read only by `apps/api`; it is never sent to or embedded in the web app. If either setting is missing, all manual functionality remains available and AI draft requests return a clear configuration error. There is no silent fixture fallback.
 
 Run the separately billed, explicit provider smoke with:
 
@@ -84,31 +82,31 @@ pnpm test:ai-live    Make one explicit live OpenAI Structured Outputs request
 
 ```text
 Browser (React/Vinext)
-        │ GraphQL; accepted records and proposal selections
+        │ GraphQL; accepted trip records and editable draft requests
         ▼
 GraphQL Yoga API ───────────────► PostgreSQL 17
-        │                          canonical trips + proposals
-        │ minimal trip context
+        │                          canonical trip data
+        │ natural-language new-trip prompt
         ▼
 OpenAI Responses API
-        │ schema-validated draft or proposed operations
-        └────────► persisted proposal ──human selection──► one DB transaction
+        │ schema-validated, unpersisted draft
+        └────────► human edit + explicit Create ─────────► GraphQL Yoga API
 ```
 
-The API owns validation, revision checks, entity ownership, proposal status, and transaction boundaries. Model output is parsed through a discriminated Zod operation schema and then validated against the current trip. It cannot directly write accepted trip rows. The initial AI operation vocabulary is deliberately small: update trip essentials, add an activity, update an activity, and remove an activity. Manual CRUD covers the full implemented data model.
+The API owns validation, revision checks, entity ownership, and transaction boundaries. Model output is parsed through a strict Zod draft schema and checked for consistent dates. It cannot directly write accepted trip rows: the browser presents the draft in the normal create form, where a person can change every field before explicitly saving. Existing trips use manual CRUD only.
 
-The migrated schema contains `trips`, `trip_stops`, `transport_legs`, `stays`, `activities`, `ai_proposals`, and `ai_proposal_operations`. UUID primary keys, foreign keys with cascades, ordered positions, timestamps, date/status checks, and trip revisions are defined in the generated SQL migration under `apps/api/drizzle`.
+The active data model contains `trips`, `trip_stops`, `transport_legs`, `stays`, and `activities`. The immutable baseline migration also contains the legacy `ai_proposals` and `ai_proposal_operations` tables; they are retained only for migration compatibility and have no current GraphQL or application runtime path. UUID primary keys, foreign keys with cascades, ordered positions, timestamps, date/status checks, and trip revisions are defined in the generated SQL migration under `apps/api/drizzle`.
 
 ## Verification
 
-`pnpm test` covers empty-database behavior, persistence across API instances, revision increments, proposal persistence, selective application, staleness, discard behavior, rollback, deterministic AI fixtures, GraphQL error handling, and removal of production browser fixtures/storage. `pnpm test:postgres` is the optional real-PostgreSQL migration smoke. `pnpm check` is the required local gate.
+`pnpm test` covers empty-database behavior, persistence across API instances, revision increments, destination-date linking, deterministic new-trip AI drafts, the absence of existing-trip AI GraphQL fields, GraphQL error handling, and removal of production browser fixtures/storage. `pnpm test:postgres` is the optional real-PostgreSQL migration smoke. `pnpm check` is the required local gate.
 
 The deterministic brand generator is `scripts/generate-brand-assets.py`. It requires Python 3 and Pillow (`python -m pip install Pillow`) and reproduces all checked-in icons and the social preview from `apps/web/public/brand/tripdock-logo.png`.
 
 ## Current limitations
 
 - This is intentionally local-only: no deployment, authentication, authorization, collaboration, or multi-user concurrency beyond optimistic revision protection.
-- Voice, WhatsApp, booking providers, uploads, background workers, notifications, and itinerary chat are out of scope.
+- Voice, WhatsApp, booking providers, uploads, background workers, notifications, and AI changes to existing trips are out of scope.
 - Live model quality and compatibility require `pnpm test:ai-live`; deterministic tests do not spend API credits.
 - Production hosting and infrastructure providers remain undecided.
 
@@ -118,5 +116,5 @@ The detailed slice contract is recorded in [docs/prototype-v0.md](docs/prototype
 
 - Keep secrets out of Git; commit only sanitized examples.
 - Make schema changes through reviewed generated migrations.
-- Keep AI output reviewable and subject to the same deterministic validation as human input.
+- Keep AI-created trip drafts editable and subject to deterministic server validation before persistence.
 - Treat generated brand assets as reproducible derivatives of `apps/web/public/brand/tripdock-logo.png`.

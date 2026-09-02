@@ -163,6 +163,8 @@ export const activities = pgTable(
   ],
 );
 
+// These legacy tables remain declared so the already-applied baseline migration
+// stays reproducible. No current GraphQL or application runtime reads or writes them.
 export const aiProposals = pgTable(
   'ai_proposals',
   {

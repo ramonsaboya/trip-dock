@@ -10,7 +10,7 @@ export const metadata: Metadata = {
   applicationName: 'TripDock',
   title: 'TripDock — Your trips, clearly organized',
   description:
-    'A calm, structured place for destinations, transport, stays, activities, and reviewable AI trip changes.',
+    'A calm, structured place for destinations, transport, stays, activities, and editable AI trip drafts.',
   manifest: '/site.webmanifest',
   icons: {
     icon: [
@@ -34,7 +34,7 @@ export const metadata: Metadata = {
     siteName: 'TripDock',
     title: 'TripDock — Your trips, clearly organized',
     description:
-      'A calm, structured place for destinations, transport, stays, activities, and reviewable AI trip changes.',
+      'A calm, structured place for destinations, transport, stays, activities, and editable AI trip drafts.',
     images: [
       {
         url: '/og.png',
@@ -49,7 +49,7 @@ export const metadata: Metadata = {
     card: 'summary_large_image',
     title: 'TripDock — Your trips, clearly organized',
     description:
-      'A calm, structured place for destinations, transport, stays, activities, and reviewable AI trip changes.',
+      'A calm, structured place for destinations, transport, stays, activities, and editable AI trip drafts.',
     images: ['/og.png'],
   },
 };

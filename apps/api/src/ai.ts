@@ -3,33 +3,9 @@ import { zodTextFormat } from 'openai/helpers/zod';
 
 import {
   AppError,
-  proposalOutputSchema,
   tripDraftSchema,
-  type ProposalOutput,
   type TripDraft,
 } from './domain.js';
-
-export const AI_SCHEMA_VERSION = 'tripdock-ai-v1';
-export const AI_PROMPT_VERSION = 'tripdock-prompt-v1';
-
-export type TripAiContext = {
-  id: string;
-  revision: number;
-  name: string;
-  destinationArea: string;
-  startDate: string;
-  endDate: string;
-  travelerCount: number;
-  stops: Array<{ id: string; name: string; position: number }>;
-  activities: Array<{
-    id: string;
-    stopId: string;
-    title: string;
-    status: string;
-    scheduledAt: string | null;
-    timezone: string | null;
-  }>;
-};
 
 export type AiResult<T> = {
   value: T;
@@ -39,7 +15,6 @@ export type AiResult<T> = {
 
 export interface AiGateway {
   generateTripDraft(prompt: string): Promise<AiResult<TripDraft>>;
-  prepareTripProposal(context: TripAiContext, prompt: string): Promise<AiResult<ProposalOutput>>;
 }
 
 function extractRefusal(response: unknown): string | null {
@@ -138,41 +113,12 @@ export class OpenAiGateway implements AiGateway {
       throw classifyProviderError(error);
     }
   }
-
-  async prepareTripProposal(
-    context: TripAiContext,
-    prompt: string,
-  ): Promise<AiResult<ProposalOutput>> {
-    try {
-      const response = await this.client.responses.parse({
-        model: this.model,
-        store: false,
-        instructions:
-          'Prepare reviewable operations only. You may update the trip essentials, add an activity, replace an existing activity with a complete desired value, or remove an activity. Reference only IDs in the supplied context. destinationArea is internal compatibility metadata: preserve its current value and never mention it in summaries or descriptions. Never claim a change is already applied.',
-        input: `Accepted trip context:\n${JSON.stringify(context)}\n\nRequested change:\n${prompt}`,
-        text: { format: zodTextFormat(proposalOutputSchema, 'tripdock_trip_proposal_v1') },
-      });
-      const refusal = extractRefusal(response);
-      if (refusal) throw new AppError('OpenAI declined this proposal request.', 'AI_REFUSAL');
-      requireCompletedResponse(response, 'proposal');
-      const parsed = proposalOutputSchema.safeParse(response.output_parsed);
-      if (!parsed.success) {
-        throw new AppError('OpenAI returned a proposal that failed server validation.', 'AI_INVALID_OUTPUT');
-      }
-      return { value: parsed.data, model: response.model, responseId: response.id };
-    } catch (error) {
-      throw classifyProviderError(error);
-    }
-  }
 }
 
 export class FixtureAiGateway implements AiGateway {
-  readonly calls: Array<{ kind: 'draft' | 'proposal'; prompt: string }> = [];
+  readonly calls: Array<{ kind: 'draft'; prompt: string }> = [];
 
-  constructor(
-    private readonly draft: TripDraft,
-    private readonly proposal: ProposalOutput,
-  ) {}
+  constructor(private readonly draft: TripDraft) {}
 
   async generateTripDraft(prompt: string): Promise<AiResult<TripDraft>> {
     this.calls.push({ kind: 'draft', prompt });
@@ -180,18 +126,6 @@ export class FixtureAiGateway implements AiGateway {
       value: tripDraftSchema.parse(structuredClone(this.draft)),
       model: 'fixture-tripdock-v1',
       responseId: 'fixture-draft-response',
-    };
-  }
-
-  async prepareTripProposal(
-    _context: TripAiContext,
-    prompt: string,
-  ): Promise<AiResult<ProposalOutput>> {
-    this.calls.push({ kind: 'proposal', prompt });
-    return {
-      value: proposalOutputSchema.parse(structuredClone(this.proposal)),
-      model: 'fixture-tripdock-v1',
-      responseId: 'fixture-proposal-response',
     };
   }
 }
@@ -205,13 +139,6 @@ export class UnconfiguredAiGateway implements AiGateway {
   }
 
   async generateTripDraft(_prompt: string): Promise<AiResult<TripDraft>> {
-    return this.fail();
-  }
-
-  async prepareTripProposal(
-    _context: TripAiContext,
-    _prompt: string,
-  ): Promise<AiResult<ProposalOutput>> {
     return this.fail();
   }
 }

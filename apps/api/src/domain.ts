@@ -4,7 +4,6 @@ export type ErrorCode =
   | 'BAD_USER_INPUT'
   | 'NOT_FOUND'
   | 'REVISION_CONFLICT'
-  | 'STALE_PROPOSAL'
   | 'AI_NOT_CONFIGURED'
   | 'AI_MODEL_UNSUPPORTED'
   | 'AI_REFUSAL'
@@ -80,80 +79,7 @@ export const tripDraftSchema = z
   })
   .strict();
 
-const updateTripOperationSchema = z
-  .object({
-    type: z.literal('UPDATE_TRIP'),
-    description: z.string().trim().min(1).max(240),
-    payload: z
-      .object({
-        name: z.string().trim().min(1).max(160),
-        destinationArea: z.string().trim().min(1).max(200),
-        startDate: isoDateSchema,
-        endDate: isoDateSchema,
-        travelerCount: z.number().int().min(1).max(20),
-      })
-      .strict(),
-  })
-  .strict();
-
-const addActivityOperationSchema = z
-  .object({
-    type: z.literal('ADD_ACTIVITY'),
-    description: z.string().trim().min(1).max(240),
-    payload: z
-      .object({
-        stopId: z.string().uuid(),
-        title: z.string().trim().min(1).max(200),
-        status: activityStatusSchema,
-        scheduledAt: isoDateTimeSchema.nullable(),
-        timezone: timezoneSchema,
-      })
-      .strict(),
-  })
-  .strict();
-
-const updateActivityOperationSchema = z
-  .object({
-    type: z.literal('UPDATE_ACTIVITY'),
-    description: z.string().trim().min(1).max(240),
-    payload: z
-      .object({
-        activityId: z.string().uuid(),
-        stopId: z.string().uuid(),
-        title: z.string().trim().min(1).max(200),
-        status: activityStatusSchema,
-        scheduledAt: isoDateTimeSchema.nullable(),
-        timezone: timezoneSchema,
-      })
-      .strict(),
-  })
-  .strict();
-
-const removeActivityOperationSchema = z
-  .object({
-    type: z.literal('REMOVE_ACTIVITY'),
-    description: z.string().trim().min(1).max(240),
-    payload: z.object({ activityId: z.string().uuid() }).strict(),
-  })
-  .strict();
-
-export const proposalOperationSchema = z.discriminatedUnion('type', [
-  updateTripOperationSchema,
-  addActivityOperationSchema,
-  updateActivityOperationSchema,
-  removeActivityOperationSchema,
-]);
-
-export const proposalOutputSchema = z
-  .object({
-    summary: z.string().trim().min(1).max(500),
-    operations: z.array(proposalOperationSchema).min(1).max(12),
-  })
-  .strict();
-
 export type TripDraft = z.infer<typeof tripDraftSchema>;
-export type ProposalOperation = z.infer<typeof proposalOperationSchema>;
-export type ProposalOutput = z.infer<typeof proposalOutputSchema>;
 
 export type DatedStop = {
   arrivalDate: string | null;
