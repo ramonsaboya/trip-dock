@@ -32,9 +32,11 @@ Rules:
 - NEXT_WEEKEND always describes a Saturday-Sunday range and never includes Friday. THIS_FRIDAY is a single date intent. Application code will resolve both using the user's local reference date.
 - When a single trip-wide NEXT_WEEKEND expression is given, assign NEXT_WEEKEND to both trip startDate and endDate. For a clearly single-day trip date, assign the same intent to both boundaries. Otherwise leave an unstated boundary MISSING.
 - Keep destination arrival/departure intents separate from trip-wide dates. Do not copy them unless the user tied them together.
-- Extract a trip name only when the user supplied one; otherwise return null/MISSING. Application code will derive a display name.
+- Extract destinationArea when the user names a trip-wide country or region. For example, in “a trip to Italy, 4 days in Rome and 3 in Naples”, Italy is the destinationArea while Rome and Naples are city destinations. Do not turn the country or region into a city stop when specific cities are also listed.
+- Extract a trip name only when the user deliberately names or titles the trip (for example, “call it Summer in Italy”); a phrase such as “trip to Italy” is an area, not an explicit title. Otherwise return null/MISSING. Application code will derive a display name.
 - Traveler count may be deterministically interpreted from evidence such as "me and my partner"; label that DETERMINISTIC. Never guess a count.
-- Preserve whether a stated duration is in DAYS, NIGHTS, or WEEKS and quote its evidence. Use MISSING with null when none was stated; do not convert calendar months into days.
+- Preserve whether a stated duration is in DAYS, FULL_DAYS, NIGHTS, or WEEKS and quote its evidence. Use FULL_DAYS only when the user explicitly says “full days”. Use MISSING with null when none was stated; do not convert calendar months into days.
+- Capture a duration attached to an individual destination in that destination's stayDuration. Its evidence must include both the duration phrase and the destination, such as “4 days in Rome”. Do not combine these into the trip-wide duration.
 - Put concise extraction caveats in warnings and user-stated assumptions in assumptions. Do not return prose outside the schema.`;
 
 function extractRefusal(response: unknown): string | null {
@@ -127,7 +129,7 @@ export class OpenAiGateway implements AiGateway {
         text: {
           format: zodTextFormat(
             tripIntentExtractionSchema,
-            'tripdock_trip_intent_v2',
+            'tripdock_trip_intent_v3',
           ),
         },
       });

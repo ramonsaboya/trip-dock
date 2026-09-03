@@ -52,6 +52,7 @@ function destination(
     candidates: [],
     arrivalDate: missingDate(),
     departureDate: missingDate(),
+    stayDuration: { value: null, unit: 'MISSING', evidence: null },
     ...options,
   };
 }
@@ -61,6 +62,7 @@ function extraction(
 ): TripIntentExtraction {
   return {
     name: { value: null, evidence: null, origin: 'MISSING' },
+    destinationArea: { value: null, evidence: null, origin: 'MISSING' },
     travelerCount: { value: null, evidence: null, origin: 'MISSING' },
     startDate: missingDate(),
     endDate: missingDate(),
@@ -81,6 +83,34 @@ test('yearless calendar dates use the next occurrence on or after the reference 
     resolveDateIntent(calendar('10 October', 10, 10), request('10 October')).value,
     '2026-10-10',
   );
+});
+
+test('yearless ranges are anchored together after the start rolls into the following year', () => {
+  const draft = buildTripCreationDraft(
+    extraction({
+      startDate: calendar('28th of Aug', 28, 8),
+      endDate: calendar('5th September', 5, 9),
+      destinations: [destination('Rome', 'Rome', 'CITY')],
+    }),
+    request('Rome from 28th of Aug to 5th September'),
+  );
+  assert.equal(draft.startDate, '2027-08-28');
+  assert.equal(draft.endDate, '2027-09-05');
+  assert.equal(draft.minimumViable, true);
+});
+
+test('same-month yearless ranges stay together when both dates have passed this year', () => {
+  const draft = buildTripCreationDraft(
+    extraction({
+      startDate: calendar('28th of August', 28, 8),
+      endDate: calendar('30th of August', 30, 8),
+      destinations: [destination('Rome', 'Rome', 'CITY')],
+    }),
+    request('Rome from 28th of August to 30th of August'),
+  );
+  assert.equal(draft.startDate, '2027-08-28');
+  assert.equal(draft.endDate, '2027-08-30');
+  assert.equal(draft.minimumViable, true);
 });
 
 test('numeric dates follow the user locale while unambiguous dates do not', () => {
@@ -964,6 +994,108 @@ test('country-level destination and missing dates produce batched questions', ()
     ['city-required', 'start-date-required', 'end-date-required'],
   );
   assert.equal(draft.questions[0]?.options.length, 2);
+});
+
+test('a trip-wide country is kept as the area while specific cities become stops', () => {
+  const draft = buildTripCreationDraft(
+    extraction({
+      destinationArea: {
+        value: 'Italy',
+        evidence: 'trip to Italy',
+        origin: 'USER_EXPLICIT',
+      },
+      startDate: calendar('28th of Aug 2027', 28, 8, 2027),
+      endDate: calendar('5th September 2027', 5, 9, 2027),
+      destinations: [
+        destination('Italy', 'Italy', 'COUNTRY'),
+        destination('Rome', 'Rome', 'CITY'),
+        destination('Maiori', 'Maiori', 'CITY'),
+        destination('Naples', 'Naples', 'CITY'),
+      ],
+    }),
+    request('Create a trip to Italy from 28th of Aug 2027 to 5th September 2027: Rome, Maiori, and Naples.'),
+  );
+  assert.equal(draft.destinationArea, 'Italy');
+  assert.equal(draft.name, 'Trip to Italy');
+  assert.deepEqual(draft.stops.map((stop) => stop.name), ['Rome', 'Maiori', 'Naples']);
+  assert.equal(
+    draft.fieldStates.find(({ path }) => path === 'trip.destinationArea')?.status,
+    'EXPLICIT',
+  );
+});
+
+test('destination day allocations produce a shared-transfer schedule with visible uncertainty', () => {
+  const draft = buildTripCreationDraft(
+    extraction({
+      destinationArea: {
+        value: 'Italy',
+        evidence: 'trip to Italy',
+        origin: 'USER_EXPLICIT',
+      },
+      startDate: calendar('28th of Aug 2027', 28, 8, 2027),
+      endDate: calendar('5th September 2027', 5, 9, 2027),
+      destinations: [
+        destination('Rome', 'Rome', 'CITY', {
+          stayDuration: { value: 4, unit: 'DAYS', evidence: '4 days in Rome' },
+        }),
+        destination('Maiori', 'Maiori', 'CITY', {
+          stayDuration: { value: 3, unit: 'DAYS', evidence: '3 days in Maiori' },
+        }),
+        destination('Naples', 'Naples', 'CITY', {
+          stayDuration: { value: 3, unit: 'DAYS', evidence: '3 days in Naples' },
+        }),
+      ],
+    }),
+    request('Create a trip to Italy from 28th of Aug 2027 to 5th September 2027, 4 days in Rome, 3 days in Maiori, 3 days in Naples.'),
+  );
+  assert.deepEqual(
+    draft.stops.map(({ name, arrivalDate, departureDate }) => ({ name, arrivalDate, departureDate })),
+    [
+      { name: 'Rome', arrivalDate: '2027-08-28', departureDate: '2027-09-01' },
+      { name: 'Maiori', arrivalDate: '2027-09-01', departureDate: '2027-09-03' },
+      { name: 'Naples', arrivalDate: '2027-09-03', departureDate: '2027-09-05' },
+    ],
+  );
+  assert.equal(draft.minimumViable, true);
+  assert.equal(
+    draft.questions.find(({ id }) => id === 'destination-duration-interpretation')?.blocking,
+    false,
+  );
+  assert.ok(draft.assumptions.some((item) => item.includes('share transfer dates')));
+});
+
+test('destination night allocations produce exact adjacent stays without a clarification', () => {
+  const draft = buildTripCreationDraft(
+    extraction({
+      startDate: calendar('28th of Aug 2027', 28, 8, 2027),
+      endDate: calendar('5th September 2027', 5, 9, 2027),
+      destinations: [
+        destination('Rome', 'Rome', 'CITY', {
+          stayDuration: { value: 4, unit: 'NIGHTS', evidence: '4 nights in Rome' },
+        }),
+        destination('Maiori', 'Maiori', 'CITY', {
+          stayDuration: { value: 2, unit: 'NIGHTS', evidence: '2 nights in Maiori' },
+        }),
+        destination('Naples', 'Naples', 'CITY', {
+          stayDuration: { value: 2, unit: 'NIGHTS', evidence: '2 nights in Naples' },
+        }),
+      ],
+    }),
+    request('28th of Aug 2027 to 5th September 2027, 4 nights in Rome, 2 nights in Maiori, 2 nights in Naples.'),
+  );
+  assert.deepEqual(
+    draft.stops.map(({ name, arrivalDate, departureDate }) => ({ name, arrivalDate, departureDate })),
+    [
+      { name: 'Rome', arrivalDate: '2027-08-28', departureDate: '2027-09-01' },
+      { name: 'Maiori', arrivalDate: '2027-09-01', departureDate: '2027-09-03' },
+      { name: 'Naples', arrivalDate: '2027-09-03', departureDate: '2027-09-05' },
+    ],
+  );
+  assert.equal(
+    draft.questions.some(({ id }) => id === 'destination-duration-interpretation'),
+    false,
+  );
+  assert.ok(draft.assumptions.some((item) => item.includes('without overlapping a night')));
 });
 
 test('trip boundary autofill is reflected in destination field provenance', () => {

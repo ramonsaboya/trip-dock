@@ -1340,19 +1340,25 @@ test('removing a boundary destination derives trip boundaries from the remaining
   assert.equal(buffered.startDate, '2028-04-01');
 });
 
-test('the hidden destination area is synthesized from stop names with a trip-name fallback', () => {
+test('the trip area is preserved when supplied and otherwise synthesized from stops', () => {
   assert.equal(destinationAreaFromStops(tripInput({
+    destinationArea: 'Italy',
+    stops: [{ name: 'Rome', locationText: null, arrivalDate: null, departureDate: null }],
+  })), 'Italy');
+  assert.equal(destinationAreaFromStops(tripInput({
+    destinationArea: '',
     stops: [
       { name: ' Porto ', locationText: null, arrivalDate: null, departureDate: null },
       { name: 'Lisbon', locationText: null, arrivalDate: null, departureDate: null },
     ],
   })), 'Porto · Lisbon');
-  assert.equal(destinationAreaFromStops(tripInput({ name: 'Spring break', stops: [] })), 'Spring break');
-  assert.equal(destinationAreaFromStops(tripInput({ name: '  ', stops: [] })), 'Trip');
+  assert.equal(destinationAreaFromStops(tripInput({ destinationArea: '', name: 'Spring break', stops: [] })), 'Spring break');
+  assert.equal(destinationAreaFromStops(tripInput({ destinationArea: '', name: '  ', stops: [] })), 'Trip');
 });
 
-test('the hidden destination area never exceeds the API compatibility limit', () => {
+test('the destination area never exceeds the API compatibility limit', () => {
   const destinationArea = destinationAreaFromStops(tripInput({
+    destinationArea: '',
     stops: Array.from({ length: 20 }, (_, index) => ({
       name: `Destination ${index + 1} ${'x'.repeat(110)}`,
       locationText: null,
@@ -1467,7 +1473,7 @@ test('production web code contains no fixture or browser-storage fallback', asyn
   );
 });
 
-test('creation UI locks mutable draft controls during a follow-up and honors locale/name state', async () => {
+test('creation UI separates blocking questions, optional chat refinement, and review', async () => {
   const source = await readFile(
     fileURLToPath(new URL('../components/trip-dock-app.tsx', import.meta.url)),
     'utf8',
@@ -1476,4 +1482,8 @@ test('creation UI locks mutable draft controls during a follow-up and honors loc
   assert.match(source, /className="clarification-question"[^>]+disabled=\{followUpBusy\}/u);
   assert.match(source, /navigator\.language \|\| 'en-GB'/u);
   assert.match(source, /fieldStates\.get\('trip\.name'\)\?\.status === 'SUGGESTED'/u);
+  assert.match(source, /stage === 'clarify'[\s\S]+renderQuestionStage\(blockingQuestions, true\)/u);
+  assert.match(source, /Refine in chat/u);
+  assert.match(source, /Nothing here blocks creation/u);
+  assert.match(source, /Shared transfer dates are expected/u);
 });

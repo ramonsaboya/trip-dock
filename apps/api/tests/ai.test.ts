@@ -13,6 +13,7 @@ const missingDate = {
 
 const extraction = {
   name: { value: null, evidence: null, origin: 'MISSING' as const },
+  destinationArea: { value: null, evidence: null, origin: 'MISSING' as const },
   travelerCount: { value: null, evidence: null, origin: 'MISSING' as const },
   startDate: missingDate,
   endDate: missingDate,

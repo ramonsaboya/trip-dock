@@ -740,7 +740,8 @@ test('explicit destination boundary dates can diverge while linked edits still f
 
 test('homepage AI draft generation remains available without persisting a trip', async () => {
   const extraction = {
-    name: { value: 'Coastal draft', evidence: 'Coastal draft', origin: 'USER_EXPLICIT' as const },
+    name: { value: 'Coastal draft', evidence: 'Call it Coastal draft', origin: 'USER_EXPLICIT' as const },
+    destinationArea: { value: null, evidence: null, origin: 'MISSING' as const },
     travelerCount: { value: 2, evidence: 'two people', origin: 'USER_EXPLICIT' as const },
     startDate: { sourceText: '2027-09-10', kind: 'CALENDAR_DATE' as const, day: 10, month: 9, year: 2027 },
     endDate: { sourceText: '2027-09-15', kind: 'CALENDAR_DATE' as const, day: 15, month: 9, year: 2027 },
@@ -754,11 +755,12 @@ test('homepage AI draft generation remains available without persisting a trip',
       candidates: [],
       arrivalDate: { sourceText: null, kind: 'MISSING' as const, day: null, month: null, year: null },
       departureDate: { sourceText: null, kind: 'MISSING' as const, day: null, month: null, year: null },
+      stayDuration: { value: null, unit: 'MISSING' as const, evidence: null },
     }],
     assumptions: [],
     warnings: [],
   };
-  const prompt = 'Plan Coastal draft in Porto from 2027-09-10 to 2027-09-15 for two people.';
+  const prompt = 'Call it Coastal draft: Porto from 2027-09-10 to 2027-09-15 for two people.';
   const gateway = new FixtureAiGateway(extraction);
   const harness = await createHarness(gateway);
   try {

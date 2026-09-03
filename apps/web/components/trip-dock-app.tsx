@@ -206,20 +206,22 @@ function Field({
   hint,
   fieldState,
   fillStatus,
-  onConfirm,
 }: {
   label: string;
   children: ReactNode;
   hint?: string;
   fieldState?: TripDraftFieldState;
   fillStatus?: 'auto' | 'suggested';
-  onConfirm?: () => void;
 }) {
   const controlId = useId();
   const hintId = useId();
   const resolvedControlId = isValidElement<{ id?: string }>(children)
     ? children.props.id ?? controlId
     : controlId;
+  const fieldMessage = fieldState &&
+    ['NEEDS_ATTENTION', 'INVALID', 'CONFLICTING', 'PAST'].includes(fieldState.status)
+    ? fieldState.message
+    : hint;
   const control = isValidElement<{
     id?: string;
     'aria-describedby'?: string;
@@ -227,7 +229,7 @@ function Field({
   }>(children)
     ? cloneElement(children, {
         id: resolvedControlId,
-        'aria-describedby': [children.props['aria-describedby'], hint || fieldState?.message ? hintId : null]
+        'aria-describedby': [children.props['aria-describedby'], fieldMessage ? hintId : null]
           .filter(Boolean)
           .join(' ') || undefined,
         'aria-invalid': ['INVALID', 'CONFLICTING'].includes(fieldState?.status ?? '') || undefined,
@@ -240,20 +242,19 @@ function Field({
       : fillStatus === 'auto'
         ? { icon: '↔', label: 'Auto-filled' }
         : null;
-
+  const showsStatus = Boolean(
+    statusPresentation &&
+    !['EXPLICIT', 'CONFIRMED'].includes(fieldState?.status ?? '') &&
+    !(fieldState?.status === 'MISSING' && !fieldState.blocking),
+  );
   return (
     <div className="field" data-fill-status={fieldState?.status.toLowerCase() ?? fillStatus}>
       <div className="field-label">
         <label htmlFor={resolvedControlId}>{label}</label>
-        {statusPresentation ? (
-          <span className="field-status-actions">
-            <span className="fill-status"><span aria-hidden="true">{statusPresentation.icon}</span> {statusPresentation.label}</span>
-            {onConfirm && !['CONFIRMED', 'PAST'].includes(fieldState?.status ?? '') ? <button className="field-confirm" type="button" aria-label={`Confirm ${label.toLocaleLowerCase()}`} onClick={onConfirm}>Confirm</button> : null}
-          </span>
-        ) : null}
+        {showsStatus && statusPresentation ? <span className="fill-status"><span aria-hidden="true">{statusPresentation.icon}</span> {statusPresentation.label}</span> : null}
       </div>
       {control}
-      {hint || fieldState?.message ? <small id={hintId}>{fieldState?.message ?? hint}</small> : null}
+      {fieldMessage ? <small id={hintId}>{fieldMessage}</small> : null}
     </div>
   );
 }
@@ -649,7 +650,7 @@ function TripFields({
     onFieldDerived?.(key, fieldValue);
   }
 
-  function updateTripField<K extends 'name' | 'travelerCount'>(field: K, fieldValue: TripInput[K]) {
+  function updateTripField<K extends 'name' | 'destinationArea' | 'travelerCount'>(field: K, fieldValue: TripInput[K]) {
     const next = { ...value, [field]: fieldValue };
     markDirty(`trip.${field}`, true, fieldValue, next);
     onChange(next);
@@ -762,13 +763,18 @@ function TripFields({
   return (
     <fieldset disabled={disabled} style={{ border: 0, margin: 0, minWidth: 0, padding: 0 }}>
       <div className="form-stack">
-      <Field label="Trip name" fieldState={fieldStates?.get('trip.name')} onConfirm={value.name && fieldStates?.get('trip.name') ? () => onFieldConfirmed?.('trip.name') : undefined}>
-        <input maxLength={160} value={value.name} onChange={(event) => updateTripField('name', event.target.value)} placeholder="A name you’ll recognize" />
-      </Field>
+      <div className="form-grid form-grid-two">
+        <Field label="Trip name" fieldState={fieldStates?.get('trip.name')}>
+          <input maxLength={160} value={value.name} onChange={(event) => updateTripField('name', event.target.value)} placeholder="A name you’ll recognize" />
+        </Field>
+        <Field label="Trip area" fieldState={fieldStates?.get('trip.destinationArea')} hint="Country or region for the overall trip">
+          <input maxLength={200} value={value.destinationArea} onChange={(event) => updateTripField('destinationArea', event.target.value)} placeholder="For example, Italy" />
+        </Field>
+      </div>
       <div className="form-grid form-grid-three">
-        <Field label="Start date" fieldState={fieldStates?.get('trip.startDate')} onConfirm={value.startDate && fieldStates?.get('trip.startDate') ? () => onFieldConfirmed?.('trip.startDate') : undefined}><DatePickerInput locale={locale} required max={value.endDate || undefined} value={value.startDate} onValueChange={(date) => updateBoundary('start', date)} /></Field>
-        <Field label="End date" fieldState={fieldStates?.get('trip.endDate')} onConfirm={value.endDate && fieldStates?.get('trip.endDate') ? () => onFieldConfirmed?.('trip.endDate') : undefined}><DatePickerInput locale={locale} required min={value.startDate || undefined} value={value.endDate} onValueChange={(date) => updateBoundary('end', date)} /></Field>
-        <Field label="Travelers (optional)" fieldState={fieldStates?.get('trip.travelerCount')} onConfirm={value.travelerCount && fieldStates?.get('trip.travelerCount') ? () => onFieldConfirmed?.('trip.travelerCount') : undefined}><input type="number" min="1" max="20" value={value.travelerCount ?? ''} onChange={(event) => updateTripField('travelerCount', event.target.value ? Number(event.target.value) : null)} placeholder="Not provided" /></Field>
+        <Field label="Start date" fieldState={fieldStates?.get('trip.startDate')}><DatePickerInput locale={locale} required max={value.endDate || undefined} value={value.startDate} onValueChange={(date) => updateBoundary('start', date)} /></Field>
+        <Field label="End date" fieldState={fieldStates?.get('trip.endDate')}><DatePickerInput locale={locale} required min={value.startDate || undefined} value={value.endDate} onValueChange={(date) => updateBoundary('end', date)} /></Field>
+        <Field label="Travelers (optional)" fieldState={fieldStates?.get('trip.travelerCount')}><input type="number" min="1" max="20" value={value.travelerCount ?? ''} onChange={(event) => updateTripField('travelerCount', event.target.value ? Number(event.target.value) : null)} placeholder="Not provided" /></Field>
       </div>
       <fieldset className="stops-editor">
         <legend>Destinations</legend>
@@ -776,9 +782,9 @@ function TripFields({
           <div className="draft-stop" key={stop.draftId ?? `draft-stop-${index}`}>
             <span className="position-badge" aria-label={`Destination ${index + 1}`}>{index + 1}</span>
             <div className="destination-fields">
-              <Field label="City" fieldState={fieldStates?.get(stopFieldKey(index, 'name'))} onConfirm={stop.name && fieldStates?.get(stopFieldKey(index, 'name')) ? () => { onChange({ ...value, stops: value.stops.map((item, stopIndex) => stopIndex === index ? { ...item, localityKind: 'CITY', cityResolution: 'RESOLVED' } : item) }); onFieldConfirmed?.(stopFieldKey(index, 'name')); onFieldConfirmed?.(stopFieldKey(index, 'localityKind')); onFieldConfirmed?.(stopFieldKey(index, 'cityResolution')); } : undefined}><input value={stop.name} onChange={(event) => updateStop(index, { name: event.target.value })} onBlur={(event) => { const city = event.currentTarget.value.trim(); if (!city) return; onChange({ ...value, stops: value.stops.map((item, stopIndex) => stopIndex === index ? { ...item, name: city, localityKind: 'CITY', cityResolution: 'RESOLVED' } : item) }); onFieldConfirmed?.(stopFieldKey(index, 'name')); onFieldConfirmed?.(stopFieldKey(index, 'localityKind')); onFieldConfirmed?.(stopFieldKey(index, 'cityResolution')); }} placeholder="A specific city" /></Field>
-              <Field label="Start" fieldState={fieldStates?.get(stopFieldKey(index, 'arrivalDate'))} onConfirm={stop.arrivalDate && fieldStates?.get(stopFieldKey(index, 'arrivalDate')) ? () => onFieldConfirmed?.(stopFieldKey(index, 'arrivalDate')) : undefined}><DatePickerInput locale={locale} min={value.startDate || undefined} max={(stop.departureDate ?? value.endDate) || undefined} value={stop.arrivalDate ?? ''} onValueChange={(date) => updateStopDate(index, 'arrivalDate', date)} /></Field>
-              <Field label="End" fieldState={fieldStates?.get(stopFieldKey(index, 'departureDate'))} onConfirm={stop.departureDate && fieldStates?.get(stopFieldKey(index, 'departureDate')) ? () => onFieldConfirmed?.(stopFieldKey(index, 'departureDate')) : undefined}><DatePickerInput locale={locale} min={(stop.arrivalDate ?? value.startDate) || undefined} max={value.endDate || undefined} value={stop.departureDate ?? ''} onValueChange={(date) => updateStopDate(index, 'departureDate', date)} /></Field>
+              <Field label="City" fieldState={fieldStates?.get(stopFieldKey(index, 'name'))}><input value={stop.name} onChange={(event) => updateStop(index, { name: event.target.value })} onBlur={(event) => { const city = event.currentTarget.value.trim(); if (!city) return; onChange({ ...value, stops: value.stops.map((item, stopIndex) => stopIndex === index ? { ...item, name: city, localityKind: 'CITY', cityResolution: 'RESOLVED' } : item) }); onFieldConfirmed?.(stopFieldKey(index, 'name')); onFieldConfirmed?.(stopFieldKey(index, 'localityKind')); onFieldConfirmed?.(stopFieldKey(index, 'cityResolution')); }} placeholder="A specific city" /></Field>
+              <Field label="Start" fieldState={fieldStates?.get(stopFieldKey(index, 'arrivalDate'))}><DatePickerInput locale={locale} min={value.startDate || undefined} max={(stop.departureDate ?? value.endDate) || undefined} value={stop.arrivalDate ?? ''} onValueChange={(date) => updateStopDate(index, 'arrivalDate', date)} /></Field>
+              <Field label="End" fieldState={fieldStates?.get(stopFieldKey(index, 'departureDate'))}><DatePickerInput locale={locale} min={(stop.arrivalDate ?? value.startDate) || undefined} max={value.endDate || undefined} value={stop.departureDate ?? ''} onValueChange={(date) => updateStopDate(index, 'departureDate', date)} /></Field>
             </div>
             <button className="icon-button remove-destination" type="button" disabled={value.stops.length === 1} aria-label={`Remove destination ${index + 1}`} onClick={() => removeStop(index)}>×</button>
           </div>
@@ -787,6 +793,77 @@ function TripFields({
       </fieldset>
       </div>
     </fieldset>
+  );
+}
+
+function nightCount(startDate: string | null | undefined, endDate: string | null | undefined): number | null {
+  const start = parseCalendarDate(startDate ?? undefined);
+  const end = parseCalendarDate(endDate ?? undefined);
+  if (!start || !end || end < start) return null;
+  return Math.round((end.valueOf() - start.valueOf()) / 86_400_000);
+}
+
+function dateRangeLabel(
+  startDate: string | null | undefined,
+  endDate: string | null | undefined,
+  locale: string,
+): string {
+  if (startDate && endDate) {
+    return `${pickerDisplayValue(startDate, false, locale)} – ${pickerDisplayValue(endDate, false, locale)}`;
+  }
+  if (startDate) return `From ${pickerDisplayValue(startDate, false, locale)}`;
+  if (endDate) return `Until ${pickerDisplayValue(endDate, false, locale)}`;
+  return 'Dates not set';
+}
+
+function DraftReviewSummary({
+  form,
+  fieldStates,
+  locale,
+}: {
+  form: TripInput;
+  fieldStates: ReadonlyMap<string, TripDraftFieldState>;
+  locale: string;
+}) {
+  const totalNights = nightCount(form.startDate, form.endDate);
+  const sharesTransferDate = form.stops.some((stop, index) =>
+    Boolean(stop.departureDate && stop.departureDate === form.stops[index + 1]?.arrivalDate),
+  );
+  return (
+    <section className="draft-overview" aria-labelledby="draft-overview-title">
+      <div className="draft-overview-heading">
+        <div>
+          <p className="section-kicker">Your draft at a glance</p>
+          <h3 id="draft-overview-title">{form.destinationArea.trim() || form.name.trim() || 'New trip'}</h3>
+          <p>{dateRangeLabel(form.startDate, form.endDate, locale)}{totalNights === null ? '' : ` · ${totalNights + 1} days · ${totalNights} ${totalNights === 1 ? 'night' : 'nights'}`}</p>
+        </div>
+        <div className="draft-status-key" aria-label="Field status key">
+          <span><b aria-hidden="true">✓</b> Direct or confirmed</span>
+          <span><b aria-hidden="true">≈</b> Interpreted — check</span>
+          <span><b aria-hidden="true">!</b> Needs input</span>
+        </div>
+      </div>
+      <ol className="draft-route-summary">
+        {form.stops.map((stop, index) => {
+          const nights = nightCount(stop.arrivalDate, stop.departureDate);
+          const dateStates = [
+            fieldStates.get(`stops.${index}.arrivalDate`),
+            fieldStates.get(`stops.${index}.departureDate`),
+          ].filter((state): state is TripDraftFieldState => Boolean(state));
+          const interpreted = dateStates.some((state) =>
+            ['INTERPRETED', 'SUGGESTED'].includes(state.status),
+          );
+          return (
+            <li key={stop.draftId ?? `${stop.name}-${index}`}>
+              <span className="route-number" aria-hidden="true">{index + 1}</span>
+              <div><strong>{stop.name.trim() || `Destination ${index + 1}`}</strong><span>{dateRangeLabel(stop.arrivalDate, stop.departureDate, locale)}{nights === null ? '' : ` · ${nights} ${nights === 1 ? 'night' : 'nights'}`}</span></div>
+              {interpreted ? <span className="route-interpretation"><span aria-hidden="true">≈</span> Dates interpreted</span> : null}
+            </li>
+          );
+        })}
+      </ol>
+      {sharesTransferDate ? <p className="transfer-date-note"><span aria-hidden="true">↔</span><span><strong>Shared transfer dates are expected.</strong> You can leave one city and arrive in the next on the same date without overlapping a night.</span></p> : null}
+    </section>
   );
 }
 
@@ -810,6 +887,9 @@ function CreateTripDialog({
   const [questions, setQuestions] = useState<TripClarificationQuestion[]>(
     () => initialDraft?.questions ?? [],
   );
+  const [stage, setStage] = useState<'clarify' | 'review' | 'refine'>(() =>
+    initialDraft?.questions.some((question) => question.blocking) ? 'clarify' : 'review',
+  );
   const [notes, setNotes] = useState(() => ({
     assumptions: initialDraft?.assumptions ?? [],
     warnings: initialDraft?.warnings ?? [],
@@ -824,6 +904,8 @@ function CreateTripDialog({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const minimumViable = isTripMinimumViable(form, fieldStates, questions);
+  const blockingQuestions = questions.filter((question) => question.blocking);
+  const optionalQuestions = questions.filter((question) => !question.blocking);
   const omittedStops = form.stops.filter((stop) => {
     const hasVisibleIdea = Boolean(stop.name.trim() || stop.locationText?.trim());
     const isResolvedCity = Boolean(
@@ -842,9 +924,9 @@ function CreateTripDialog({
   }
 
   function valueAtPath(input: TripInput, path: string): unknown {
-    const tripMatch = /^trip\.(name|startDate|endDate|travelerCount)$/.exec(path);
+    const tripMatch = /^trip\.(name|destinationArea|startDate|endDate|travelerCount)$/.exec(path);
     if (tripMatch) {
-      return input[tripMatch[1] as keyof Pick<TripInput, 'name' | 'startDate' | 'endDate' | 'travelerCount'>];
+      return input[tripMatch[1] as keyof Pick<TripInput, 'name' | 'destinationArea' | 'startDate' | 'endDate' | 'travelerCount'>];
     }
     const stopMatch = /^stops\.(\d+)\.(name|locationText|arrivalDate|departureDate|localityKind|cityResolution)$/.exec(path);
     if (!stopMatch) return undefined;
@@ -950,9 +1032,11 @@ function CreateTripDialog({
     }
     if (!answeredQuestionIds.size) return;
     setForm(next);
-    setQuestions((current) => current.filter((item) => !answeredQuestionIds.has(item.id)));
+    const remainingQuestions = questions.filter((item) => !answeredQuestionIds.has(item.id));
+    setQuestions(remainingQuestions);
     setSelectedOptions({});
     confirmPaths([...confirmedPaths], false, next);
+    setStage(remainingQuestions.some((item) => item.blocking) ? 'clarify' : 'review');
   }
 
   async function submitFollowUp() {
@@ -1064,15 +1148,17 @@ function CreateTripDialog({
         }
         return next;
       });
-      setQuestions(mergeUnansweredClarificationQuestions(
+      const nextQuestions = mergeUnansweredClarificationQuestions(
         alignedQuestions,
         incoming.questions,
         answerPaths,
-      ));
+      );
+      setQuestions(nextQuestions);
       setNotes({ assumptions: incoming.assumptions, warnings: incoming.warnings });
       setFollowUpHistory((current) => [...current, `${messageReferenceDate}: ${answer}`].slice(-8));
       setFollowUp('');
       setSelectedOptions({});
+      setStage(nextQuestions.some((item) => item.blocking) ? 'clarify' : 'review');
     } catch (requestError) {
       setError(errorMessage(requestError));
     } finally {
@@ -1091,12 +1177,19 @@ function CreateTripDialog({
     setError(null);
     try {
       const firstCity = resolvedStops[0]!.name.trim();
+      const destinationArea = destinationAreaFromStops({
+        ...form,
+        destinationArea: fieldStates.get('trip.destinationArea')?.status === 'SUGGESTED'
+          ? ''
+          : form.destinationArea,
+        stops: resolvedStops,
+      });
       const input = {
         ...form,
         name: !form.name.trim() || fieldStates.get('trip.name')?.status === 'SUGGESTED'
-          ? `Trip to ${firstCity}`
+          ? `Trip to ${destinationArea || firstCity}`.slice(0, 160)
           : form.name.trim(),
-        destinationArea: destinationAreaFromStops({ ...form, stops: resolvedStops }),
+        destinationArea,
         stops: resolvedStops,
       };
       const data = await graphqlRequest<{ createTrip: Trip }, { input: typeof input }>(
@@ -1111,35 +1204,55 @@ function CreateTripDialog({
     }
   }
 
-  return (
-    <Dialog title="Create a trip" eyebrow="New plan" onClose={onClose} wide>
-      {initialDraft ? <div className={`draft-readiness ${minimumViable ? 'draft-readiness-ready' : 'draft-readiness-pending'}`} role="status"><span aria-hidden="true">{minimumViable ? '✓' : '…'}</span><div><strong>{minimumViable ? 'The draft has the essentials' : 'A working draft is ready'}</strong><p>{minimumViable ? 'You can create it now, or keep refining any optional details.' : 'Confirm a city plus valid start and end dates before creating it.'}</p></div></div> : null}
-      {(notes.assumptions.length || notes.warnings.length) ? <div className="draft-notes" aria-label="Things to review">{notes.assumptions.map((note) => <p key={note}>Interpreted: {note}</p>)}{notes.warnings.map((note) => <p key={note}>Check: {note}</p>)}</div> : null}
-      {questions.length ? (
-        <section className="clarification-panel" aria-labelledby="clarification-title">
-          <div><p className="section-kicker">Answer together</p><h3 id="clarification-title">{questions.length} {questions.length === 1 ? 'detail needs' : 'details need'} your input</h3><p>Choose any quick answers below, then apply them in one go. You can also reply in your own words.</p></div>
-          <div className="clarification-list">
-            {questions.map((item) => (
-              <fieldset className="clarification-question" key={item.id} disabled={followUpBusy}>
-                <legend>{item.prompt}{item.blocking ? <span className="required-mark">Required</span> : <span>Optional</span>}</legend>
-                {item.options.length ? <div className="clarification-options">{item.options.map((option) => <label key={option.id}><input type="radio" name={`question-${item.id}`} value={option.id} checked={selectedOptions[item.id] === option.id} onChange={() => setSelectedOptions((current) => ({ ...current, [item.id]: option.id }))} /><span>{option.label}</span></label>)}</div> : <p className="clarification-free-note">Add this detail in the form, or include it in your reply below.</p>}
-              </fieldset>
-            ))}
-          </div>
-          {questions.some((item) => item.options.length) ? <button className="button-secondary" type="button" onClick={applySelectedAnswers} disabled={followUpBusy || !Object.keys(selectedOptions).length}>Apply selected answers</button> : null}
-          <div className="follow-up-compose">
-            <label htmlFor="trip-draft-follow-up">Reply to all the open questions</label>
-            <textarea id="trip-draft-follow-up" rows={3} maxLength={1500} value={followUp} onChange={(event) => setFollowUp(event.target.value)} placeholder="For example: Bristol, 10–14 May, and there will be three of us." disabled={followUpBusy} />
-            <button className="button-secondary" type="button" onClick={() => void submitFollowUp()} disabled={followUpBusy || !followUp.trim()}>{followUpBusy ? 'Updating draft…' : 'Update draft from reply'}</button>
-          </div>
-        </section>
-      ) : null}
-      <form onSubmit={(event) => void createTrip(event)} aria-busy={busy}>
-        <TripFields value={form} onChange={setForm} fieldStates={fieldStates} onFieldEdited={markFieldEdited} onFieldProtected={(path) => protectPaths([path])} onFieldConfirmed={(path) => confirmPaths([path])} onFieldDerived={markFieldDerived} onStopRemoved={handleStopRemoved} locale={formLocale} disabled={followUpBusy || busy} />
-        {omittedStops.length ? <p className="draft-omission-note" role="status">If you create now, {omittedStops.length} unresolved {omittedStops.length === 1 ? 'destination idea' : 'destination ideas'} will stay out of the saved trip. Confirm {omittedStops.length === 1 ? 'it' : 'them'} to include {omittedStops.length === 1 ? 'it' : 'them'}.</p> : null}
+  function renderQuestionStage(
+    visibleQuestions: readonly TripClarificationQuestion[],
+    blocking: boolean,
+  ) {
+    return (
+      <div className="creation-question-stage">
+        <div className="creation-stage-intro">
+          <p className="section-kicker">{blocking ? 'Before we build the form' : 'Optional refinement'}</p>
+          <h3>{blocking ? 'A few details need a clear answer' : 'Fine-tune the draft in one reply'}</h3>
+          <p>{blocking ? 'These answers change the essential destination or dates. Answer them together, then we’ll show the complete pre-filled form.' : 'Nothing here blocks creation. Answer anything that matters to you, or return to the review and edit the form directly.'}</p>
+        </div>
+        <div className="clarification-list">
+          {visibleQuestions.map((item, index) => (
+            <fieldset className="clarification-question" key={item.id} disabled={followUpBusy}>
+              <legend><span className="question-number">{index + 1}</span><span>{item.prompt}</span></legend>
+              {item.options.length ? <div className="clarification-options">{item.options.map((option) => <label key={option.id}><input type="radio" name={`question-${item.id}`} value={option.id} checked={selectedOptions[item.id] === option.id} onChange={() => setSelectedOptions((current) => ({ ...current, [item.id]: option.id }))} /><span>{option.label}</span></label>)}</div> : <p className="clarification-free-note">Include this in the message below.</p>}
+            </fieldset>
+          ))}
+        </div>
+        {visibleQuestions.some((item) => item.options.length) ? <button className="button-secondary apply-quick-answers" type="button" onClick={applySelectedAnswers} disabled={followUpBusy || !Object.keys(selectedOptions).length}>{blocking ? 'Continue with selected answers' : 'Use selected answers'}</button> : null}
+        <div className="follow-up-compose">
+          <label htmlFor="trip-draft-follow-up">{blocking ? 'Or answer everything in one message' : 'Reply in your own words'}</label>
+          <textarea id="trip-draft-follow-up" rows={4} maxLength={1500} value={followUp} onChange={(event) => setFollowUp(event.target.value)} placeholder={blocking ? 'For example: Bristol, 10–14 May, using the later weekend.' : 'For example: Keep the proposed dates, but give Rome one extra night.'} disabled={followUpBusy} />
+          <button className="button-primary" type="button" onClick={() => void submitFollowUp()} disabled={followUpBusy || !followUp.trim()}>{followUpBusy ? 'Updating your draft…' : 'Update draft from reply'}</button>
+        </div>
         {error ? <p className="form-error" role="alert">{error}</p> : null}
-        <footer className="dialog-footer"><button className="button-text" type="button" onClick={onClose}>Cancel</button><div className="create-readiness-action">{!minimumViable ? <small>Needs a confirmed city and valid dates</small> : null}<button className="button-primary" type="submit" disabled={busy || followUpBusy || !minimumViable}>{busy ? 'Saving…' : 'Create trip'}</button></div></footer>
-      </form>
+        <footer className="dialog-footer"><button className="button-text" type="button" onClick={onClose}>Cancel</button>{!blocking ? <button className="button-secondary" type="button" onClick={() => { setSelectedOptions({}); setStage('review'); }}>Back to trip review</button> : <small className="creation-stage-note">The form appears after the essentials are clear.</small>}</footer>
+      </div>
+    );
+  }
+
+  return (
+    <Dialog title={stage === 'clarify' ? 'A few details first' : stage === 'refine' ? 'Fine-tune your trip' : 'Review your trip'} eyebrow="Create a trip" onClose={onClose} wide>
+      {initialDraft ? <div className="creation-steps" aria-label="Trip creation progress"><span data-active={stage === 'clarify' || stage === 'refine' || undefined}><b>1</b> Questions</span><i aria-hidden="true" /><span data-active={stage === 'review' || undefined}><b>2</b> Review</span></div> : null}
+      {stage === 'clarify'
+        ? renderQuestionStage(blockingQuestions, true)
+        : stage === 'refine'
+          ? renderQuestionStage(optionalQuestions, false)
+          : (
+            <form onSubmit={(event) => void createTrip(event)} aria-busy={busy}>
+              {initialDraft ? <DraftReviewSummary form={form} fieldStates={fieldStates} locale={formLocale} /> : null}
+              {optionalQuestions.length ? <section className="optional-refinement" aria-label="Optional trip refinement"><div><span className="optional-refinement-icon" aria-hidden="true">✦</span><div><strong>Want to clarify anything before we set it up?</strong><p>{optionalQuestions.length} optional {optionalQuestions.length === 1 ? 'detail is' : 'details are'} ready to discuss. The draft can still be created as it is.</p></div></div><button className="button-secondary" type="button" onClick={() => { setSelectedOptions({}); setStage('refine'); }}>Refine in chat</button></section> : null}
+              {(notes.assumptions.length || notes.warnings.length) ? <details className="draft-notes"><summary>What TripDock interpreted ({notes.assumptions.length + notes.warnings.length})</summary><div>{notes.assumptions.map((note) => <p key={note}><span aria-hidden="true">≈</span> {note}</p>)}{notes.warnings.map((note) => <p key={note}><span aria-hidden="true">!</span> {note}</p>)}</div></details> : null}
+              <TripFields value={form} onChange={setForm} fieldStates={fieldStates} onFieldEdited={markFieldEdited} onFieldProtected={(path) => protectPaths([path])} onFieldConfirmed={(path) => confirmPaths([path])} onFieldDerived={markFieldDerived} onStopRemoved={handleStopRemoved} locale={formLocale} disabled={followUpBusy || busy} />
+              {omittedStops.length ? <p className="draft-omission-note" role="status">If you create now, {omittedStops.length} unresolved {omittedStops.length === 1 ? 'destination idea' : 'destination ideas'} will stay out of the saved trip. Confirm {omittedStops.length === 1 ? 'it' : 'them'} to include {omittedStops.length === 1 ? 'it' : 'them'}.</p> : null}
+              {error ? <p className="form-error" role="alert">{error}</p> : null}
+              <footer className="dialog-footer"><button className="button-text" type="button" onClick={onClose}>Cancel</button><div className="create-readiness-action">{!minimumViable ? <small>Needs a confirmed city and valid dates</small> : null}<button className="button-primary" type="submit" disabled={busy || followUpBusy || !minimumViable}>{busy ? 'Saving…' : 'Create trip'}</button></div></footer>
+            </form>
+          )}
     </Dialog>
   );
 }

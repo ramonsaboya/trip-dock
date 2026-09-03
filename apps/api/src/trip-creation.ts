@@ -83,7 +83,7 @@ const extractedCountSchema = z
 const durationIntentSchema = z
   .object({
     value: z.number().int().min(1).max(366).nullable(),
-    unit: z.enum(['DAYS', 'NIGHTS', 'WEEKS', 'MISSING']),
+    unit: z.enum(['DAYS', 'FULL_DAYS', 'NIGHTS', 'WEEKS', 'MISSING']),
     evidence: z.string().trim().min(1).max(240).nullable(),
   })
   .strict();
@@ -105,12 +105,14 @@ export const destinationIntentSchema = z
     candidates: z.array(cityCandidateSchema).max(4),
     arrivalDate: dateIntentSchema,
     departureDate: dateIntentSchema,
+    stayDuration: durationIntentSchema,
   })
   .strict();
 
 export const tripIntentExtractionSchema = z
   .object({
     name: extractedTextSchema,
+    destinationArea: extractedTextSchema,
     travelerCount: extractedCountSchema,
     startDate: dateIntentSchema,
     endDate: dateIntentSchema,
@@ -267,6 +269,15 @@ function addDays(value: string, days: number): string {
   const { year, month, day } = partsFromIso(value);
   const date = new Date(Date.UTC(year, month - 1, day + days));
   return dateKey(date);
+}
+
+function daysBetween(start: string, end: string): number {
+  const startParts = partsFromIso(start);
+  const endParts = partsFromIso(end);
+  return Math.round((
+    Date.UTC(endParts.year, endParts.month - 1, endParts.day) -
+    Date.UTC(startParts.year, startParts.month - 1, startParts.day)
+  ) / 86_400_000);
 }
 
 function localizedDate(value: string, locale: string): string {
@@ -568,6 +579,18 @@ function containsWholePhrase(haystack: string, needle: string): boolean {
 
 function evidenceAppearsInPrompt(evidence: string | null, prompt: string): boolean {
   return Boolean(evidence && containsWholePhrase(prompt, evidence));
+}
+
+function explicitTripNameHasNamingCue(evidence: string | null, value: string | null): boolean {
+  if (!evidence || !value) return false;
+  const source = normalizedEvidence(evidence);
+  const name = normalizedEvidence(value);
+  return (
+    /\b(?:name|named|call|called|title|titled)\b/u.test(source) ||
+    source.includes(`“${name}”`) ||
+    source.includes(`"${name}"`) ||
+    source.includes(`'${name}'`)
+  );
 }
 
 function evidenceHasAmbiguousPromptContext(evidence: string | null, prompt: string): boolean {
@@ -988,20 +1011,109 @@ function travelerCountStatusFromEvidence(
 
 function durationFromEvidence(
   evidence: string | null,
-): { value: number; unit: 'DAYS' | 'NIGHTS' | 'WEEKS' } | null {
+): { value: number; unit: 'DAYS' | 'FULL_DAYS' | 'NIGHTS' | 'WEEKS' } | null {
   if (!evidence) return null;
   const source = normalizedEvidence(evidence);
   if (scalarEvidenceIsAmbiguous(source)) return null;
-  const match = new RegExp(`\\b(${countTokenPattern})[\\s-]+(day|days|night|nights|week|weeks)\\b`, 'u').exec(source);
+  const match = new RegExp(
+    `\\b(${countTokenPattern})[\\s-]+(?:(full)[\\s-]+)?(day|days|night|nights|week|weeks)\\b`,
+    'u',
+  ).exec(source);
   if (!match) return null;
   const value = countTokenValue(match[1]!);
   if (!value || value > 366) return null;
   return {
     value,
-    unit: match[2]!.startsWith('night')
+    unit: match[3]!.startsWith('night')
       ? 'NIGHTS'
-      : match[2]!.startsWith('week') ? 'WEEKS' : 'DAYS',
+      : match[3]!.startsWith('week')
+        ? 'WEEKS'
+        : match[2] ? 'FULL_DAYS' : 'DAYS',
   };
+}
+
+type VerifiedStayDuration = {
+  value: number;
+  unit: 'DAYS' | 'FULL_DAYS' | 'NIGHTS' | 'WEEKS';
+  evidence: string;
+};
+
+function verifiedStayDuration(
+  destination: DestinationIntent,
+  request: TripCreationRequest,
+): VerifiedStayDuration | null {
+  const evidence = destination.stayDuration.evidence;
+  const parsed = evidenceAppearsInPrompt(evidence, request.prompt) &&
+    !scalarEvidenceIsAmbiguous(evidence) &&
+    !evidenceHasAmbiguousPromptContext(evidence, request.prompt)
+    ? durationFromEvidence(evidence)
+    : null;
+  if (
+    !parsed ||
+    parsed.value !== destination.stayDuration.value ||
+    parsed.unit !== destination.stayDuration.unit ||
+    !evidence ||
+    !destination.city ||
+    !containsWholePhrase(evidence, destination.city)
+  ) {
+    return null;
+  }
+  return { ...parsed, evidence };
+}
+
+function fitStayNightsToTrip(
+  durations: readonly VerifiedStayDuration[],
+  tripNights: number,
+): { nights: number[]; usedFlexibleDays: boolean } | null {
+  if (tripNights < 0 || !durations.length) return null;
+  const ranges = durations.map((duration, index) => {
+    if (duration.unit === 'NIGHTS') {
+      return { index, requested: duration.value, minimum: duration.value, maximum: duration.value };
+    }
+    if (duration.unit === 'WEEKS') {
+      return {
+        index,
+        requested: duration.value * 7,
+        minimum: Math.max(0, duration.value * 7 - 1),
+        maximum: duration.value * 7,
+      };
+    }
+    if (duration.unit === 'FULL_DAYS') {
+      return {
+        index,
+        requested: duration.value,
+        minimum: duration.value,
+        maximum: duration.value + 1,
+      };
+    }
+    return {
+      index,
+      requested: duration.value,
+      minimum: Math.max(0, duration.value - 1),
+      maximum: duration.value,
+    };
+  });
+  const minimum = ranges.reduce((total, range) => total + range.minimum, 0);
+  const maximum = ranges.reduce((total, range) => total + range.maximum, 0);
+  if (tripNights < minimum || tripNights > maximum) return null;
+
+  const nights = ranges.map((range) => range.minimum);
+  let remaining = tripNights - minimum;
+  const flexible = ranges
+    .filter((range) => range.maximum > range.minimum)
+    .sort((left, right) => right.requested - left.requested || left.index - right.index);
+  for (const range of flexible) {
+    if (!remaining) break;
+    const increment = Math.min(range.maximum - range.minimum, remaining);
+    nights[range.index] = nights[range.index]! + increment;
+    remaining -= increment;
+  }
+  return remaining === 0
+    ? {
+        nights,
+        usedFlexibleDays: durations.some((duration) => duration.unit !== 'NIGHTS'),
+      }
+    : null;
 }
 
 function calendarIntentParts(
@@ -1181,10 +1293,27 @@ export function buildTripCreationDraft(
   const durationOffset = durationValue
     ? evidencedDuration!.unit === 'NIGHTS'
       ? durationValue
-      : evidencedDuration!.unit === 'WEEKS' ? durationValue * 7 - 1 : durationValue - 1
+      : evidencedDuration!.unit === 'FULL_DAYS'
+        ? durationValue + 1
+        : evidencedDuration!.unit === 'WEEKS' ? durationValue * 7 - 1 : durationValue - 1
     : null;
 
-  const stops = (extraction.destinations.length ? extraction.destinations : [{
+  const destinationLooksCountryOnly = (destination: DestinationIntent) => {
+    const name = normalizedEvidence(destination.city ?? destination.sourceText ?? '');
+    return recognizedCountryNames(request.locale).has(name) &&
+      !recognizedCityStateNames(request.locale).has(name);
+  };
+  const hasSpecificCityIntent = extraction.destinations.some((destination) =>
+    destination.localityKind === 'CITY' &&
+    Boolean(destination.city) &&
+    !destinationLooksCountryOnly(destination),
+  );
+  const stopIntents = extraction.destinations.filter((destination) =>
+    !hasSpecificCityIntent ||
+    !['COUNTRY', 'REGION', 'PREFERENCE'].includes(destination.localityKind) &&
+    !destinationLooksCountryOnly(destination),
+  );
+  const effectiveStopIntents = stopIntents.length ? stopIntents : [{
     sourceText: null,
     city: null,
     context: null,
@@ -1193,7 +1322,10 @@ export function buildTripCreationDraft(
     candidates: [],
     arrivalDate: { sourceText: null, kind: 'MISSING' as const, day: null, month: null, year: null },
     departureDate: { sourceText: null, kind: 'MISSING' as const, day: null, month: null, year: null },
-  }]).map((destination, index) => {
+    stayDuration: { value: null, unit: 'MISSING' as const, evidence: null },
+  }];
+  const stayDurations: Array<VerifiedStayDuration | null> = [];
+  const stops = effectiveStopIntents.map((destination, index) => {
     const path = `stops.${index}.name`;
     const sourceIsVerified = evidenceAppearsInPrompt(destination.sourceText, request.prompt);
     const cityAppearsInEvidence = destinationCityMatchesSource(
@@ -1251,6 +1383,13 @@ export function buildTripCreationDraft(
       request,
     );
     fields.push(arrival.state, departure.state);
+    const stayDuration = verifiedStayDuration(destination, request);
+    stayDurations.push(stayDuration);
+    if (destination.stayDuration.value && !stayDuration) {
+      warnings.push(
+        `The stated duration for destination ${index + 1} could not be safely matched to that city.`,
+      );
+    }
 
     return {
       draftId: safeDraftId(index),
@@ -1267,7 +1406,7 @@ export function buildTripCreationDraft(
 
   const firstResolvedCity = stops.find((stop) => stop.cityResolution === 'RESOLVED');
   if (!firstResolvedCity) {
-    const source = extraction.destinations[0];
+    const source = effectiveStopIntents[0];
     const destinationLabel = source?.sourceText ? ` in or near “${source.sourceText}”` : '';
     const candidates = [
       ...(source?.city ? [{ city: source.city, context: source.context }] : []),
@@ -1376,6 +1515,26 @@ export function buildTripCreationDraft(
         request,
         'The missing start year was anchored to the explicitly dated end.',
       ) ?? startResolution;
+    }
+  } else if (!startResolution.explicitYear && !endResolution.explicitYear) {
+    const startParts = startResolution.value ? partsFromIso(startResolution.value) : null;
+    const rawStartParts = calendarIntentParts(startIntent, request);
+    const rawEndParts = calendarIntentParts(endIntent, request);
+    if (startParts && rawStartParts && rawEndParts) {
+      const sameOrLaterInCalendarYear =
+        rawEndParts.month > rawStartParts.month ||
+        rawEndParts.month === rawStartParts.month && rawEndParts.day >= rawStartParts.day;
+      const isDecemberToJanuary = rawStartParts.month === 12 && rawEndParts.month === 1;
+      if (sameOrLaterInCalendarYear || isDecemberToJanuary) {
+        endResolution = resolveCalendarIntentInYear(
+          endIntent,
+          startParts.year + (isDecemberToJanuary ? 1 : 0),
+          request,
+          isDecemberToJanuary
+            ? 'The yearless range was anchored together and rolled across New Year.'
+            : 'The missing end year was anchored to the resolved trip start.',
+        ) ?? endResolution;
+      }
     }
   }
 
@@ -1557,7 +1716,7 @@ export function buildTripCreationDraft(
   }
 
   if (startDate && endDate && !dateConflict) {
-    extraction.destinations.forEach((destination, index) => {
+    effectiveStopIntents.forEach((destination, index) => {
       const stop = stops[index];
       if (!stop) return;
       const applyAnchoredDate = (
@@ -1585,8 +1744,8 @@ export function buildTripCreationDraft(
   }
 
   if (stops.length && !dateConflict) {
-    const firstArrivalWasMissing = !extraction.destinations[0] ||
-      isCanonicalMissingDateIntent(extraction.destinations[0].arrivalDate);
+    const firstArrivalWasMissing = !effectiveStopIntents[0] ||
+      isCanonicalMissingDateIntent(effectiveStopIntents[0].arrivalDate);
     if (!stops[0]!.arrivalDate && startDate && firstArrivalWasMissing) {
       stops[0]!.arrivalDate = startDate;
       const state = fields.find((item) => item.path === 'stops.0.arrivalDate');
@@ -1596,7 +1755,7 @@ export function buildTripCreationDraft(
       }
     }
     const last = stops.at(-1)!;
-    const lastDestinationIntent = extraction.destinations.at(-1);
+    const lastDestinationIntent = effectiveStopIntents.at(-1);
     const lastDepartureWasMissing = !lastDestinationIntent ||
       isCanonicalMissingDateIntent(lastDestinationIntent.departureDate);
     if (!last.departureDate && endDate && lastDepartureWasMissing) {
@@ -1606,6 +1765,84 @@ export function buildTripCreationDraft(
         state.status = 'INTERPRETED';
         state.message = 'Linked to the trip end date.';
       }
+    }
+  }
+
+  const everyStopHasOnlyDurationEvidence = Boolean(
+    startDate &&
+    endDate &&
+    !dateConflict &&
+    stayDurations.length === stops.length &&
+    stayDurations.every((duration): duration is VerifiedStayDuration => Boolean(duration)) &&
+    effectiveStopIntents.every((destination) =>
+      isCanonicalMissingDateIntent(destination.arrivalDate) &&
+      isCanonicalMissingDateIntent(destination.departureDate),
+    ),
+  );
+  if (everyStopHasOnlyDurationEvidence) {
+    const verifiedDurations = stayDurations as VerifiedStayDuration[];
+    const fitted = fitStayNightsToTrip(
+      verifiedDurations,
+      daysBetween(startDate!, endDate!),
+    );
+    if (fitted) {
+      let cursor = startDate!;
+      for (const [index, stop] of stops.entries()) {
+        const duration = verifiedDurations[index]!;
+        const nights = fitted.nights[index]!;
+        stop.arrivalDate = cursor;
+        stop.departureDate = addDays(cursor, nights);
+        cursor = stop.departureDate;
+        for (const field of ['arrivalDate', 'departureDate'] as const) {
+          const state = fields.find((item) => item.path === `stops.${index}.${field}`);
+          if (!state) continue;
+          state.status = 'INTERPRETED';
+          state.evidence = duration.evidence;
+          state.message = duration.unit === 'NIGHTS'
+            ? `Calculated from ${duration.value} ${duration.value === 1 ? 'night' : 'nights'}; the end date is the checkout boundary.`
+            : `Fitted from “${duration.evidence}”; transfer dates can be shared by adjacent destinations.`;
+          state.blocking = false;
+        }
+      }
+      assumptions.push(
+        fitted.usedFlexibleDays
+          ? 'Bare destination day counts were treated as flexible time allocations and fitted across the trip; adjacent destinations share transfer dates.'
+          : 'Destination nights were converted into adjacent arrival and departure dates; the transfer date is shared without overlapping a night.',
+      );
+      if (fitted.usedFlexibleDays && stops.length <= 4) {
+        const fieldPaths = stops.flatMap((_, index) => [
+          `stops.${index}.arrivalDate`,
+          `stops.${index}.departureDate`,
+        ]);
+        questions.push(question(
+          'destination-duration-interpretation',
+          fieldPaths,
+          'Do the proposed destination dates match how you meant the day counts?',
+          [{
+            id: 'use-proposed-destination-dates',
+            label: 'Use the proposed shared-transfer dates',
+            updates: stops.flatMap((stop, index) => [
+              { path: `stops.${index}.arrivalDate`, value: stop.arrivalDate },
+              { path: `stops.${index}.departureDate`, value: stop.departureDate },
+            ]),
+          }],
+          false,
+        ));
+      }
+    } else {
+      warnings.push(
+        'The destination day counts do not fit the overall trip dates under a single shared-transfer schedule.',
+      );
+      questions.push(question(
+        'destination-duration-interpretation',
+        stops.slice(0, 4).flatMap((_, index) => [
+          `stops.${index}.arrivalDate`,
+          `stops.${index}.departureDate`,
+        ]),
+        'How should the destination day counts and transfer days be allocated?',
+        [],
+        false,
+      ));
     }
   }
 
@@ -1663,21 +1900,65 @@ export function buildTripCreationDraft(
     }
   }
 
+  const topLevelAreaIsVerified = Boolean(
+    extraction.destinationArea.value &&
+    extraction.destinationArea.origin === 'USER_EXPLICIT' &&
+    evidenceAppearsInPrompt(extraction.destinationArea.evidence, request.prompt) &&
+    containsWholePhrase(
+      extraction.destinationArea.evidence ?? '',
+      extraction.destinationArea.value ?? '',
+    ) &&
+    !evidenceHasAmbiguousPromptContext(extraction.destinationArea.evidence, request.prompt)
+  );
+  const broadAreaIntent = extraction.destinations.find((destination) =>
+    (['COUNTRY', 'REGION'].includes(destination.localityKind) || destinationLooksCountryOnly(destination)) &&
+    destination.city &&
+    destination.origin === 'USER_EXPLICIT' &&
+    evidenceAppearsInPrompt(destination.sourceText, request.prompt) &&
+    destinationCityMatchesSource(destination.city, destination.sourceText),
+  );
+  const destinationArea = (
+    topLevelAreaIsVerified
+      ? extraction.destinationArea.value!
+      : broadAreaIntent?.city ?? stops
+        .map((stop) => stop.name || stop.locationText)
+        .filter((value): value is string => Boolean(value))
+        .join(' · ')
+  ).slice(0, 200);
+  const destinationAreaIsExplicit = topLevelAreaIsVerified || Boolean(broadAreaIntent?.city);
+  fields.push(fieldState(
+    'trip.destinationArea',
+    destinationAreaIsExplicit ? 'EXPLICIT' : destinationArea ? 'SUGGESTED' : 'MISSING',
+    {
+      evidence: topLevelAreaIsVerified
+        ? extraction.destinationArea.evidence
+        : broadAreaIntent?.sourceText ?? null,
+      message: destinationAreaIsExplicit
+        ? null
+        : destinationArea
+          ? 'Generated from the confirmed destinations.'
+          : 'Add a country or region if it helps identify the trip.',
+    },
+  ));
+
   const nameIsVerified = Boolean(
     extraction.name.value &&
     extraction.name.origin === 'USER_EXPLICIT' &&
     evidenceAppearsInPrompt(extraction.name.evidence, request.prompt) &&
-    containsWholePhrase(extraction.name.evidence ?? '', extraction.name.value),
+    containsWholePhrase(extraction.name.evidence ?? '', extraction.name.value) &&
+    explicitTripNameHasNamingCue(extraction.name.evidence, extraction.name.value),
   );
-  const name = nameIsVerified
+  const name = (nameIsVerified
     ? extraction.name.value!
-    : firstResolvedCity ? `Trip to ${firstResolvedCity.name}` : 'New trip';
+    : destinationArea
+      ? `Trip to ${destinationArea}`
+      : firstResolvedCity ? `Trip to ${firstResolvedCity.name}` : 'New trip').slice(0, 160);
   fields.push(fieldState(
     'trip.name',
     nameIsVerified ? 'EXPLICIT' : 'SUGGESTED',
     {
       evidence: nameIsVerified ? extraction.name.evidence : null,
-      message: nameIsVerified ? null : 'Generated from the first confirmed city.',
+      message: nameIsVerified ? null : 'Generated from the trip area or confirmed destinations.',
     },
   ));
   const travelerIsAmbiguous = scalarEvidenceIsAmbiguous(extraction.travelerCount.evidence) ||
@@ -1709,11 +1990,6 @@ export function buildTripCreationDraft(
     ));
   }
 
-  const destinationArea = stops
-    .map((stop) => stop.name || stop.locationText)
-    .filter((value): value is string => Boolean(value))
-    .join(' · ')
-    .slice(0, 200);
   const boundedQuestions = [
     ...questions.filter((item) => item.blocking),
     ...questions.filter((item) => !item.blocking),

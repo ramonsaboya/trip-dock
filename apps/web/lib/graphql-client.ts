@@ -838,12 +838,20 @@ export function alignIncomingTripDraftStops(
   const suggestedName = incoming.fieldStates.some((state) =>
     state.path === 'trip.name' && state.status === 'SUGGESTED',
   );
+  const destinationAreaIsAuthoritative = incoming.fieldStates.some((state) =>
+    state.path === 'trip.destinationArea' && ['EXPLICIT', 'CONFIRMED'].includes(state.status),
+  );
   const firstResolvedCity = stops.find((stop) =>
     stop.localityKind === 'CITY' && stop.cityResolution === 'RESOLVED' && stop.name.trim(),
   );
+  const suggestedNameLocation = destinationAreaIsAuthoritative
+    ? incoming.destinationArea.trim()
+    : firstResolvedCity?.name.trim() ?? '';
   return {
     ...incoming,
-    name: suggestedName && firstResolvedCity ? `Trip to ${firstResolvedCity.name.trim()}` : incoming.name,
+    name: suggestedName && suggestedNameLocation
+      ? `Trip to ${suggestedNameLocation}`.slice(0, 160)
+      : incoming.name,
     stops,
     fieldStates: incoming.fieldStates.map((state) => ({
       ...state,
@@ -898,6 +906,9 @@ export function mergeTripDraft(
   const merged: TripInput = {
     ...incoming,
     name: protectedPaths.has('trip.name') ? current.name : incoming.name,
+    destinationArea: protectedPaths.has('trip.destinationArea')
+      ? current.destinationArea
+      : incoming.destinationArea,
     startDate: protectedPaths.has('trip.startDate') ? current.startDate : incoming.startDate,
     endDate: protectedPaths.has('trip.endDate') ? current.endDate : incoming.endDate,
     travelerCount: protectedPaths.has('trip.travelerCount')
@@ -940,6 +951,9 @@ function normalizedText(value: string): string {
 
 function followUpPathCue(path: string, answer: string, evidence = ''): boolean {
   if (path === 'trip.name') return /\b(?:name|call|title)\b/u.test(answer);
+  if (path === 'trip.destinationArea') {
+    return /\b(?:area|country|region|destination|trip\s+to)\b/u.test(answer);
+  }
   if (path === 'trip.travelerCount') {
     return /\b(?:travell?ers?|people|persons?|guests?|of us)\b/u.test(answer);
   }
@@ -1090,8 +1104,8 @@ export function buildTripFollowUpPrompt(
 ): string {
   const confirmed: Record<string, unknown> = {};
   const readPath = (path: string): unknown => {
-    const tripMatch = /^trip\.(name|startDate|endDate|travelerCount)$/.exec(path);
-    if (tripMatch) return current[tripMatch[1] as keyof Pick<TripInput, 'name' | 'startDate' | 'endDate' | 'travelerCount'>];
+    const tripMatch = /^trip\.(name|destinationArea|startDate|endDate|travelerCount)$/.exec(path);
+    if (tripMatch) return current[tripMatch[1] as keyof Pick<TripInput, 'name' | 'destinationArea' | 'startDate' | 'endDate' | 'travelerCount'>];
     const stopMatch = /^stops\.(\d+)\.(name|locationText|arrivalDate|departureDate|localityKind|cityResolution)$/.exec(path);
     if (!stopMatch) return undefined;
     return current.stops[Number(stopMatch[1])]?.[stopMatch[2] as keyof TripDraftStop];
@@ -1227,9 +1241,16 @@ export function removeTripStop(
   };
 }
 
-export function destinationAreaFromStops(input: Pick<TripInput, 'name' | 'stops'>): string {
+export function destinationAreaFromStops(
+  input: Pick<TripInput, 'destinationArea' | 'name' | 'stops'>,
+): string {
   const names = input.stops.map((stop) => stop.name.trim()).filter(Boolean);
-  return (names.join(' · ') || input.name.trim() || 'Trip').slice(0, 200);
+  return (
+    input.destinationArea.trim() ||
+    names.join(' · ') ||
+    input.name.trim() ||
+    'Trip'
+  ).slice(0, 200);
 }
 
 export function sortStopsByDate<T extends Pick<TripStop, 'arrivalDate' | 'departureDate' | 'position'>>(
