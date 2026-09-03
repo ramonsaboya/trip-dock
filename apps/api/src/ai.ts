@@ -1,11 +1,12 @@
 import OpenAI from 'openai';
 import { zodTextFormat } from 'openai/helpers/zod';
 
+import { AppError } from './domain.js';
 import {
-  AppError,
-  tripDraftSchema,
-  type TripDraft,
-} from './domain.js';
+  tripIntentExtractionSchema,
+  type TripCreationRequest,
+  type TripIntentExtraction,
+} from './trip-creation.js';
 
 export type AiResult<T> = {
   value: T;
@@ -14,8 +15,27 @@ export type AiResult<T> = {
 };
 
 export interface AiGateway {
-  generateTripDraft(prompt: string): Promise<AiResult<TripDraft>>;
+  interpretTripCreation(request: TripCreationRequest): Promise<AiResult<TripIntentExtraction>>;
 }
+
+export const TRIP_CREATION_SYSTEM_PROMPT = `You are TripDock's new-trip intent interpreter. Your only job is to extract structured evidence from a user's free-form request so deterministic application code can resolve and validate it.
+
+Rules:
+- Work only on creating a new trip. Never edit, inspect, or make proposals for an existing trip.
+- The user input may be an initial request or a follow-up transcript. In a transcript, treat the Original request, Earlier user follow-ups, Manually confirmed fields, and latest User follow-up sections as evidence; unresolved-question wording is context, not a user answer.
+- Extract what the user said. Do not silently complete required information.
+- Preserve a short verbatim source span in sourceText or evidence for every user-derived value. Use null when there is no supporting evidence.
+- Do not calculate ISO dates, choose an implicit year, resolve relative dates, decide numeric date order, roll dates across a year, or validate the calendar. Return the typed date intent and its day/month/year components instead. Use NUMERIC_DATE only for a wholly numeric date such as 05/06 or 05/06/2027; use CALENDAR_DATE for named-month and ISO dates. A date without a year must have year: null.
+- Classify every destination as CITY, COUNTRY, REGION, PREFERENCE, AMBIGUOUS, or UNKNOWN. CITY includes towns and municipalities. A broad area or travel preference is not a city.
+- If the user named a city, use origin USER_EXPLICIT. If you infer a possible city from a broad or ambiguous request, keep the broad localityKind, use origin AI_SUGGESTED, and put up to four plausible cities in candidates; never pretend the user selected one.
+- Treat contradictions, invalid-looking dates, month-only dates, uncertainty, and alternatives as unresolved evidence. Do not choose on the user's behalf.
+- NEXT_WEEKEND always describes a Saturday-Sunday range and never includes Friday. THIS_FRIDAY is a single date intent. Application code will resolve both using the user's local reference date.
+- When a single trip-wide NEXT_WEEKEND expression is given, assign NEXT_WEEKEND to both trip startDate and endDate. For a clearly single-day trip date, assign the same intent to both boundaries. Otherwise leave an unstated boundary MISSING.
+- Keep destination arrival/departure intents separate from trip-wide dates. Do not copy them unless the user tied them together.
+- Extract a trip name only when the user supplied one; otherwise return null/MISSING. Application code will derive a display name.
+- Traveler count may be deterministically interpreted from evidence such as "me and my partner"; label that DETERMINISTIC. Never guess a count.
+- Preserve whether a stated duration is in DAYS, NIGHTS, or WEEKS and quote its evidence. Use MISSING with null when none was stated; do not convert calendar months into days.
+- Put concise extraction caveats in warnings and user-stated assumptions in assumptions. Do not return prose outside the schema.`;
 
 function extractRefusal(response: unknown): string | null {
   const output = (response as { output?: Array<{ content?: Array<{ type?: string; refusal?: string }> }> })
@@ -91,24 +111,38 @@ export class OpenAiGateway implements AiGateway {
     this.client = new OpenAI({ apiKey, timeout: 30_000, maxRetries: 1 });
   }
 
-  async generateTripDraft(prompt: string): Promise<AiResult<TripDraft>> {
+  async interpretTripCreation(request: TripCreationRequest): Promise<AiResult<TripIntentExtraction>> {
     try {
       const response = await this.client.responses.parse({
         model: this.model,
         store: false,
-        instructions:
-          'Create a concise travel-plan draft for human review. Never invent missing dates or traveler counts; use null and explain uncertainty in warnings. Keep stops ordered. destinationArea is internal compatibility metadata: derive it quietly and never mention it in assumptions or warnings. Do not include bookings, credentials, or prose outside the schema.',
-        input: prompt,
-        text: { format: zodTextFormat(tripDraftSchema, 'tripdock_trip_draft_v1') },
+        instructions: TRIP_CREATION_SYSTEM_PROMPT,
+        input: [
+          {
+            role: 'developer',
+            content: `Runtime context (authoritative): locale=${request.locale}; timezone=${request.timeZone}; local reference date=${request.referenceDate}. Extract relative expressions but leave their resolution to application code.`,
+          },
+          { role: 'user', content: request.prompt },
+        ],
+        text: {
+          format: zodTextFormat(
+            tripIntentExtractionSchema,
+            'tripdock_trip_intent_v2',
+          ),
+        },
       });
       const refusal = extractRefusal(response);
       if (refusal) throw new AppError('OpenAI declined this trip-draft request.', 'AI_REFUSAL');
       requireCompletedResponse(response, 'trip draft');
-      const parsed = tripDraftSchema.safeParse(response.output_parsed);
+      const parsed = tripIntentExtractionSchema.safeParse(response.output_parsed);
       if (!parsed.success) {
-        throw new AppError('OpenAI returned a draft that failed server validation.', 'AI_INVALID_OUTPUT');
+        throw new AppError('OpenAI returned an interpretation that failed server validation.', 'AI_INVALID_OUTPUT');
       }
-      return { value: parsed.data, model: response.model, responseId: response.id };
+      return {
+        value: parsed.data,
+        model: response.model,
+        responseId: response.id,
+      };
     } catch (error) {
       throw classifyProviderError(error);
     }
@@ -116,14 +150,14 @@ export class OpenAiGateway implements AiGateway {
 }
 
 export class FixtureAiGateway implements AiGateway {
-  readonly calls: Array<{ kind: 'draft'; prompt: string }> = [];
+  readonly calls: Array<{ kind: 'draft'; request: TripCreationRequest }> = [];
 
-  constructor(private readonly draft: TripDraft) {}
+  constructor(private readonly extraction: TripIntentExtraction) {}
 
-  async generateTripDraft(prompt: string): Promise<AiResult<TripDraft>> {
-    this.calls.push({ kind: 'draft', prompt });
+  async interpretTripCreation(request: TripCreationRequest): Promise<AiResult<TripIntentExtraction>> {
+    this.calls.push({ kind: 'draft', request: structuredClone(request) });
     return {
-      value: tripDraftSchema.parse(structuredClone(this.draft)),
+      value: tripIntentExtractionSchema.parse(structuredClone(this.extraction)),
       model: 'fixture-tripdock-v1',
       responseId: 'fixture-draft-response',
     };
@@ -138,7 +172,7 @@ export class UnconfiguredAiGateway implements AiGateway {
     );
   }
 
-  async generateTripDraft(_prompt: string): Promise<AiResult<TripDraft>> {
+  async interpretTripCreation(_request: TripCreationRequest): Promise<AiResult<TripIntentExtraction>> {
     return this.fail();
   }
 }

@@ -82,10 +82,12 @@ async function createHarness(gateway: AiGateway = new UnconfiguredAiGateway()): 
   const migrationFiles = (await readdir(migrationDirectory))
     .filter((name) => /^\d+_.+\.sql$/.test(name))
     .sort();
-  assert.equal(migrationFiles.length, 1, 'The slice should have one baseline SQL migration.');
-  const migration = await readFile(join(migrationDirectory, migrationFiles[0]!), 'utf8');
-  for (const statement of migration.split('--> statement-breakpoint')) {
-    if (statement.trim()) await pool.query(statement);
+  assert.equal(migrationFiles.length, 2, 'The slice should have a baseline and one evolution migration.');
+  for (const migrationFile of migrationFiles) {
+    const migration = await readFile(join(migrationDirectory, migrationFile), 'utf8');
+    for (const statement of migration.split('--> statement-breakpoint')) {
+      if (statement.trim()) await pool.query(statement);
+    }
   }
   const db = drizzle(pool, { schema }) as AppDatabase;
   const withGateway = (aiGateway: AiGateway) =>
@@ -150,7 +152,7 @@ type TripResult = {
   destinationArea: string;
   startDate: string;
   endDate: string;
-  travelerCount: number;
+  travelerCount: number | null;
   revision: number;
   stops: Array<{
     id: string;
@@ -650,6 +652,20 @@ test('createTrip preserves intentionally blank destination boundaries', async ()
   }
 });
 
+test('createTrip persists an omitted traveler count without inventing one', async () => {
+  const harness = await createHarness();
+  try {
+    const { travelerCount: _travelerCount, ...inputWithoutTravelers } = baseTripInput;
+    const result = await gql<{ createTrip: TripResult }>(harness.yoga, createTripMutation, {
+      input: inputWithoutTravelers,
+    });
+    assert.equal(result.errors, undefined);
+    assert.equal(result.data?.createTrip.travelerCount, null);
+  } finally {
+    await harness.pool.end();
+  }
+});
+
 test('explicit destination boundary dates can diverge while linked edits still flow both ways', async () => {
   const harness = await createHarness();
   try {
@@ -723,39 +739,77 @@ test('explicit destination boundary dates can diverge while linked edits still f
 });
 
 test('homepage AI draft generation remains available without persisting a trip', async () => {
-  const draft = {
-    name: 'Coastal draft',
-    destinationArea: 'Atlantic coast',
-    startDate: '2027-09-10',
-    endDate: '2027-09-15',
-    travelerCount: 2,
-    stops: [{
-      name: 'Harbor',
-      locationText: null,
-      arrivalDate: '2027-09-10',
-      departureDate: '2027-09-15',
+  const extraction = {
+    name: { value: 'Coastal draft', evidence: 'Coastal draft', origin: 'USER_EXPLICIT' as const },
+    travelerCount: { value: 2, evidence: 'two people', origin: 'USER_EXPLICIT' as const },
+    startDate: { sourceText: '2027-09-10', kind: 'CALENDAR_DATE' as const, day: 10, month: 9, year: 2027 },
+    endDate: { sourceText: '2027-09-15', kind: 'CALENDAR_DATE' as const, day: 15, month: 9, year: 2027 },
+    duration: { value: null, unit: 'MISSING' as const, evidence: null },
+    destinations: [{
+      sourceText: 'Porto',
+      city: 'Porto',
+      context: null,
+      localityKind: 'CITY' as const,
+      origin: 'USER_EXPLICIT' as const,
+      candidates: [],
+      arrivalDate: { sourceText: null, kind: 'MISSING' as const, day: null, month: null, year: null },
+      departureDate: { sourceText: null, kind: 'MISSING' as const, day: null, month: null, year: null },
     }],
     assumptions: [],
     warnings: [],
   };
-  const gateway = new FixtureAiGateway(draft);
+  const prompt = 'Plan Coastal draft in Porto from 2027-09-10 to 2027-09-15 for two people.';
+  const gateway = new FixtureAiGateway(extraction);
   const harness = await createHarness(gateway);
   try {
-    const result = await gql<{ generateTripDraft: typeof draft }>(
+    const result = await gql<{ generateTripDraft: {
+      name: string;
+      startDate: string | null;
+      endDate: string | null;
+      travelerCount: number | null;
+      minimumViable: boolean;
+      stops: Array<{ name: string; cityResolution: string }>;
+    } }>(
       harness.yoga,
-      `mutation($prompt: String!) {
-        generateTripDraft(prompt: $prompt) {
+      `mutation($input: GenerateTripDraftInput!) {
+        generateTripDraft(input: $input) {
           name destinationArea startDate endDate travelerCount assumptions warnings
-          stops { name locationText arrivalDate departureDate }
+          minimumViable referenceDate locale timeZone
+          stops { draftId name locationText arrivalDate departureDate localityKind cityResolution }
+          fieldStates { path status evidence message blocking }
+          questions { id fieldPaths prompt allowFreeText blocking options { id label updates { path value } } }
         }
       }`,
-      { prompt: 'Plan a detailed five-day coastal trip for two people.' },
+      { input: {
+        prompt,
+        locale: 'en-GB',
+        timeZone: 'Europe/London',
+        referenceDate: '2026-09-03',
+      } },
     );
     assert.equal(result.errors, undefined);
-    assert.deepEqual(result.data?.generateTripDraft, draft);
+    assert.equal(result.data?.generateTripDraft.name, 'Coastal draft');
+    assert.equal(result.data?.generateTripDraft.startDate, '2027-09-10');
+    assert.equal(result.data?.generateTripDraft.endDate, '2027-09-15');
+    assert.equal(result.data?.generateTripDraft.travelerCount, 2);
+    assert.equal(result.data?.generateTripDraft.minimumViable, true);
+    assert.deepEqual(result.data?.generateTripDraft.stops, [{
+      draftId: 'destination-1',
+      name: 'Porto',
+      locationText: null,
+      arrivalDate: '2027-09-10',
+      departureDate: '2027-09-15',
+      localityKind: 'CITY',
+      cityResolution: 'RESOLVED',
+    }]);
     assert.deepEqual(gateway.calls, [{
       kind: 'draft',
-      prompt: 'Plan a detailed five-day coastal trip for two people.',
+      request: {
+        prompt,
+        locale: 'en-GB',
+        timeZone: 'Europe/London',
+        referenceDate: '2026-09-03',
+      },
     }]);
     const tripsResult = await gql<{ trips: Array<{ id: string }> }>(
       harness.yoga,

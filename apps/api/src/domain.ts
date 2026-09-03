@@ -66,21 +66,6 @@ export const tripDraftStopSchema = z
   })
   .strict();
 
-export const tripDraftSchema = z
-  .object({
-    name: z.string().trim().min(1).max(160),
-    destinationArea: z.string().trim().min(1).max(200),
-    startDate: isoDateSchema.nullable(),
-    endDate: isoDateSchema.nullable(),
-    travelerCount: z.number().int().min(1).max(20).nullable(),
-    stops: z.array(tripDraftStopSchema).min(1).max(20),
-    assumptions: z.array(z.string().trim().min(1).max(240)).max(12),
-    warnings: z.array(z.string().trim().min(1).max(240)).max(12),
-  })
-  .strict();
-
-export type TripDraft = z.infer<typeof tripDraftSchema>;
-
 export type DatedStop = {
   arrivalDate: string | null;
   departureDate: string | null;

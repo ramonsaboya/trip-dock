@@ -16,27 +16,47 @@ import {
 
 import {
   activityDateTimeForStop,
+  alignIncomingTripDraftStops,
+  applyClarificationUpdates,
   appendTripStop,
+  buildTripFollowUpPrompt,
+  clarificationPathsConfirmedByEdit,
+  confirmedTripDraftFieldState,
   dateTimeLocalToIso,
   dateTimeLocalToIsoPreserving,
   destinationAreaFromStops,
   draftToTripInput,
+  explicitTripDraftPathsFromFollowUp,
   formatDateRange,
   formatDateTime,
   graphqlRequest,
+  isTripMinimumViable,
   isoToDateTimeLocal,
+  localIsoDate,
+  mergeTripDraft,
+  mergeUnansweredClarificationQuestions,
   operations,
+  protectedPathsAfterFollowUp,
+  remapDirtyTripDraftPaths,
+  remapCurrentTripDraftPathToIncoming,
+  remapTripDraftPathAfterStopRemoval,
   removeTripStop,
   sortStopsByDate,
   stayDateTimesForStop,
   transportDateTimesForStops,
+  tripDraftFieldStateMap,
+  tripStopsForCreation,
   updateTripBoundaryDate,
   updateTripStopDate,
   type Activity,
+  type GenerateTripDraftInput,
   type Stay,
   type TransportLeg,
   type Trip,
+  type TripClarificationQuestion,
   type TripDraft,
+  type TripDraftFieldState,
+  type TripDraftFieldStatus,
   type TripDraftStop,
   type TripInput,
   type TripStop,
@@ -54,6 +74,8 @@ const blankStop = (): TripDraftStop => ({
   locationText: null,
   arrivalDate: null,
   departureDate: null,
+  localityKind: 'UNKNOWN',
+  cityResolution: 'UNRESOLVED',
 });
 
 const blankTrip = (): TripInput => ({
@@ -61,7 +83,7 @@ const blankTrip = (): TripInput => ({
   destinationArea: '',
   startDate: '',
   endDate: '',
-  travelerCount: 2,
+  travelerCount: null,
   stops: [blankStop()],
 });
 
@@ -85,6 +107,11 @@ function formatStopDates(stop: Pick<TripStop, 'arrivalDate' | 'departureDate'>):
   if (stop.arrivalDate) return `From ${formatCalendarDate(stop.arrivalDate)}`;
   if (stop.departureDate) return `Until ${formatCalendarDate(stop.departureDate)}`;
   return 'Dates open';
+}
+
+function formatTravelerCount(count: number | null): string {
+  if (count === null) return 'Travelers not set';
+  return `${count} ${count === 1 ? 'traveler' : 'travelers'}`;
 }
 
 function deviceTimezone(): string | null {
@@ -161,61 +188,72 @@ function Dialog({
   );
 }
 
-type FillStatus = 'auto' | 'suggested';
-
-function fillStatusesForDraft(draft: TripDraft, form: TripInput): Map<string, FillStatus> {
-  const statuses = new Map<string, FillStatus>();
-  const mark = (key: string, value: string | number | null, status: FillStatus) => {
-    if (value !== null && value !== '') statuses.set(key, status);
-  };
-  mark('trip.name', draft.name, 'suggested');
-  mark('trip.startDate', form.startDate, draft.startDate ? 'suggested' : 'auto');
-  mark('trip.endDate', form.endDate, draft.endDate ? 'suggested' : 'auto');
-  mark('trip.travelerCount', form.travelerCount, draft.travelerCount !== null ? 'suggested' : 'auto');
-  form.stops.forEach((stop, index) => {
-    const source = draft.stops[index];
-    mark(`stop.${index}.name`, stop.name, 'suggested');
-    mark(`stop.${index}.arrivalDate`, stop.arrivalDate, source?.arrivalDate ? 'suggested' : 'auto');
-    mark(`stop.${index}.departureDate`, stop.departureDate, source?.departureDate ? 'suggested' : 'auto');
-  });
-  return statuses;
-}
+const fieldStatusPresentation: Record<TripDraftFieldStatus, { icon: string; label: string }> = {
+  EXPLICIT: { icon: '✓', label: 'From your prompt' },
+  INTERPRETED: { icon: '≈', label: 'Interpreted' },
+  SUGGESTED: { icon: '?', label: 'Suggested' },
+  CONFIRMED: { icon: '✓', label: 'Confirmed' },
+  MISSING: { icon: '○', label: 'Missing' },
+  NEEDS_ATTENTION: { icon: '!', label: 'Needs attention' },
+  INVALID: { icon: '×', label: 'Invalid' },
+  CONFLICTING: { icon: '!', label: 'Conflicting' },
+  PAST: { icon: '↶', label: 'Past date' },
+};
 
 function Field({
   label,
   children,
   hint,
+  fieldState,
   fillStatus,
+  onConfirm,
 }: {
   label: string;
   children: ReactNode;
   hint?: string;
-  fillStatus?: FillStatus;
+  fieldState?: TripDraftFieldState;
+  fillStatus?: 'auto' | 'suggested';
+  onConfirm?: () => void;
 }) {
   const controlId = useId();
   const hintId = useId();
   const resolvedControlId = isValidElement<{ id?: string }>(children)
     ? children.props.id ?? controlId
     : controlId;
-  const control = isValidElement<{ id?: string; 'aria-describedby'?: string }>(children)
+  const control = isValidElement<{
+    id?: string;
+    'aria-describedby'?: string;
+    'aria-invalid'?: boolean | 'false' | 'true';
+  }>(children)
     ? cloneElement(children, {
         id: resolvedControlId,
-        'aria-describedby': [children.props['aria-describedby'], hint ? hintId : null]
+        'aria-describedby': [children.props['aria-describedby'], hint || fieldState?.message ? hintId : null]
           .filter(Boolean)
           .join(' ') || undefined,
+        'aria-invalid': ['INVALID', 'CONFLICTING'].includes(fieldState?.status ?? '') || undefined,
       })
     : children;
+  const statusPresentation = fieldState
+    ? fieldStatusPresentation[fieldState.status]
+    : fillStatus === 'suggested'
+      ? { icon: '≈', label: 'Suggested' }
+      : fillStatus === 'auto'
+        ? { icon: '↔', label: 'Auto-filled' }
+        : null;
 
   return (
-    <div className="field" data-fill-status={fillStatus}>
-      <label className="field-label" htmlFor={resolvedControlId}>
-        <span>{label}</span>
-        {fillStatus ? (
-          <span className="fill-status">{fillStatus === 'suggested' ? 'Suggested' : 'Auto-filled'}</span>
+    <div className="field" data-fill-status={fieldState?.status.toLowerCase() ?? fillStatus}>
+      <div className="field-label">
+        <label htmlFor={resolvedControlId}>{label}</label>
+        {statusPresentation ? (
+          <span className="field-status-actions">
+            <span className="fill-status"><span aria-hidden="true">{statusPresentation.icon}</span> {statusPresentation.label}</span>
+            {onConfirm && !['CONFIRMED', 'PAST'].includes(fieldState?.status ?? '') ? <button className="field-confirm" type="button" aria-label={`Confirm ${label.toLocaleLowerCase()}`} onClick={onConfirm}>Confirm</button> : null}
+          </span>
         ) : null}
-      </label>
+      </div>
       {control}
-      {hint ? <small id={hintId}>{hint}</small> : null}
+      {hint || fieldState?.message ? <small id={hintId}>{fieldState?.message ?? hint}</small> : null}
     </div>
   );
 }
@@ -274,10 +312,10 @@ function initialPickerMonth(value: string, min?: string, max?: string): Date {
   return startOfCalendarMonth(preferred);
 }
 
-function pickerDisplayValue(value: string, includeTime: boolean): string {
+function pickerDisplayValue(value: string, includeTime: boolean, locale: string): string {
   const date = parseCalendarDate(value);
   if (!date) return value;
-  const dateLabel = date.toLocaleDateString('en-GB', {
+  const dateLabel = date.toLocaleDateString(locale, {
     day: 'numeric',
     month: 'short',
     year: 'numeric',
@@ -292,12 +330,14 @@ type DatePickerInputProps = Omit<
   'defaultValue' | 'onChange' | 'readOnly' | 'type' | 'value'
 > & {
   includeTime?: boolean;
+  locale?: string;
   onValueChange: (value: string) => void;
   value: string;
 };
 
 function DatePickerInput({
   includeTime = false,
+  locale = 'en-GB',
   onValueChange,
   value,
   min,
@@ -322,9 +362,27 @@ function DatePickerInput({
   const selectedDate = value.slice(0, 10);
   const selectedTime = value.split('T')[1]?.slice(0, 5) ?? '';
   const today = calendarDateKey(currentCalendarDate());
+  const firstDayOfWeek = useMemo(() => {
+    try {
+      const localeWithWeekInfo = new Intl.Locale(locale) as Intl.Locale & {
+        weekInfo?: { firstDay: number };
+        getWeekInfo?: () => { firstDay: number };
+      };
+      return localeWithWeekInfo.weekInfo?.firstDay ?? localeWithWeekInfo.getWeekInfo?.().firstDay ?? 1;
+    } catch {
+      return 1;
+    }
+  }, [locale]);
+  const firstDayAsUtcWeekday = firstDayOfWeek % 7;
+  const weekdayLabels = useMemo(() => Array.from({ length: 7 }, (_, index) => {
+    const utcWeekday = (firstDayAsUtcWeekday + index) % 7;
+    return new Intl.DateTimeFormat(locale, { weekday: 'short', timeZone: 'UTC' })
+      .format(new Date(Date.UTC(2024, 0, 7 + utcWeekday)))
+      .replace(/\.$/, '');
+  }), [firstDayAsUtcWeekday, locale]);
 
   const days = useMemo(() => {
-    const firstWeekday = (visibleMonth.getUTCDay() + 6) % 7;
+    const firstWeekday = (visibleMonth.getUTCDay() - firstDayAsUtcWeekday + 7) % 7;
     const firstCell = new Date(visibleMonth);
     firstCell.setUTCDate(1 - firstWeekday);
     return Array.from({ length: 42 }, (_, index) => {
@@ -332,7 +390,7 @@ function DatePickerInput({
       date.setUTCDate(firstCell.getUTCDate() + index);
       return date;
     });
-  }, [visibleMonth]);
+  }, [firstDayAsUtcWeekday, visibleMonth]);
 
   const isDateAvailable = (date: Date) => {
     const key = calendarDateKey(date);
@@ -418,7 +476,7 @@ function DatePickerInput({
 
   function handleDayKeyDown(event: ReactKeyboardEvent<HTMLButtonElement>, date: Date) {
     let target: Date | null = null;
-    const weekday = (date.getUTCDay() + 6) % 7;
+    const weekday = (date.getUTCDay() - firstDayAsUtcWeekday + 7) % 7;
     if (event.key === 'ArrowLeft') target = addCalendarDays(date, -1);
     if (event.key === 'ArrowRight') target = addCalendarDays(date, 1);
     if (event.key === 'ArrowUp') target = addCalendarDays(date, -7);
@@ -449,7 +507,7 @@ function DatePickerInput({
         ref={inputRef}
         className={['date-picker-input', className].filter(Boolean).join(' ')}
         type="text"
-        value={pickerDisplayValue(value, includeTime)}
+        value={pickerDisplayValue(value, includeTime, locale)}
         readOnly
         disabled={disabled}
         role="combobox"
@@ -476,11 +534,11 @@ function DatePickerInput({
         <div className="date-picker-popover" id={popoverId} role="dialog" aria-label={includeTime ? 'Choose date and time' : 'Choose date'}>
           <div className="date-picker-header">
             <button className="date-picker-nav" type="button" disabled={previousDisabled} onClick={() => setVisibleMonth(previousMonth)} aria-label="Previous month">‹</button>
-            <strong>{visibleMonth.toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' })}</strong>
+            <strong>{visibleMonth.toLocaleDateString(locale, { month: 'long', year: 'numeric', timeZone: 'UTC' })}</strong>
             <button className="date-picker-nav" type="button" disabled={nextDisabled} onClick={() => setVisibleMonth(nextMonth)} aria-label="Next month">›</button>
           </div>
           <div className="date-picker-weekdays" aria-hidden="true">
-            {['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'].map((day) => <span key={day}>{day}</span>)}
+            {weekdayLabels.map((day, index) => <span key={`${day}-${index}`}>{day}</span>)}
           </div>
           <div className="date-picker-grid" role="group" aria-label="Calendar days">
             {days.map((date) => {
@@ -496,7 +554,7 @@ function DatePickerInput({
                    key={key}
                    disabled={unavailable}
                    tabIndex={key === focusDate ? 0 : -1}
-                   aria-label={date.toLocaleDateString('en-GB', { dateStyle: 'full', timeZone: 'UTC' })}
+                   aria-label={date.toLocaleDateString(locale, { dateStyle: 'full', timeZone: 'UTC' })}
                   aria-pressed={selected}
                    aria-current={key === today ? 'date' : undefined}
                    onClick={() => chooseDate(date)}
@@ -533,27 +591,53 @@ function DatePickerInput({
 function TripFields({
   value,
   onChange,
-  initialFillStatuses,
+  fieldStates,
+  onFieldEdited,
+  onFieldProtected,
+  onFieldConfirmed,
+  onFieldDerived,
+  onStopRemoved,
+  locale = 'en-GB',
+  disabled = false,
 }: {
   value: TripInput;
   onChange: (next: TripInput) => void;
-  initialFillStatuses?: ReadonlyMap<string, FillStatus>;
+  fieldStates?: ReadonlyMap<string, TripDraftFieldState>;
+  onFieldEdited?: (
+    path: string,
+    value: string | number | null,
+    nextInput: TripInput,
+  ) => void;
+  onFieldProtected?: (path: string) => void;
+  onFieldConfirmed?: (path: string) => void;
+  onFieldDerived?: (path: string, value: string | number | null) => void;
+  onStopRemoved?: (index: number) => void;
+  locale?: string;
+  disabled?: boolean;
 }) {
-  const stopFieldKey = (index: number, field: keyof TripDraftStop) => `stop.${index}.${field}`;
+  const stopFieldKey = (index: number, field: keyof TripDraftStop) => `stops.${index}.${field}`;
   const [dirtyFields, setDirtyFields] = useState<Set<string>>(() => new Set());
-  const [fillStatuses, setFillStatuses] = useState<Map<string, FillStatus>>(() => {
-    const statuses = new Map(initialFillStatuses);
-    if (!initialFillStatuses && value.travelerCount === 2) statuses.set('trip.travelerCount', 'auto');
-    return statuses;
-  });
+  const previousStops = useRef(value.stops);
 
-  function markDirty(key: string) {
+  useEffect(() => {
+    if (previousStops.current === value.stops) return;
+    setDirtyFields((current) => remapDirtyTripDraftPaths(
+      current,
+      previousStops.current,
+      value.stops,
+    ));
+    previousStops.current = value.stops;
+  }, [value.stops]);
+
+  function markDirty(
+    key: string,
+    confirm = true,
+    fieldValue: string | number | null = null,
+    nextInput: TripInput = value,
+  ) {
     setDirtyFields((current) => new Set(current).add(key));
-    setFillStatuses((current) => {
-      const next = new Map(current);
-      next.delete(key);
-      return next;
-    });
+    if (confirm) onFieldEdited?.(key, fieldValue, nextInput);
+    else onFieldProtected?.(key);
   }
 
   function markDerived(key: string, fieldValue: string | number | null) {
@@ -562,17 +646,13 @@ function TripFields({
       next.delete(key);
       return next;
     });
-    setFillStatuses((current) => {
-      const next = new Map(current);
-      if (fieldValue === null || fieldValue === '') next.delete(key);
-      else next.set(key, 'auto');
-      return next;
-    });
+    onFieldDerived?.(key, fieldValue);
   }
 
   function updateTripField<K extends 'name' | 'travelerCount'>(field: K, fieldValue: TripInput[K]) {
-    markDirty(`trip.${field}`);
-    onChange({ ...value, [field]: fieldValue });
+    const next = { ...value, [field]: fieldValue };
+    markDirty(`trip.${field}`, true, fieldValue, next);
+    onChange(next);
   }
 
   function updateBoundary(boundary: 'start' | 'end', date: string) {
@@ -583,7 +663,7 @@ function TripFields({
     const next = updateTripBoundaryDate(value, boundary, date, {
       stopDateDirty: dirtyFields.has(linkedKey),
     });
-    markDirty(tripKey);
+    markDirty(tripKey, true, date, next);
     if (next.stops[stopIndex]?.[stopField] !== value.stops[stopIndex]?.[stopField]) {
       markDerived(linkedKey, next.stops[stopIndex]?.[stopField] ?? null);
     }
@@ -591,15 +671,34 @@ function TripFields({
   }
 
   function updateStop(index: number, patch: Partial<TripDraftStop>) {
-    for (const field of Object.keys(patch) as Array<keyof TripDraftStop>) {
-      markDirty(stopFieldKey(index, field));
+    const normalizedPatch = Object.hasOwn(patch, 'name')
+      ? {
+          ...patch,
+          locationText: null,
+          localityKind: 'UNKNOWN' as const,
+          cityResolution: 'UNRESOLVED' as const,
+        }
+      : patch;
+    if (Object.hasOwn(patch, 'name')) {
+      markDirty(stopFieldKey(index, 'localityKind'), false);
+      markDirty(stopFieldKey(index, 'cityResolution'), false);
     }
-    onChange({
+    const next = {
       ...value,
       stops: value.stops.map((stop, stopIndex) =>
-        stopIndex === index ? { ...stop, ...patch } : stop,
+        stopIndex === index ? { ...stop, ...normalizedPatch } : stop,
       ),
-    });
+    };
+    for (const field of Object.keys(patch) as Array<keyof TripDraftStop>) {
+      const fieldValue = patch[field];
+      markDirty(
+        stopFieldKey(index, field),
+        field !== 'name',
+        typeof fieldValue === 'string' || fieldValue === null ? fieldValue : null,
+        next,
+      );
+    }
+    onChange(next);
   }
 
   function updateStopDate(
@@ -615,7 +714,7 @@ function TripFields({
         field === 'arrivalDate' ? 'trip.startDate' : 'trip.endDate',
       ),
     });
-    markDirty(fieldKey);
+    markDirty(fieldKey, true, date || null, next);
     if (field === 'departureDate' && next.stops[index + 1]?.arrivalDate !== value.stops[index + 1]?.arrivalDate) {
       markDerived(nextArrivalKey, next.stops[index + 1]?.arrivalDate ?? null);
     }
@@ -644,26 +743,11 @@ function TripFields({
   }
 
   function removeStop(index: number) {
-    const removedDepartureKey = stopFieldKey(index, 'departureDate');
     const survivingDepartureKey = stopFieldKey(index - 1, 'departureDate');
     const next = removeTripStop(value, index, {
-      preserveTripEnd: Boolean(fillStatuses.get(removedDepartureKey)),
+      preserveTripEnd: Boolean(value.stops[index]?.departureDate),
       survivingDepartureDirty: dirtyFields.has(survivingDepartureKey),
     });
-    const remapKey = (key: string): string | null => {
-      const match = /^stop\.(\d+)\.(.+)$/.exec(key);
-      if (!match) return key;
-      const stopIndex = Number(match[1]);
-      if (stopIndex === index) return null;
-      return stopIndex > index ? `stop.${stopIndex - 1}.${match[2]}` : key;
-    };
-    setDirtyFields((current) => new Set([...current].map(remapKey).filter((key): key is string => Boolean(key))));
-    setFillStatuses((current) => new Map(
-      [...current].flatMap(([key, status]) => {
-        const remapped = remapKey(key);
-        return remapped ? [[remapped, status] as const] : [];
-      }),
-    ));
     if (next.startDate !== value.startDate) markDerived('trip.startDate', next.startDate);
     if (next.endDate !== value.endDate) markDerived('trip.endDate', next.endDate);
     const lastIndex = next.stops.length - 1;
@@ -672,67 +756,353 @@ function TripFields({
       markDerived(stopFieldKey(lastIndex, 'departureDate'), next.stops[lastIndex]?.departureDate ?? null);
     }
     onChange(next);
+    onStopRemoved?.(index);
   }
 
   return (
-    <div className="form-stack">
-      <Field label="Trip name" fillStatus={fillStatuses.get('trip.name')}>
-        <input required maxLength={160} value={value.name} onChange={(event) => updateTripField('name', event.target.value)} placeholder="A name you’ll recognize" />
+    <fieldset disabled={disabled} style={{ border: 0, margin: 0, minWidth: 0, padding: 0 }}>
+      <div className="form-stack">
+      <Field label="Trip name" fieldState={fieldStates?.get('trip.name')} onConfirm={value.name && fieldStates?.get('trip.name') ? () => onFieldConfirmed?.('trip.name') : undefined}>
+        <input maxLength={160} value={value.name} onChange={(event) => updateTripField('name', event.target.value)} placeholder="A name you’ll recognize" />
       </Field>
       <div className="form-grid form-grid-three">
-        <Field label="Start date" fillStatus={fillStatuses.get('trip.startDate')}><DatePickerInput required max={value.endDate || undefined} value={value.startDate} onValueChange={(date) => updateBoundary('start', date)} /></Field>
-        <Field label="End date" fillStatus={fillStatuses.get('trip.endDate')}><DatePickerInput required min={value.startDate || undefined} value={value.endDate} onValueChange={(date) => updateBoundary('end', date)} /></Field>
-        <Field label="Travelers" fillStatus={fillStatuses.get('trip.travelerCount')}><input required type="number" min="1" max="20" value={value.travelerCount} onChange={(event) => updateTripField('travelerCount', Number(event.target.value))} /></Field>
+        <Field label="Start date" fieldState={fieldStates?.get('trip.startDate')} onConfirm={value.startDate && fieldStates?.get('trip.startDate') ? () => onFieldConfirmed?.('trip.startDate') : undefined}><DatePickerInput locale={locale} required max={value.endDate || undefined} value={value.startDate} onValueChange={(date) => updateBoundary('start', date)} /></Field>
+        <Field label="End date" fieldState={fieldStates?.get('trip.endDate')} onConfirm={value.endDate && fieldStates?.get('trip.endDate') ? () => onFieldConfirmed?.('trip.endDate') : undefined}><DatePickerInput locale={locale} required min={value.startDate || undefined} value={value.endDate} onValueChange={(date) => updateBoundary('end', date)} /></Field>
+        <Field label="Travelers (optional)" fieldState={fieldStates?.get('trip.travelerCount')} onConfirm={value.travelerCount && fieldStates?.get('trip.travelerCount') ? () => onFieldConfirmed?.('trip.travelerCount') : undefined}><input type="number" min="1" max="20" value={value.travelerCount ?? ''} onChange={(event) => updateTripField('travelerCount', event.target.value ? Number(event.target.value) : null)} placeholder="Not provided" /></Field>
       </div>
       <fieldset className="stops-editor">
         <legend>Destinations</legend>
         {value.stops.map((stop, index) => (
-          <div className="draft-stop" key={`draft-stop-${index}`}>
+          <div className="draft-stop" key={stop.draftId ?? `draft-stop-${index}`}>
             <span className="position-badge" aria-label={`Destination ${index + 1}`}>{index + 1}</span>
             <div className="destination-fields">
-              <Field label="Destination" fillStatus={fillStatuses.get(stopFieldKey(index, 'name'))}><input required value={stop.name} onChange={(event) => updateStop(index, { name: event.target.value })} placeholder="City or stop" /></Field>
-              <Field label="Start" fillStatus={fillStatuses.get(stopFieldKey(index, 'arrivalDate'))}><DatePickerInput min={value.startDate || undefined} max={(stop.departureDate ?? value.endDate) || undefined} value={stop.arrivalDate ?? ''} onValueChange={(date) => updateStopDate(index, 'arrivalDate', date)} /></Field>
-              <Field label="End" fillStatus={fillStatuses.get(stopFieldKey(index, 'departureDate'))}><DatePickerInput min={(stop.arrivalDate ?? value.startDate) || undefined} max={value.endDate || undefined} value={stop.departureDate ?? ''} onValueChange={(date) => updateStopDate(index, 'departureDate', date)} /></Field>
+              <Field label="City" fieldState={fieldStates?.get(stopFieldKey(index, 'name'))} onConfirm={stop.name && fieldStates?.get(stopFieldKey(index, 'name')) ? () => { onChange({ ...value, stops: value.stops.map((item, stopIndex) => stopIndex === index ? { ...item, localityKind: 'CITY', cityResolution: 'RESOLVED' } : item) }); onFieldConfirmed?.(stopFieldKey(index, 'name')); onFieldConfirmed?.(stopFieldKey(index, 'localityKind')); onFieldConfirmed?.(stopFieldKey(index, 'cityResolution')); } : undefined}><input value={stop.name} onChange={(event) => updateStop(index, { name: event.target.value })} onBlur={(event) => { const city = event.currentTarget.value.trim(); if (!city) return; onChange({ ...value, stops: value.stops.map((item, stopIndex) => stopIndex === index ? { ...item, name: city, localityKind: 'CITY', cityResolution: 'RESOLVED' } : item) }); onFieldConfirmed?.(stopFieldKey(index, 'name')); onFieldConfirmed?.(stopFieldKey(index, 'localityKind')); onFieldConfirmed?.(stopFieldKey(index, 'cityResolution')); }} placeholder="A specific city" /></Field>
+              <Field label="Start" fieldState={fieldStates?.get(stopFieldKey(index, 'arrivalDate'))} onConfirm={stop.arrivalDate && fieldStates?.get(stopFieldKey(index, 'arrivalDate')) ? () => onFieldConfirmed?.(stopFieldKey(index, 'arrivalDate')) : undefined}><DatePickerInput locale={locale} min={value.startDate || undefined} max={(stop.departureDate ?? value.endDate) || undefined} value={stop.arrivalDate ?? ''} onValueChange={(date) => updateStopDate(index, 'arrivalDate', date)} /></Field>
+              <Field label="End" fieldState={fieldStates?.get(stopFieldKey(index, 'departureDate'))} onConfirm={stop.departureDate && fieldStates?.get(stopFieldKey(index, 'departureDate')) ? () => onFieldConfirmed?.(stopFieldKey(index, 'departureDate')) : undefined}><DatePickerInput locale={locale} min={(stop.arrivalDate ?? value.startDate) || undefined} max={value.endDate || undefined} value={stop.departureDate ?? ''} onValueChange={(date) => updateStopDate(index, 'departureDate', date)} /></Field>
             </div>
             <button className="icon-button remove-destination" type="button" disabled={value.stops.length === 1} aria-label={`Remove destination ${index + 1}`} onClick={() => removeStop(index)}>×</button>
           </div>
         ))}
         <button className="button-secondary add-destination" type="button" onClick={addStop}>+ Add destination</button>
       </fieldset>
-    </div>
+      </div>
+    </fieldset>
   );
 }
 
-type DraftNotes = Pick<TripDraft, 'assumptions' | 'warnings'>;
-
 function CreateTripDialog({
-  initialForm,
-  initialFillStatuses,
-  draftNotes,
+  initialDraft,
+  sourcePrompt,
   onClose,
   onCreated,
 }: {
-  initialForm?: TripInput;
-  initialFillStatuses?: ReadonlyMap<string, FillStatus>;
-  draftNotes?: DraftNotes;
+  initialDraft?: TripDraft;
+  sourcePrompt?: string;
   onClose: () => void;
   onCreated: (trip: Trip) => void;
 }) {
-  const [form, setForm] = useState<TripInput>(() => initialForm ?? blankTrip());
+  const [form, setForm] = useState<TripInput>(() =>
+    initialDraft ? draftToTripInput(initialDraft) : blankTrip(),
+  );
+  const [fieldStates, setFieldStates] = useState<Map<string, TripDraftFieldState>>(() =>
+    tripDraftFieldStateMap(initialDraft?.fieldStates ?? []),
+  );
+  const [questions, setQuestions] = useState<TripClarificationQuestion[]>(
+    () => initialDraft?.questions ?? [],
+  );
+  const [notes, setNotes] = useState(() => ({
+    assumptions: initialDraft?.assumptions ?? [],
+    warnings: initialDraft?.warnings ?? [],
+  }));
+  const [selectedOptions, setSelectedOptions] = useState<Record<string, string>>({});
+  const [followUp, setFollowUp] = useState('');
+  const [followUpHistory, setFollowUpHistory] = useState<string[]>([]);
+  const [followUpBusy, setFollowUpBusy] = useState(false);
+  const formLocale = initialDraft?.locale ??
+    (typeof navigator === 'undefined' ? 'en-GB' : navigator.language || 'en-GB');
+  const protectedPaths = useRef(new Set<string>());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const minimumViable = isTripMinimumViable(form, fieldStates, questions);
+  const omittedStops = form.stops.filter((stop) => {
+    const hasVisibleIdea = Boolean(stop.name.trim() || stop.locationText?.trim());
+    const isResolvedCity = Boolean(
+      stop.name.trim() &&
+      stop.localityKind === 'CITY' &&
+      stop.cityResolution === 'RESOLVED',
+    );
+    return hasVisibleIdea && !isResolvedCity;
+  });
+
+  function protectPaths(paths: readonly string[]): Set<string> {
+    const nextProtected = new Set(protectedPaths.current);
+    for (const path of paths) nextProtected.add(path);
+    protectedPaths.current = nextProtected;
+    return nextProtected;
+  }
+
+  function valueAtPath(input: TripInput, path: string): unknown {
+    const tripMatch = /^trip\.(name|startDate|endDate|travelerCount)$/.exec(path);
+    if (tripMatch) {
+      return input[tripMatch[1] as keyof Pick<TripInput, 'name' | 'startDate' | 'endDate' | 'travelerCount'>];
+    }
+    const stopMatch = /^stops\.(\d+)\.(name|locationText|arrivalDate|departureDate|localityKind|cityResolution)$/.exec(path);
+    if (!stopMatch) return undefined;
+    return input.stops[Number(stopMatch[1])]?.[stopMatch[2] as keyof TripDraftStop];
+  }
+
+  function confirmPaths(
+    paths: readonly string[],
+    dismissMatchingQuestions = true,
+    input: TripInput = form,
+    explicitValues: ReadonlyMap<string, string | number | null> = new Map(),
+  ) {
+    const nextProtected = protectPaths(paths);
+    setFieldStates((current) => {
+      const next = new Map(current);
+      for (const path of paths) {
+        const previous = next.get(path);
+        next.set(path, confirmedTripDraftFieldState(
+          path,
+          explicitValues.has(path) ? explicitValues.get(path) : valueAtPath(input, path),
+          previous,
+        ));
+      }
+      return next;
+    });
+    if (dismissMatchingQuestions) {
+      setQuestions((current) =>
+        current.filter((item) => !item.fieldPaths.every((path) => nextProtected.has(path))),
+      );
+    }
+  }
+
+  function markFieldEdited(
+    path: string,
+    value: string | number | null,
+    nextInput: TripInput,
+  ) {
+    const paths = clarificationPathsConfirmedByEdit(path, nextInput, questions);
+    confirmPaths(paths, true, nextInput, new Map([[path, value]]));
+  }
+
+  function markFieldDerived(path: string, value: string | number | null) {
+    if (protectedPaths.current.has(path)) return;
+    setFieldStates((current) => {
+      const next = new Map(current);
+      const pastState = confirmedTripDraftFieldState(path, value, next.get(path));
+      next.set(path, pastState.status === 'PAST'
+        ? pastState
+        : {
+            path,
+            status: value === null || value === '' ? 'MISSING' : 'INTERPRETED',
+            evidence: null,
+            message: value === null || value === '' ? null : 'Linked to another date you changed.',
+            blocking: false,
+          });
+      return next;
+    });
+  }
+
+  function handleStopRemoved(index: number) {
+    const remap = (path: string) => remapTripDraftPathAfterStopRemoval(path, index);
+    protectedPaths.current = new Set(
+      [...protectedPaths.current]
+        .map(remap)
+        .filter((path): path is string => Boolean(path)),
+    );
+    setFieldStates((current) => new Map(
+      [...current.entries()].flatMap(([path, state]) => {
+        const nextPath = remap(path);
+        return nextPath ? [[nextPath, { ...state, path: nextPath }] as const] : [];
+      }),
+    ));
+    setQuestions((current) => current.flatMap((item) => {
+      const fieldPaths = item.fieldPaths
+        .map(remap)
+        .filter((path): path is string => Boolean(path));
+      if (!fieldPaths.length) return [];
+      const options = item.options.flatMap((option) => {
+        const updates = option.updates.flatMap((update) => {
+          const path = remap(update.path);
+          return path ? [{ ...update, path }] : [];
+        });
+        return updates.length ? [{ ...option, updates }] : [];
+      });
+      return [{ ...item, fieldPaths, options }];
+    }));
+    setSelectedOptions({});
+  }
+
+  function applySelectedAnswers() {
+    let next = form;
+    const answeredQuestionIds = new Set<string>();
+    const confirmedPaths = new Set<string>();
+    for (const item of questions) {
+      const optionId = selectedOptions[item.id];
+      const option = item.options.find((candidate) => candidate.id === optionId);
+      if (!option) continue;
+      next = applyClarificationUpdates(next, option.updates);
+      answeredQuestionIds.add(item.id);
+      for (const path of [...item.fieldPaths, ...option.updates.map((update) => update.path)]) {
+        confirmedPaths.add(path);
+      }
+    }
+    if (!answeredQuestionIds.size) return;
+    setForm(next);
+    setQuestions((current) => current.filter((item) => !answeredQuestionIds.has(item.id)));
+    setSelectedOptions({});
+    confirmPaths([...confirmedPaths], false, next);
+  }
+
+  async function submitFollowUp() {
+    if (!followUp.trim() || followUpBusy) return;
+    const answer = followUp.trim();
+    setFollowUpBusy(true);
+    setError(null);
+    try {
+      const messageReferenceDate = localIsoDate();
+      const input: GenerateTripDraftInput = {
+        prompt: buildTripFollowUpPrompt(
+          sourcePrompt ?? '',
+          form,
+          questions,
+          answer,
+          protectedPaths.current,
+          followUpHistory,
+          messageReferenceDate,
+          initialDraft?.referenceDate,
+        ),
+        locale: initialDraft?.locale ?? navigator.language ?? 'en-GB',
+        timeZone: initialDraft?.timeZone ?? deviceTimezone() ?? 'UTC',
+        referenceDate: messageReferenceDate,
+      };
+      const data = await graphqlRequest<
+        { generateTripDraft: TripDraft },
+        { input: GenerateTripDraftInput }
+      >(operations.generateDraft, { input });
+      const incoming = alignIncomingTripDraftStops(form, data.generateTripDraft, answer, questions);
+      const remapCurrentPath = (path: string) =>
+        remapCurrentTripDraftPathToIncoming(form, incoming, path, answer);
+      const alignedFieldStates = new Map(
+        [...fieldStates.entries()].flatMap(([path, state]) => {
+          const alignedPath = remapCurrentPath(path);
+          return alignedPath
+            ? [[alignedPath, { ...state, path: alignedPath }] as const]
+            : [];
+        }),
+      );
+      const alignedProtectedPaths = new Set(
+        [...protectedPaths.current]
+          .map(remapCurrentPath)
+          .filter((path): path is string => Boolean(path)),
+      );
+      const alignedQuestions = questions.map((question) => ({
+        ...question,
+        fieldPaths: question.fieldPaths
+          .map(remapCurrentPath)
+          .filter((path): path is string => Boolean(path)),
+        options: question.options.map((option) => ({
+          ...option,
+          updates: option.updates.flatMap((update) => {
+            const path = remapCurrentPath(update.path);
+            return path ? [{ ...update, path }] : [];
+          }),
+        })),
+      }));
+      const answerPaths = explicitTripDraftPathsFromFollowUp(incoming, answer, alignedQuestions);
+      const retainedQuestions = alignedQuestions.filter((question) =>
+        !question.fieldPaths.some((path) => answerPaths.has(path)));
+      const retainedQuestionPaths = new Set(
+        retainedQuestions.flatMap((question) => question.fieldPaths),
+      );
+      const stablePaths = new Set(
+        [...alignedFieldStates.entries()]
+          .filter(([, state]) =>
+            !state.blocking && ['EXPLICIT', 'INTERPRETED', 'CONFIRMED', 'PAST'].includes(state.status),
+          )
+          .map(([path]) => path),
+      );
+      form.stops.forEach((stop, index) => {
+        if (stop.localityKind === 'CITY' && stop.cityResolution === 'RESOLVED') {
+          for (const field of ['name', 'locationText', 'localityKind', 'cityResolution'] as const) {
+            const path = remapCurrentPath(`stops.${index}.${field}`);
+            if (path) stablePaths.add(path);
+          }
+        }
+      });
+      const mergeProtected = protectedPathsAfterFollowUp(
+        new Set([...stablePaths, ...alignedProtectedPaths, ...retainedQuestionPaths]),
+        incoming,
+        answer,
+        alignedQuestions,
+      );
+      const retainedUserProtection = protectedPathsAfterFollowUp(
+        alignedProtectedPaths,
+        incoming,
+        answer,
+        alignedQuestions,
+      );
+      const nextProtected = new Set([...retainedUserProtection, ...answerPaths]);
+      protectedPaths.current = nextProtected;
+      const mergedForm = mergeTripDraft(form, incoming, mergeProtected);
+      setForm(mergedForm);
+      setFieldStates(() => {
+        const next = tripDraftFieldStateMap(incoming.fieldStates);
+        for (const path of mergeProtected) {
+          const previous = alignedFieldStates.get(path);
+          if (previous && !answerPaths.has(path)) next.set(path, previous);
+        }
+        for (const path of nextProtected) {
+          const previous = next.get(path);
+          next.set(path, confirmedTripDraftFieldState(
+            path,
+            valueAtPath(mergedForm, path),
+            previous,
+            messageReferenceDate,
+          ));
+        }
+        return next;
+      });
+      setQuestions(mergeUnansweredClarificationQuestions(
+        alignedQuestions,
+        incoming.questions,
+        answerPaths,
+      ));
+      setNotes({ assumptions: incoming.assumptions, warnings: incoming.warnings });
+      setFollowUpHistory((current) => [...current, `${messageReferenceDate}: ${answer}`].slice(-8));
+      setFollowUp('');
+      setSelectedOptions({});
+    } catch (requestError) {
+      setError(errorMessage(requestError));
+    } finally {
+      setFollowUpBusy(false);
+    }
+  }
 
   async function createTrip(event: FormEvent) {
     event.preventDefault();
+    const resolvedStops = tripStopsForCreation(form, fieldStates);
+    if (!minimumViable || !resolvedStops.length) {
+      setError('Confirm at least one city and provide valid start and end dates first.');
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
-      const input: TripInput = {
+      const firstCity = resolvedStops[0]!.name.trim();
+      const input = {
         ...form,
-        destinationArea: destinationAreaFromStops(form),
-        stops: form.stops.map((stop) => ({ ...stop, locationText: null })),
+        name: !form.name.trim() || fieldStates.get('trip.name')?.status === 'SUGGESTED'
+          ? `Trip to ${firstCity}`
+          : form.name.trim(),
+        destinationArea: destinationAreaFromStops({ ...form, stops: resolvedStops }),
+        stops: resolvedStops,
       };
-      const data = await graphqlRequest<{ createTrip: Trip }, { input: TripInput }>(operations.createTrip, { input });
+      const data = await graphqlRequest<{ createTrip: Trip }, { input: typeof input }>(
+        operations.createTrip,
+        { input },
+      );
       onCreated(data.createTrip);
     } catch (requestError) {
       setError(errorMessage(requestError));
@@ -743,17 +1113,38 @@ function CreateTripDialog({
 
   return (
     <Dialog title="Create a trip" eyebrow="New plan" onClose={onClose} wide>
-      {draftNotes && (draftNotes.assumptions.length || draftNotes.warnings.length) ? <div className="draft-notes" aria-label="Things to review">{draftNotes.assumptions.map((note) => <p key={note}>Assumption: {note}</p>)}{draftNotes.warnings.map((note) => <p key={note}>Check: {note}</p>)}</div> : null}
+      {initialDraft ? <div className={`draft-readiness ${minimumViable ? 'draft-readiness-ready' : 'draft-readiness-pending'}`} role="status"><span aria-hidden="true">{minimumViable ? '✓' : '…'}</span><div><strong>{minimumViable ? 'The draft has the essentials' : 'A working draft is ready'}</strong><p>{minimumViable ? 'You can create it now, or keep refining any optional details.' : 'Confirm a city plus valid start and end dates before creating it.'}</p></div></div> : null}
+      {(notes.assumptions.length || notes.warnings.length) ? <div className="draft-notes" aria-label="Things to review">{notes.assumptions.map((note) => <p key={note}>Interpreted: {note}</p>)}{notes.warnings.map((note) => <p key={note}>Check: {note}</p>)}</div> : null}
+      {questions.length ? (
+        <section className="clarification-panel" aria-labelledby="clarification-title">
+          <div><p className="section-kicker">Answer together</p><h3 id="clarification-title">{questions.length} {questions.length === 1 ? 'detail needs' : 'details need'} your input</h3><p>Choose any quick answers below, then apply them in one go. You can also reply in your own words.</p></div>
+          <div className="clarification-list">
+            {questions.map((item) => (
+              <fieldset className="clarification-question" key={item.id} disabled={followUpBusy}>
+                <legend>{item.prompt}{item.blocking ? <span className="required-mark">Required</span> : <span>Optional</span>}</legend>
+                {item.options.length ? <div className="clarification-options">{item.options.map((option) => <label key={option.id}><input type="radio" name={`question-${item.id}`} value={option.id} checked={selectedOptions[item.id] === option.id} onChange={() => setSelectedOptions((current) => ({ ...current, [item.id]: option.id }))} /><span>{option.label}</span></label>)}</div> : <p className="clarification-free-note">Add this detail in the form, or include it in your reply below.</p>}
+              </fieldset>
+            ))}
+          </div>
+          {questions.some((item) => item.options.length) ? <button className="button-secondary" type="button" onClick={applySelectedAnswers} disabled={followUpBusy || !Object.keys(selectedOptions).length}>Apply selected answers</button> : null}
+          <div className="follow-up-compose">
+            <label htmlFor="trip-draft-follow-up">Reply to all the open questions</label>
+            <textarea id="trip-draft-follow-up" rows={3} maxLength={1500} value={followUp} onChange={(event) => setFollowUp(event.target.value)} placeholder="For example: Bristol, 10–14 May, and there will be three of us." disabled={followUpBusy} />
+            <button className="button-secondary" type="button" onClick={() => void submitFollowUp()} disabled={followUpBusy || !followUp.trim()}>{followUpBusy ? 'Updating draft…' : 'Update draft from reply'}</button>
+          </div>
+        </section>
+      ) : null}
       <form onSubmit={(event) => void createTrip(event)} aria-busy={busy}>
-        <TripFields value={form} onChange={setForm} initialFillStatuses={initialFillStatuses} />
+        <TripFields value={form} onChange={setForm} fieldStates={fieldStates} onFieldEdited={markFieldEdited} onFieldProtected={(path) => protectPaths([path])} onFieldConfirmed={(path) => confirmPaths([path])} onFieldDerived={markFieldDerived} onStopRemoved={handleStopRemoved} locale={formLocale} disabled={followUpBusy || busy} />
+        {omittedStops.length ? <p className="draft-omission-note" role="status">If you create now, {omittedStops.length} unresolved {omittedStops.length === 1 ? 'destination idea' : 'destination ideas'} will stay out of the saved trip. Confirm {omittedStops.length === 1 ? 'it' : 'them'} to include {omittedStops.length === 1 ? 'it' : 'them'}.</p> : null}
         {error ? <p className="form-error" role="alert">{error}</p> : null}
-        <footer className="dialog-footer"><button className="button-text" type="button" onClick={onClose}>Cancel</button><button className="button-primary" type="submit" disabled={busy || !form.startDate || !form.endDate}>{busy ? 'Saving…' : 'Create trip'}</button></footer>
+        <footer className="dialog-footer"><button className="button-text" type="button" onClick={onClose}>Cancel</button><div className="create-readiness-action">{!minimumViable ? <small>Needs a confirmed city and valid dates</small> : null}<button className="button-primary" type="submit" disabled={busy || followUpBusy || !minimumViable}>{busy ? 'Saving…' : 'Create trip'}</button></div></footer>
       </form>
     </Dialog>
   );
 }
 
-function HomeDraftComposer({ onDraft }: { onDraft: (form: TripInput, notes: DraftNotes, fillStatuses: Map<string, FillStatus>) => void }) {
+function HomeDraftComposer({ onDraft }: { onDraft: (draft: TripDraft, prompt: string) => void }) {
   const [prompt, setPrompt] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -763,13 +1154,18 @@ function HomeDraftComposer({ onDraft }: { onDraft: (form: TripInput, notes: Draf
     setBusy(true);
     setError(null);
     try {
-      const data = await graphqlRequest<{ generateTripDraft: TripDraft }, { prompt: string }>(operations.generateDraft, { prompt });
+      const input: GenerateTripDraftInput = {
+        prompt: prompt.trim(),
+        locale: navigator.language || 'en-GB',
+        timeZone: deviceTimezone() ?? 'UTC',
+        referenceDate: localIsoDate(),
+      };
+      const data = await graphqlRequest<
+        { generateTripDraft: TripDraft },
+        { input: GenerateTripDraftInput }
+      >(operations.generateDraft, { input });
       const draft = data.generateTripDraft;
-      const form = draftToTripInput(draft);
-      onDraft(form, {
-        assumptions: draft.assumptions,
-        warnings: draft.warnings,
-      }, fillStatusesForDraft(draft, form));
+      onDraft(draft, prompt.trim());
     } catch (requestError) {
       setError(errorMessage(requestError));
     } finally {
@@ -786,9 +1182,9 @@ function HomeDraftComposer({ onDraft }: { onDraft: (form: TripInput, notes: Draf
       </div>
       <form onSubmit={(event) => void generateDraft(event)} aria-busy={busy}>
         <label htmlFor="home-trip-prompt">What do you have in mind?</label>
-        <textarea id="home-trip-prompt" rows={8} value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder="Ten days in Japan for two people, starting in Tokyo and ending in Kyoto…" />
+        <textarea id="home-trip-prompt" rows={8} maxLength={5000} value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder="Ten days in Japan for two people, starting in Tokyo and ending in Kyoto…" />
         {error ? <p className="form-error" role="alert">{error}</p> : null}
-        <button className="button-primary" type="submit" disabled={busy || prompt.trim().length < 10}>{busy ? 'Building your draft…' : 'Build a trip draft'}</button>
+        <button className="button-primary" type="submit" disabled={busy || !prompt.trim()}>{busy ? 'Building your draft…' : 'Build a trip draft'}</button>
       </form>
     </section>
   );
@@ -813,7 +1209,7 @@ function TripEditor({ trip, onClose, onSaved }: { trip: Trip; onClose: () => voi
     <Dialog title="Edit trip essentials" onClose={onClose} wide>
       <form onSubmit={(event) => void save(event)} aria-busy={busy}><div className="form-stack">
         <Field label="Trip name"><input required value={input.name} onChange={(e) => setInput({ ...input, name: e.target.value })} /></Field>
-        <div className="form-grid form-grid-three"><Field label="Start date"><DatePickerInput required max={input.endDate || undefined} value={input.startDate} onValueChange={(date) => setInput({ ...input, startDate: date })} /></Field><Field label="End date"><DatePickerInput required min={input.startDate} value={input.endDate} onValueChange={(date) => setInput({ ...input, endDate: date })} /></Field><Field label="Travelers"><input required type="number" min="1" max="20" value={input.travelerCount} onChange={(e) => setInput({ ...input, travelerCount: Number(e.target.value) })} /></Field></div>
+        <div className="form-grid form-grid-three"><Field label="Start date"><DatePickerInput required max={input.endDate || undefined} value={input.startDate} onValueChange={(date) => setInput({ ...input, startDate: date })} /></Field><Field label="End date"><DatePickerInput required min={input.startDate} value={input.endDate} onValueChange={(date) => setInput({ ...input, endDate: date })} /></Field><Field label="Travelers (optional)"><input type="number" min="1" max="20" value={input.travelerCount ?? ''} onChange={(e) => setInput({ ...input, travelerCount: e.target.value ? Number(e.target.value) : null })} /></Field></div>
       </div>{error ? <p className="form-error" role="alert">{error}</p> : null}<footer className="dialog-footer"><button className="button-text" type="button" onClick={onClose}>Cancel</button><button className="button-primary" type="submit" disabled={busy || unchanged}>{busy ? 'Saving…' : 'Save changes'}</button></footer></form>
     </Dialog>
   );
@@ -1155,7 +1551,7 @@ function TripDetail({ trip, onBack, onChanged, onDeleted, notify }: { trip: Trip
     <main id="main-content" className="detail-page" tabIndex={-1}>
       <button className="back-button" type="button" onClick={onBack}>← All trips</button>
 
-      <section className="trip-hero"><div><h1>{trip.name}</h1><p>{formatDateRange(trip.startDate, trip.endDate)} · {trip.travelerCount} {trip.travelerCount === 1 ? 'traveler' : 'travelers'}</p></div><div className="hero-actions"><button className="button-secondary" type="button" onClick={() => setEditor({ kind: 'trip' })}>Edit trip</button><button className="button-text button-danger" type="button" onClick={() => void deleteTrip()}>Delete</button></div></section>
+      <section className="trip-hero"><div><h1>{trip.name}</h1><p>{formatDateRange(trip.startDate, trip.endDate)} · {formatTravelerCount(trip.travelerCount)}</p></div><div className="hero-actions"><button className="button-secondary" type="button" onClick={() => setEditor({ kind: 'trip' })}>Edit trip</button><button className="button-text button-danger" type="button" onClick={() => void deleteTrip()}>Delete</button></div></section>
 
       <Section title="Your itinerary" kicker="Destinations by date" action={<button className="button-secondary" type="button" onClick={() => setEditor({ kind: 'stop' })}>+ Add destination</button>}>
         <div className="itinerary-timeline">
@@ -1213,7 +1609,7 @@ function TripDetail({ trip, onBack, onChanged, onDeleted, notify }: { trip: Trip
   );
 }
 
-function TripsOverview({ trips, onCreate, onDraft, onOpen }: { trips: Trip[]; onCreate: () => void; onDraft: (form: TripInput, notes: DraftNotes, fillStatuses: Map<string, FillStatus>) => void; onOpen: (id: string) => void }) {
+function TripsOverview({ trips, onCreate, onDraft, onOpen }: { trips: Trip[]; onCreate: () => void; onDraft: (draft: TripDraft, prompt: string) => void; onOpen: (id: string) => void }) {
   return (
     <main id="main-content" className="page-wrap" tabIndex={-1}>
       <section className="page-heading"><div><p className="overline">Your travel plans</p><h1>Your trips</h1><p className="page-intro">Start with a rough idea or build the details yourself.</p></div>{trips.length ? <button className="button-primary" type="button" onClick={onCreate}>+ New trip</button> : null}</section>
@@ -1225,7 +1621,7 @@ function TripsOverview({ trips, onCreate, onDraft, onOpen }: { trips: Trip[]; on
           ) : (
             <section className="trips-grid" aria-label="Trips">{trips.map((trip) => {
               const stops = sortStopsByDate(trip.stops);
-              return <article className="trip-card-real" key={trip.id}><div className="trip-card-art" aria-hidden="true"><span>{stops[0]?.name.slice(0, 2).toUpperCase() ?? 'TD'}</span></div><div className="trip-card-content"><div><p className="trip-eyebrow">{formatDateRange(trip.startDate, trip.endDate)}</p><h2>{trip.name}</h2><p>{trip.travelerCount} {trip.travelerCount === 1 ? 'traveler' : 'travelers'} · {stops.length} {stops.length === 1 ? 'destination' : 'destinations'}</p></div><div className="route-ribbon route-ribbon-card">{stops.map((stop, index) => <span key={stop.id}><i>{index + 1}</i>{stop.name}</span>)}</div><div className="trip-card-stats"><span>{trip.transportLegs.length} transport</span><span>{trip.stays.length} stays</span><span>{trip.activities.length} activities</span></div><button className="button-text trip-open" type="button" onClick={() => onOpen(trip.id)}>Open trip <span aria-hidden="true">→</span></button></div></article>;
+              return <article className="trip-card-real" key={trip.id}><div className="trip-card-art" aria-hidden="true"><span>{stops[0]?.name.slice(0, 2).toUpperCase() ?? 'TD'}</span></div><div className="trip-card-content"><div><p className="trip-eyebrow">{formatDateRange(trip.startDate, trip.endDate)}</p><h2>{trip.name}</h2><p>{formatTravelerCount(trip.travelerCount)} · {stops.length} {stops.length === 1 ? 'destination' : 'destinations'}</p></div><div className="route-ribbon route-ribbon-card">{stops.map((stop, index) => <span key={stop.id}><i>{index + 1}</i>{stop.name}</span>)}</div><div className="trip-card-stats"><span>{trip.transportLegs.length} transport</span><span>{trip.stays.length} stays</span><span>{trip.activities.length} activities</span></div><button className="button-text trip-open" type="button" onClick={() => onOpen(trip.id)}>Open trip <span aria-hidden="true">→</span></button></div></article>;
             })}</section>
           )}
         </div>
@@ -1238,9 +1634,8 @@ export function TripDockApp() {
   const [state, setState] = useState<LoadState>({ kind: 'loading' });
   const [selectedTripId, setSelectedTripId] = useState<string | null>(null);
   const [createRequest, setCreateRequest] = useState<{
-    form?: TripInput;
-    draftNotes?: DraftNotes;
-    fillStatuses?: Map<string, FillStatus>;
+    draft?: TripDraft;
+    sourcePrompt?: string;
   } | null>(null);
   const [notice, setNotice] = useState<Notice>(null);
 
@@ -1294,9 +1689,9 @@ export function TripDockApp() {
       <header className="site-header"><div className="header-inner"><button className="logo-button" type="button" onClick={() => setSelectedTripId(null)} aria-label="TripDock trips home"><Logo /></button><nav aria-label="Primary"><button type="button" className="nav-link nav-link-active" onClick={() => setSelectedTripId(null)}>Trips</button></nav></div></header>
       {state.kind === 'loading' ? <main id="main-content" className="state-page" aria-busy="true"><Logo /><div className="loader" aria-hidden="true" /><h1>Opening your trips</h1><p>Getting your plans ready…</p></main> : null}
       {state.kind === 'error' ? <main id="main-content" className="state-page error-state"><Logo /><h1>TripDock could not open your data</h1><p role="alert">{state.message}</p><button className="button-primary" type="button" onClick={retry}>Retry connection</button></main> : null}
-      {state.kind === 'ready' && !selectedTrip ? <TripsOverview trips={state.trips} onCreate={() => setCreateRequest({})} onDraft={(form, draftNotes, fillStatuses) => setCreateRequest({ form, draftNotes, fillStatuses })} onOpen={setSelectedTripId} /> : null}
+      {state.kind === 'ready' && !selectedTrip ? <TripsOverview trips={state.trips} onCreate={() => setCreateRequest({})} onDraft={(draft, sourcePrompt) => setCreateRequest({ draft, sourcePrompt })} onOpen={setSelectedTripId} /> : null}
       {state.kind === 'ready' && selectedTrip ? <TripDetail trip={selectedTrip} onBack={() => setSelectedTripId(null)} onChanged={replaceTrip} onDeleted={() => { setState({ kind: 'ready', trips: state.trips.filter((trip) => trip.id !== selectedTrip.id) }); setSelectedTripId(null); setNotice({ tone: 'success', message: 'Trip deleted.' }); }} notify={setNotice} /> : null}
-      {createRequest ? <CreateTripDialog initialForm={createRequest.form} initialFillStatuses={createRequest.fillStatuses} draftNotes={createRequest.draftNotes} onClose={() => setCreateRequest(null)} onCreated={(trip) => { setCreateRequest(null); replaceTrip(trip); setSelectedTripId(trip.id); setNotice({ tone: 'success', message: 'Trip created.' }); }} /> : null}
+      {createRequest ? <CreateTripDialog initialDraft={createRequest.draft} sourcePrompt={createRequest.sourcePrompt} onClose={() => setCreateRequest(null)} onCreated={(trip) => { setCreateRequest(null); replaceTrip(trip); setSelectedTripId(trip.id); setNotice({ tone: 'success', message: 'Trip created.' }); }} /> : null}
       {notice ? <div className={`notice notice-${notice.tone}`} role={notice.tone === 'error' ? 'alert' : 'status'}><span>{notice.message}</span><button type="button" onClick={() => setNotice(null)} aria-label="Dismiss message">×</button></div> : null}
     </div>
   );

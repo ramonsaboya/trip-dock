@@ -30,7 +30,7 @@ export const trips = pgTable(
     destinationArea: text('destination_area').notNull(),
     startDate: date('start_date', { mode: 'string' }).notNull(),
     endDate: date('end_date', { mode: 'string' }).notNull(),
-    travelerCount: integer('traveler_count').notNull(),
+    travelerCount: integer('traveler_count'),
     revision: integer('revision').default(0).notNull(),
     ...timestamps,
   },

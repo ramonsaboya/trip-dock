@@ -53,7 +53,7 @@ OPENAI_API_KEY=your-project-key
 OPENAI_MODEL=your-structured-outputs-capable-model
 ```
 
-The API uses the OpenAI Responses API with strict Zod-backed Structured Outputs and `store: false`. The key is read only by `apps/api`; it is never sent to or embedded in the web app. If either setting is missing, all manual functionality remains available and AI draft requests return a clear configuration error. There is no silent fixture fallback.
+The API uses the OpenAI Responses API with strict Zod-backed Structured Outputs and `store: false`. The model extracts evidence-backed semantic intent; application code, rather than the model, resolves relative and locale-sensitive dates and validates the result. The key is read only by `apps/api`; it is never sent to or embedded in the web app. If either setting is missing, all manual functionality remains available and AI draft requests return a clear configuration error. There is no silent fixture fallback.
 
 Run the separately billed, explicit provider smoke with:
 
@@ -89,17 +89,20 @@ GraphQL Yoga API ───────────────► PostgreSQL 17
         │ natural-language new-trip prompt
         ▼
 OpenAI Responses API
-        │ schema-validated, unpersisted draft
-        └────────► human edit + explicit Create ─────────► GraphQL Yoga API
+        │ schema-validated intent and source evidence
+        ▼
+Deterministic resolver (locale, calendar rules, conflicts, field states)
+        │ partial, unpersisted working draft + batched questions
+        └────────► human confirm/edit + explicit Create ─► GraphQL Yoga API
 ```
 
-The API owns validation, revision checks, entity ownership, and transaction boundaries. Model output is parsed through a strict Zod draft schema and checked for consistent dates. It cannot directly write accepted trip rows: the browser presents the draft in the normal create form, where a person can change every field before explicitly saving. Existing trips use manual CRUD only.
+The API owns validation, revision checks, entity ownership, and transaction boundaries. Model output is parsed through a strict intent schema, checked against quoted prompt evidence, and passed through deterministic date and minimum-viability rules. A creation draft needs at least one confirmed city plus valid start and end dates before it can be saved; traveler count is genuinely optional. Incomplete drafts still open in the normal create form with visible field states and all clarification questions together. The model cannot directly write accepted trip rows. Existing trips use manual CRUD only.
 
-The active data model contains `trips`, `trip_stops`, `transport_legs`, `stays`, and `activities`. The immutable baseline migration also contains the legacy `ai_proposals` and `ai_proposal_operations` tables; they are retained only for migration compatibility and have no current GraphQL or application runtime path. UUID primary keys, foreign keys with cascades, ordered positions, timestamps, date/status checks, and trip revisions are defined in the generated SQL migration under `apps/api/drizzle`.
+The active data model contains `trips`, `trip_stops`, `transport_legs`, `stays`, and `activities`. The immutable baseline migration also contains the legacy `ai_proposals` and `ai_proposal_operations` tables; they are retained only for migration compatibility and have no current GraphQL or application runtime path. UUID primary keys, foreign keys with cascades, ordered positions, timestamps, date/status checks, and trip revisions are defined in generated SQL migrations under `apps/api/drizzle`.
 
 ## Verification
 
-`pnpm test` covers empty-database behavior, persistence across API instances, revision increments, destination-date linking, deterministic new-trip AI drafts, the absence of existing-trip AI GraphQL fields, GraphQL error handling, and removal of production browser fixtures/storage. `pnpm test:postgres` is the optional real-PostgreSQL migration smoke. `pnpm check` is the required local gate.
+`pnpm test` covers empty-database behavior, persistence across API instances, revision increments, destination-date linking, locale/year/weekend date resolution, city-level creation readiness, batched clarification transitions, protected manual edits, nullable travelers, the absence of existing-trip AI GraphQL fields, GraphQL error handling, and removal of production browser fixtures/storage. `pnpm test:postgres` is the optional real-PostgreSQL migration smoke. `pnpm check` is the required local gate.
 
 The deterministic brand generator is `scripts/generate-brand-assets.py`. It requires Python 3 and Pillow (`python -m pip install Pillow`) and reproduces all checked-in icons and the social preview from `apps/web/public/brand/tripdock-logo.png`.
 

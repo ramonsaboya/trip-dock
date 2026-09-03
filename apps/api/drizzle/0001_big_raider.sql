@@ -1,0 +1,1 @@
+ALTER TABLE "trips" ALTER COLUMN "traveler_count" DROP NOT NULL;

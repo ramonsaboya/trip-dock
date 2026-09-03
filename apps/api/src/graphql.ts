@@ -24,6 +24,7 @@ import {
   validateDateRange,
   type DatedStop,
 } from './domain.js';
+import { buildTripCreationDraft, tripCreationRequestSchema } from './trip-creation.js';
 
 const typeDefs = /* GraphQL */ `
   type Query {
@@ -54,7 +55,7 @@ const typeDefs = /* GraphQL */ `
     updateActivity(id: ID!, expectedRevision: Int!, input: ActivityInput!): Trip!
     removeActivity(id: ID!, expectedRevision: Int!): Trip!
 
-    generateTripDraft(prompt: String!): TripDraft!
+    generateTripDraft(input: GenerateTripDraftInput!): TripDraft!
   }
 
   type Trip {
@@ -63,7 +64,7 @@ const typeDefs = /* GraphQL */ `
     destinationArea: String!
     startDate: String!
     endDate: String!
-    travelerCount: Int!
+    travelerCount: Int
     revision: Int!
     createdAt: String!
     updatedAt: String!
@@ -136,13 +137,57 @@ const typeDefs = /* GraphQL */ `
     stops: [TripDraftStop!]!
     assumptions: [String!]!
     warnings: [String!]!
+    fieldStates: [TripDraftFieldState!]!
+    questions: [TripClarificationQuestion!]!
+    minimumViable: Boolean!
+    referenceDate: String!
+    locale: String!
+    timeZone: String!
   }
 
   type TripDraftStop {
+    draftId: ID!
     name: String!
     locationText: String
     arrivalDate: String
     departureDate: String
+    localityKind: String!
+    cityResolution: String!
+  }
+
+  type TripDraftFieldState {
+    path: String!
+    status: String!
+    evidence: String
+    message: String
+    blocking: Boolean!
+  }
+
+  type TripClarificationQuestion {
+    id: ID!
+    fieldPaths: [String!]!
+    prompt: String!
+    options: [TripClarificationOption!]!
+    allowFreeText: Boolean!
+    blocking: Boolean!
+  }
+
+  type TripClarificationOption {
+    id: ID!
+    label: String!
+    updates: [TripClarificationUpdate!]!
+  }
+
+  type TripClarificationUpdate {
+    path: String!
+    value: String
+  }
+
+  input GenerateTripDraftInput {
+    prompt: String!
+    locale: String!
+    timeZone: String!
+    referenceDate: String!
   }
 
   input CreateTripInput {
@@ -150,7 +195,7 @@ const typeDefs = /* GraphQL */ `
     destinationArea: String!
     startDate: String
     endDate: String
-    travelerCount: Int!
+    travelerCount: Int
     stops: [TripStopDraftInput!]!
   }
 
@@ -159,7 +204,7 @@ const typeDefs = /* GraphQL */ `
     destinationArea: String!
     startDate: String!
     endDate: String!
-    travelerCount: Int!
+    travelerCount: Int
   }
 
   input TripStopDraftInput {
@@ -215,7 +260,7 @@ const createTripInputSchema = z
     destinationArea: requiredText.max(200),
     startDate: isoDateSchema.nullish(),
     endDate: isoDateSchema.nullish(),
-    travelerCount: z.number().int().min(1).max(20),
+    travelerCount: z.number().int().min(1).max(20).nullish().transform((value) => value ?? null),
     stops: z.array(tripDraftStopSchema).min(1).max(20),
   })
   .strict();
@@ -226,7 +271,7 @@ const updateTripInputSchema = z
     destinationArea: requiredText.max(200),
     startDate: isoDateSchema,
     endDate: isoDateSchema,
-    travelerCount: z.number().int().min(1).max(20),
+    travelerCount: z.number().int().min(1).max(20).nullish().transform((value) => value ?? null),
   })
   .strict();
 const stopInputSchema = tripDraftStopSchema;
@@ -927,27 +972,21 @@ function buildResolvers(db: AppDatabase, aiGateway: AiGateway) {
           });
           return (await loadTrip(db, activity.tripId))!;
         }),
-      generateTripDraft: (_root: unknown, args: { prompt: string }) =>
+      generateTripDraft: (_root: unknown, args: { input: unknown }) =>
         handle(async () => {
-          const prompt = parse(z.string().trim().min(10).max(4_000), args.prompt);
-          const result = await aiGateway.generateTripDraft(prompt);
+          const request = parse(tripCreationRequestSchema, args.input);
+          const result = await aiGateway.interpretTripCreation(request);
           try {
-            validateDateRange(result.value.startDate, result.value.endDate, 'trip date range');
-            for (const stop of result.value.stops) {
-              validateDateRange(stop.arrivalDate, stop.departureDate, 'stop date range');
-              for (const date of [stop.arrivalDate, stop.departureDate]) {
-                if (
-                  date && result.value.startDate && result.value.endDate &&
-                  (date < result.value.startDate || date > result.value.endDate)
-                ) {
-                  throw new Error('A destination date falls outside the trip dates.');
-                }
-              }
+            return buildTripCreationDraft(result.value, request);
+          } catch (error) {
+            if (error instanceof ZodError) {
+              throw new AppError(
+                'The AI interpretation could not be converted into a safe trip draft.',
+                'AI_INVALID_OUTPUT',
+              );
             }
-          } catch {
-            throw new AppError('OpenAI returned a draft with inconsistent dates.', 'AI_INVALID_OUTPUT');
+            throw error;
           }
-          return result.value;
         }),
     },
   };
