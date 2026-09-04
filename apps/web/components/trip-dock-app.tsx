@@ -617,7 +617,11 @@ function TripFields({
   disabled?: boolean;
 }) {
   const stopFieldKey = (index: number, field: keyof TripDraftStop) => `stops.${index}.${field}`;
-  const [dirtyFields, setDirtyFields] = useState<Set<string>>(() => new Set());
+  const [dirtyFields, setDirtyFields] = useState<Set<string>>(() => new Set(
+    [...(fieldStates?.entries() ?? [])]
+      .filter(([, state]) => state.status === 'CONFIRMED')
+      .map(([path]) => path),
+  ));
   const previousStops = useRef(value.stops);
 
   useEffect(() => {
@@ -650,7 +654,7 @@ function TripFields({
     onFieldDerived?.(key, fieldValue);
   }
 
-  function updateTripField<K extends 'name' | 'destinationArea' | 'travelerCount'>(field: K, fieldValue: TripInput[K]) {
+  function updateTripField<K extends 'name' | 'travelerCount'>(field: K, fieldValue: TripInput[K]) {
     const next = { ...value, [field]: fieldValue };
     markDirty(`trip.${field}`, true, fieldValue, next);
     onChange(next);
@@ -763,12 +767,9 @@ function TripFields({
   return (
     <fieldset disabled={disabled} style={{ border: 0, margin: 0, minWidth: 0, padding: 0 }}>
       <div className="form-stack">
-      <div className="form-grid form-grid-two">
+      <div className="form-grid">
         <Field label="Trip name" fieldState={fieldStates?.get('trip.name')}>
           <input maxLength={160} value={value.name} onChange={(event) => updateTripField('name', event.target.value)} placeholder="A name you’ll recognize" />
-        </Field>
-        <Field label="Trip area" fieldState={fieldStates?.get('trip.destinationArea')} hint="Country or region for the overall trip">
-          <input maxLength={200} value={value.destinationArea} onChange={(event) => updateTripField('destinationArea', event.target.value)} placeholder="For example, Italy" />
         </Field>
       </div>
       <div className="form-grid form-grid-three">
@@ -779,14 +780,16 @@ function TripFields({
       <fieldset className="stops-editor">
         <legend>Destinations</legend>
         {value.stops.map((stop, index) => (
-          <div className="draft-stop" key={stop.draftId ?? `draft-stop-${index}`}>
-            <span className="position-badge" aria-label={`Destination ${index + 1}`}>{index + 1}</span>
+          <div className="draft-stop" role="group" aria-label={`Destination ${index + 1}`} key={stop.draftId ?? `draft-stop-${index}`}>
+            <div className="draft-stop-heading">
+              <strong>Destination {index + 1}</strong>
+              <button className="icon-button remove-destination" type="button" disabled={value.stops.length === 1} aria-label={`Remove destination ${index + 1}`} onClick={() => removeStop(index)}>×</button>
+            </div>
             <div className="destination-fields">
               <Field label="City" fieldState={fieldStates?.get(stopFieldKey(index, 'name'))}><input value={stop.name} onChange={(event) => updateStop(index, { name: event.target.value })} onBlur={(event) => { const city = event.currentTarget.value.trim(); if (!city) return; onChange({ ...value, stops: value.stops.map((item, stopIndex) => stopIndex === index ? { ...item, name: city, localityKind: 'CITY', cityResolution: 'RESOLVED' } : item) }); onFieldConfirmed?.(stopFieldKey(index, 'name')); onFieldConfirmed?.(stopFieldKey(index, 'localityKind')); onFieldConfirmed?.(stopFieldKey(index, 'cityResolution')); }} placeholder="A specific city" /></Field>
               <Field label="Start" fieldState={fieldStates?.get(stopFieldKey(index, 'arrivalDate'))}><DatePickerInput locale={locale} min={value.startDate || undefined} max={(stop.departureDate ?? value.endDate) || undefined} value={stop.arrivalDate ?? ''} onValueChange={(date) => updateStopDate(index, 'arrivalDate', date)} /></Field>
               <Field label="End" fieldState={fieldStates?.get(stopFieldKey(index, 'departureDate'))}><DatePickerInput locale={locale} min={(stop.arrivalDate ?? value.startDate) || undefined} max={value.endDate || undefined} value={stop.departureDate ?? ''} onValueChange={(date) => updateStopDate(index, 'departureDate', date)} /></Field>
             </div>
-            <button className="icon-button remove-destination" type="button" disabled={value.stops.length === 1} aria-label={`Remove destination ${index + 1}`} onClick={() => removeStop(index)}>×</button>
           </div>
         ))}
         <button className="button-secondary add-destination" type="button" onClick={addStop}>+ Add destination</button>
@@ -834,14 +837,14 @@ function DraftReviewSummary({
       <div className="draft-overview-heading">
         <div>
           <p className="section-kicker">Your draft at a glance</p>
-          <h3 id="draft-overview-title">{form.destinationArea.trim() || form.name.trim() || 'New trip'}</h3>
+          <h3 id="draft-overview-title">{form.name.trim() || form.destinationArea.trim() || 'New trip'}</h3>
           <p>{dateRangeLabel(form.startDate, form.endDate, locale)}{totalNights === null ? '' : ` · ${totalNights + 1} days · ${totalNights} ${totalNights === 1 ? 'night' : 'nights'}`}</p>
         </div>
-        <div className="draft-status-key" aria-label="Field status key">
-          <span><b aria-hidden="true">✓</b> Direct or confirmed</span>
-          <span><b aria-hidden="true">≈</b> Interpreted — check</span>
-          <span><b aria-hidden="true">!</b> Needs input</span>
-        </div>
+      </div>
+      <div className="draft-status-key" aria-label="Field status key">
+        <span><b aria-hidden="true">✓</b> Direct or confirmed</span>
+        <span><b aria-hidden="true">≈</b> Interpreted — check</span>
+        <span><b aria-hidden="true">!</b> Needs input</span>
       </div>
       <ol className="draft-route-summary">
         {form.stops.map((stop, index) => {
@@ -887,7 +890,7 @@ function CreateTripDialog({
   const [questions, setQuestions] = useState<TripClarificationQuestion[]>(
     () => initialDraft?.questions ?? [],
   );
-  const [stage, setStage] = useState<'clarify' | 'review' | 'refine'>(() =>
+  const [stage, setStage] = useState<'clarify' | 'review' | 'edit' | 'refine'>(() =>
     initialDraft?.questions.some((question) => question.blocking) ? 'clarify' : 'review',
   );
   const [notes, setNotes] = useState(() => ({
@@ -1211,9 +1214,9 @@ function CreateTripDialog({
     return (
       <div className="creation-question-stage">
         <div className="creation-stage-intro">
-          <p className="section-kicker">{blocking ? 'Before we build the form' : 'Optional refinement'}</p>
-          <h3>{blocking ? 'A few details need a clear answer' : 'Fine-tune the draft in one reply'}</h3>
-          <p>{blocking ? 'These answers change the essential destination or dates. Answer them together, then we’ll show the complete pre-filled form.' : 'Nothing here blocks creation. Answer anything that matters to you, or return to the review and edit the form directly.'}</p>
+          <p className="section-kicker">{blocking ? 'Before we build the draft' : 'AI follow-up'}</p>
+          <h3>{blocking ? 'A few details need a clear answer' : 'What would you like to change?'}</h3>
+          <p>{blocking ? 'These answers change the essential destination or dates. Answer them together, then we’ll show you the interpreted trip.' : visibleQuestions.length ? 'Answer any of the suggested questions, or describe the changes you want in your own words. We’ll bring you back to an updated summary.' : 'Describe any change in your own words. We’ll interpret it and bring you back to an updated summary.'}</p>
         </div>
         <div className="clarification-list">
           {visibleQuestions.map((item, index) => (
@@ -1225,34 +1228,54 @@ function CreateTripDialog({
         </div>
         {visibleQuestions.some((item) => item.options.length) ? <button className="button-secondary apply-quick-answers" type="button" onClick={applySelectedAnswers} disabled={followUpBusy || !Object.keys(selectedOptions).length}>{blocking ? 'Continue with selected answers' : 'Use selected answers'}</button> : null}
         <div className="follow-up-compose">
-          <label htmlFor="trip-draft-follow-up">{blocking ? 'Or answer everything in one message' : 'Reply in your own words'}</label>
+          <label htmlFor="trip-draft-follow-up">{blocking ? 'Or answer everything in one message' : 'Tell TripDock what to change'}</label>
           <textarea id="trip-draft-follow-up" rows={4} maxLength={1500} value={followUp} onChange={(event) => setFollowUp(event.target.value)} placeholder={blocking ? 'For example: Bristol, 10–14 May, using the later weekend.' : 'For example: Keep the proposed dates, but give Rome one extra night.'} disabled={followUpBusy} />
-          <button className="button-primary" type="button" onClick={() => void submitFollowUp()} disabled={followUpBusy || !followUp.trim()}>{followUpBusy ? 'Updating your draft…' : 'Update draft from reply'}</button>
+          <button className="button-primary" type="button" onClick={() => void submitFollowUp()} disabled={followUpBusy || !followUp.trim()}>{followUpBusy ? 'Updating your draft…' : 'Update interpreted draft'}</button>
         </div>
         {error ? <p className="form-error" role="alert">{error}</p> : null}
-        <footer className="dialog-footer"><button className="button-text" type="button" onClick={onClose}>Cancel</button>{!blocking ? <button className="button-secondary" type="button" onClick={() => { setSelectedOptions({}); setStage('review'); }}>Back to trip review</button> : <small className="creation-stage-note">The form appears after the essentials are clear.</small>}</footer>
+        <footer className="dialog-footer"><button className="button-text" type="button" onClick={onClose}>Cancel</button>{!blocking ? <button className="button-secondary" type="button" onClick={() => { setSelectedOptions({}); setStage('review'); }}>Back to summary</button> : <small className="creation-stage-note">Your trip summary appears after the essentials are clear.</small>}</footer>
       </div>
     );
   }
 
   return (
-    <Dialog title={stage === 'clarify' ? 'A few details first' : stage === 'refine' ? 'Fine-tune your trip' : 'Review your trip'} eyebrow="Create a trip" onClose={onClose} wide>
-      {initialDraft ? <div className="creation-steps" aria-label="Trip creation progress"><span data-active={stage === 'clarify' || stage === 'refine' || undefined}><b>1</b> Questions</span><i aria-hidden="true" /><span data-active={stage === 'review' || undefined}><b>2</b> Review</span></div> : null}
+    <Dialog title={stage === 'clarify' ? 'A few details first' : stage === 'refine' ? 'Continue with AI' : stage === 'edit' ? 'Edit trip details' : 'Review your trip'} eyebrow="Create a trip" onClose={onClose} wide>
+      {initialDraft ? <div className="creation-steps" aria-label="Trip creation progress"><span data-active={stage === 'clarify' || undefined}><b>1</b> Clarify</span><i aria-hidden="true" /><span data-active={stage !== 'clarify' || undefined}><b>2</b> Review</span></div> : null}
       {stage === 'clarify'
         ? renderQuestionStage(blockingQuestions, true)
         : stage === 'refine'
           ? renderQuestionStage(optionalQuestions, false)
-          : (
+          : stage === 'edit'
+            ? (
+              <form className="creation-edit-stage" onSubmit={(event) => { event.preventDefault(); setStage('review'); }}>
+                <div className="creation-stage-intro">
+                  <p className="section-kicker">Manual edit</p>
+                  <h3>Adjust the trip details</h3>
+                  <p>Change anything you need, then return to the summary to check the complete trip.</p>
+                </div>
+                <TripFields value={form} onChange={setForm} fieldStates={fieldStates} onFieldEdited={markFieldEdited} onFieldProtected={(path) => protectPaths([path])} onFieldConfirmed={(path) => confirmPaths([path])} onFieldDerived={markFieldDerived} onStopRemoved={handleStopRemoved} locale={formLocale} disabled={followUpBusy || busy} />
+                {omittedStops.length ? <p className="draft-omission-note" role="status">If you create now, {omittedStops.length} unresolved {omittedStops.length === 1 ? 'destination idea' : 'destination ideas'} will stay out of the saved trip. Confirm {omittedStops.length === 1 ? 'it' : 'them'} to include {omittedStops.length === 1 ? 'it' : 'them'}.</p> : null}
+                {error ? <p className="form-error" role="alert">{error}</p> : null}
+                <footer className="dialog-footer"><button className="button-text" type="button" onClick={onClose}>Cancel</button><button className="button-primary" type="submit">Review changes</button></footer>
+              </form>
+            )
+            : (
             <form onSubmit={(event) => void createTrip(event)} aria-busy={busy}>
               {initialDraft ? <DraftReviewSummary form={form} fieldStates={fieldStates} locale={formLocale} /> : null}
-              {optionalQuestions.length ? <section className="optional-refinement" aria-label="Optional trip refinement"><div><span className="optional-refinement-icon" aria-hidden="true">✦</span><div><strong>Want to clarify anything before we set it up?</strong><p>{optionalQuestions.length} optional {optionalQuestions.length === 1 ? 'detail is' : 'details are'} ready to discuss. The draft can still be created as it is.</p></div></div><button className="button-secondary" type="button" onClick={() => { setSelectedOptions({}); setStage('refine'); }}>Refine in chat</button></section> : null}
-              {(notes.assumptions.length || notes.warnings.length) ? <details className="draft-notes"><summary>What TripDock interpreted ({notes.assumptions.length + notes.warnings.length})</summary><div>{notes.assumptions.map((note) => <p key={note}><span aria-hidden="true">≈</span> {note}</p>)}{notes.warnings.map((note) => <p key={note}><span aria-hidden="true">!</span> {note}</p>)}</div></details> : null}
-              <TripFields value={form} onChange={setForm} fieldStates={fieldStates} onFieldEdited={markFieldEdited} onFieldProtected={(path) => protectPaths([path])} onFieldConfirmed={(path) => confirmPaths([path])} onFieldDerived={markFieldDerived} onStopRemoved={handleStopRemoved} locale={formLocale} disabled={followUpBusy || busy} />
+              {(notes.assumptions.length || notes.warnings.length) ? <details className="draft-notes"><summary>Interpretation notes ({notes.assumptions.length + notes.warnings.length})</summary><div>{notes.assumptions.map((note) => <p key={note}><span aria-hidden="true">≈</span> {note}</p>)}{notes.warnings.map((note) => <p key={note}><span aria-hidden="true">!</span> {note}</p>)}</div></details> : null}
+              <div className="draft-review-prompt">
+                <p className="section-kicker">Need a change?</p>
+                <h3>Choose how you want to refine it</h3>
+              </div>
+              <div className="draft-review-actions">
+                <button type="button" onClick={() => setStage('edit')}><span className="draft-review-action-icon" aria-hidden="true">✎</span><span><strong>Edit manually</strong><small>Open the form and adjust any field yourself.</small></span></button>
+                <button type="button" onClick={() => { setSelectedOptions({}); setStage('refine'); }}><span className="draft-review-action-icon" aria-hidden="true">✦</span><span><strong>Continue with AI</strong><small>{optionalQuestions.length ? `${optionalQuestions.length} suggested ${optionalQuestions.length === 1 ? 'question' : 'questions'}, or ask for any change.` : 'Describe the changes you want in your own words.'}</small></span></button>
+              </div>
               {omittedStops.length ? <p className="draft-omission-note" role="status">If you create now, {omittedStops.length} unresolved {omittedStops.length === 1 ? 'destination idea' : 'destination ideas'} will stay out of the saved trip. Confirm {omittedStops.length === 1 ? 'it' : 'them'} to include {omittedStops.length === 1 ? 'it' : 'them'}.</p> : null}
               {error ? <p className="form-error" role="alert">{error}</p> : null}
               <footer className="dialog-footer"><button className="button-text" type="button" onClick={onClose}>Cancel</button><div className="create-readiness-action">{!minimumViable ? <small>Needs a confirmed city and valid dates</small> : null}<button className="button-primary" type="submit" disabled={busy || followUpBusy || !minimumViable}>{busy ? 'Saving…' : 'Create trip'}</button></div></footer>
             </form>
-          )}
+            )}
     </Dialog>
   );
 }
