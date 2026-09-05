@@ -15,6 +15,7 @@
     "test": "pnpm -r --filter @tripdock/api --filter @tripdock/web test",
     "test:postgres": "pnpm --filter @tripdock/api test:postgres",
     "test:ai-live": "pnpm --filter @tripdock/api test:ai-live",
+    "test:ai-eval": "pnpm --filter @tripdock/api test:ai-eval",
     "db:up": "docker compose up -d postgres",
     "db:down": "docker compose down",
     "db:generate": "pnpm --filter @tripdock/api db:generate",

@@ -61,7 +61,17 @@ Run the separately billed, explicit provider smoke with:
 pnpm test:ai-live
 ```
 
-Normal tests never call OpenAI. Their `FixtureAiGateway` is injected only by test code.
+Run the versioned trip-creation quality corpus with:
+
+```sh
+pnpm test:ai-eval
+pnpm test:ai-eval -- --suite regression
+pnpm test:ai-eval -- --scenario dates.partial-endpoint-year --trials 3
+```
+
+The MVP corpus contains four semantic scenarios with one straightforward prompt each. Three regression scenarios block on failure. The start-date-plus-stop-nights scenario is a non-blocking capability target until the deterministic resolver supports deriving the trip end. The evaluator scores extraction and resolved draft semantics with exact, app-owned assertions; it does not use an LLM judge or persist raw model responses.
+
+Normal tests never call OpenAI. Their `FixtureAiGateway` is injected only by test code. Both live commands are explicit and potentially billed.
 
 ## Commands
 
@@ -76,6 +86,7 @@ pnpm db:migrate      Apply pending migrations
 pnpm db:reset        Empty and remigrate an explicitly local database
 pnpm test:postgres   Test migrations against TEST_DATABASE_URL
 pnpm test:ai-live    Make one explicit live OpenAI Structured Outputs request
+pnpm test:ai-eval    Run the versioned live trip-creation semantic eval corpus
 ```
 
 ## Architecture and trust boundary
@@ -110,7 +121,7 @@ The deterministic brand generator is `scripts/generate-brand-assets.py`. It requ
 
 - This is intentionally local-only: no deployment, authentication, authorization, collaboration, or multi-user concurrency beyond optimistic revision protection.
 - Voice, WhatsApp, booking providers, uploads, background workers, notifications, and AI changes to existing trips are out of scope.
-- Live model quality and compatibility require `pnpm test:ai-live`; deterministic tests do not spend API credits.
+- Live model compatibility uses `pnpm test:ai-live`; trip-creation quality uses `pnpm test:ai-eval`. Deterministic tests do not spend API credits.
 - Production hosting and infrastructure providers remain undecided.
 
 The detailed slice contract is recorded in [docs/prototype-v0.md](docs/prototype-v0.md). The local-first/OpenAI boundary is recorded in [ADR 0001](docs/decisions/0001-local-first-development-with-live-openai.md).

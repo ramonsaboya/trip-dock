@@ -16,6 +16,7 @@
     "test": "tsx --test --test-concurrency=1 tests/*.test.ts",
     "test:postgres": "tsx tests/run-postgres-test.ts",
     "test:ai-live": "tsx src/scripts/live-ai-smoke.ts",
+    "test:ai-eval": "tsx src/scripts/trip-creation-eval.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx src/scripts/migrate.ts",
     "db:reset": "tsx src/scripts/reset-db.ts"
