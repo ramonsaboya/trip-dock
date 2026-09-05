@@ -1098,6 +1098,94 @@ test('destination night allocations produce exact adjacent stays without a clari
   assert.ok(draft.assumptions.some((item) => item.includes('without overlapping a night')));
 });
 
+test('exact destination nights derive a missing trip end and contiguous stays', () => {
+  const draft = buildTripCreationDraft(
+    extraction({
+      startDate: calendar('28th of Aug 2027', 28, 8, 2027),
+      destinations: [
+        destination('Rome', 'Rome', 'CITY', {
+          stayDuration: { value: 4, unit: 'NIGHTS', evidence: '4 nights in Rome' },
+        }),
+        destination('Maiori', 'Maiori', 'CITY', {
+          stayDuration: { value: 2, unit: 'NIGHTS', evidence: '2 nights in Maiori' },
+        }),
+        destination('Naples', 'Naples', 'CITY', {
+          stayDuration: { value: 2, unit: 'NIGHTS', evidence: '2 nights in Naples' },
+        }),
+      ],
+    }),
+    request('Trip from 28th of Aug 2027, 4 nights in Rome, 2 nights in Maiori, 2 nights in Naples.'),
+  );
+  assert.equal(draft.endDate, '2027-09-05');
+  assert.deepEqual(
+    draft.stops.map(({ name, arrivalDate, departureDate }) => ({ name, arrivalDate, departureDate })),
+    [
+      { name: 'Rome', arrivalDate: '2027-08-28', departureDate: '2027-09-01' },
+      { name: 'Maiori', arrivalDate: '2027-09-01', departureDate: '2027-09-03' },
+      { name: 'Naples', arrivalDate: '2027-09-03', departureDate: '2027-09-05' },
+    ],
+  );
+  assert.equal(draft.minimumViable, true);
+  assert.equal(draft.questions.some(({ id }) => id === 'end-date-required'), false);
+  assert.equal(
+    draft.fieldStates.find(({ path }) => path === 'trip.endDate')?.status,
+    'INTERPRETED',
+  );
+  assert.ok(draft.assumptions.some((item) => item.includes('end date was calculated')));
+});
+
+test('individual day counts do not derive a missing trip end', () => {
+  const draft = buildTripCreationDraft(
+    extraction({
+      startDate: calendar('10 October', 10, 10),
+      destinations: [
+        destination('Tokyo', 'Tokyo', 'CITY', {
+          stayDuration: { value: 3, unit: 'DAYS', evidence: '3 days in Tokyo' },
+        }),
+      ],
+    }),
+    request('Tokyo from 10 October for 3 days in Tokyo'),
+  );
+  assert.equal(draft.endDate, null);
+  assert.equal(draft.stops[0]?.arrivalDate, '2026-10-10');
+  assert.equal(draft.stops[0]?.departureDate, null);
+  assert.equal(draft.minimumViable, false);
+  assert.ok(draft.questions.some(({ id }) => id === 'end-date-required'));
+});
+
+test('ambiguous or incomplete destination nights do not derive a missing trip end', () => {
+  const ambiguous = buildTripCreationDraft(
+    extraction({
+      startDate: calendar('10 October', 10, 10),
+      destinations: [
+        destination('Tokyo', 'Tokyo', 'CITY', {
+          stayDuration: { value: 3, unit: 'NIGHTS', evidence: '2 or 3 nights in Tokyo' },
+        }),
+      ],
+    }),
+    request('Tokyo from 10 October for 2 or 3 nights in Tokyo'),
+  );
+  assert.equal(ambiguous.endDate, null);
+  assert.equal(ambiguous.minimumViable, false);
+  assert.ok(ambiguous.questions.some(({ id }) => id === 'end-date-required'));
+
+  const incomplete = buildTripCreationDraft(
+    extraction({
+      startDate: calendar('10 October', 10, 10),
+      destinations: [
+        destination('Tokyo', 'Tokyo', 'CITY', {
+          stayDuration: { value: 2, unit: 'NIGHTS', evidence: '2 nights in Tokyo' },
+        }),
+        destination('Kyoto', 'Kyoto', 'CITY'),
+      ],
+    }),
+    request('Tokyo from 10 October for 2 nights in Tokyo, then Kyoto'),
+  );
+  assert.equal(incomplete.endDate, null);
+  assert.equal(incomplete.minimumViable, false);
+  assert.ok(incomplete.questions.some(({ id }) => id === 'end-date-required'));
+});
+
 test('trip boundary autofill is reflected in destination field provenance', () => {
   const draft = buildTripCreationDraft(
     extraction({

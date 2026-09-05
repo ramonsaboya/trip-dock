@@ -96,7 +96,7 @@ test('the MVP corpus has four stable scenario families and four prompt cases', (
   );
   assert.deepEqual(
     tripCreationEvalScenarios.map(({ suite }) => suite),
-    ['REGRESSION', 'REGRESSION', 'REGRESSION', 'CAPABILITY'],
+    ['REGRESSION', 'REGRESSION', 'REGRESSION', 'REGRESSION'],
   );
   for (const item of tripCreationEvalScenarios) {
     assert.equal(item.variants.length, 1);
@@ -199,7 +199,7 @@ test('the oracle detects missing per-stop dates even when overall dates are corr
   assert.ok(evaluation.failures.some(({ path }) => path === 'stops.intervals'));
 });
 
-test('the unimplemented start-plus-nights behavior is visible but non-blocking', () => {
+test('the start-plus-nights regression derives the trip end and contiguous intervals', () => {
   const result = evaluateCanonical(
     'itinerary.derive-end-from-stop-nights',
     extraction({
@@ -207,9 +207,20 @@ test('the unimplemented start-plus-nights behavior is visible but non-blocking',
       destinations: fixedNightDestinations(),
     }),
   );
-  assert.equal(result.draft.endDate, null);
-  assert.equal(result.evaluation.passed, false);
+  assert.equal(result.draft.endDate, '2027-09-05');
+  assert.deepEqual(
+    result.draft.stops.map(({ name, arrivalDate, departureDate }) => ({
+      name,
+      arrivalDate,
+      departureDate,
+    })),
+    [
+      { name: 'Rome', arrivalDate: '2027-08-28', departureDate: '2027-09-01' },
+      { name: 'Maiori', arrivalDate: '2027-09-01', departureDate: '2027-09-03' },
+      { name: 'Naples', arrivalDate: '2027-09-03', departureDate: '2027-09-05' },
+    ],
+  );
+  assert.equal(result.draft.minimumViable, true);
+  assert.equal(result.evaluation.passed, true, JSON.stringify(result.evaluation.failures));
   assert.equal(result.evaluation.releaseBlocking, false);
-  assert.ok(result.evaluation.failures.some(({ layer, path }) => layer === 'draft' && path === 'endDate'));
-  assert.ok(result.evaluation.failures.some(({ path }) => path === 'stops.intervals'));
 });

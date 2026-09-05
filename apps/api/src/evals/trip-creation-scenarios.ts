@@ -135,8 +135,8 @@ export const tripCreationEvalScenarios: TripCreationEvalScenario[] = [
   {
     id: 'itinerary.derive-end-from-stop-nights',
     title: 'Derive the trip end from a start date and exact stop nights',
-    suite: 'CAPABILITY',
-    rationale: 'This desired behavior is not implemented yet, so it is tracked without blocking releases.',
+    suite: 'REGRESSION',
+    rationale: 'Exact per-stop nights and a fixed start determine the trip end and every stop interval.',
     context,
     variants: [
       {

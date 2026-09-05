@@ -1568,6 +1568,48 @@ export function buildTripCreationDraft(
     startDateEvidence = extraction.duration.evidence;
   }
 
+  const hasExactStopNightDurations = Boolean(
+    stops.length &&
+    stops.every((stop) => stop.cityResolution === 'RESOLVED') &&
+    stayDurations.length === stops.length &&
+    stayDurations.every(
+      (duration): duration is VerifiedStayDuration => duration?.unit === 'NIGHTS',
+    ) &&
+    effectiveStopIntents.every((destination) =>
+      isCanonicalMissingDateIntent(destination.arrivalDate) &&
+      isCanonicalMissingDateIntent(destination.departureDate),
+    ),
+  );
+  const tripDurationWasMissing = extraction.duration.value === null &&
+    extraction.duration.unit === 'MISSING' &&
+    extraction.duration.evidence === null;
+  if (
+    startResolution.value &&
+    !endResolution.value &&
+    endIntent.kind === 'MISSING' &&
+    tripDurationWasMissing &&
+    !usesNextWeekend &&
+    hasExactStopNightDurations
+  ) {
+    const totalNights = (stayDurations as VerifiedStayDuration[])
+      .reduce((total, duration) => total + duration.value, 0);
+    if (totalNights <= 366) {
+      endResolution = {
+        value: addDays(startResolution.value, totalNights),
+        status: 'INTERPRETED',
+        message: `Calculated from ${totalNights} exact destination ${totalNights === 1 ? 'night' : 'nights'}.`,
+        explicitYear: false,
+      };
+      assumptions.push(
+        'The trip end date was calculated from the start date and the exact destination-night allocations.',
+      );
+    } else {
+      warnings.push(
+        'The summed destination nights exceed the supported automatic trip range and were not used to calculate the end date.',
+      );
+    }
+  }
+
   if (
     startResolution.value &&
     startResolution.value < request.referenceDate &&

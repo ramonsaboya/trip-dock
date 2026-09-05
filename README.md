@@ -69,7 +69,7 @@ pnpm test:ai-eval -- --suite regression
 pnpm test:ai-eval -- --scenario dates.partial-endpoint-year --trials 3
 ```
 
-The MVP corpus contains four semantic scenarios with one straightforward prompt each. Three regression scenarios block on failure. The start-date-plus-stop-nights scenario is a non-blocking capability target until the deterministic resolver supports deriving the trip end. The evaluator scores extraction and resolved draft semantics with exact, app-owned assertions; it does not use an LLM judge or persist raw model responses.
+The MVP corpus contains four semantic regression scenarios with one straightforward prompt each. All four block on failure, including deriving the trip end and stop intervals from a start date plus exact per-stop night counts. The evaluator scores extraction and resolved draft semantics with exact, app-owned assertions; it does not use an LLM judge or persist raw model responses.
 
 Normal tests never call OpenAI. Their `FixtureAiGateway` is injected only by test code. Both live commands are explicit and potentially billed.
 
