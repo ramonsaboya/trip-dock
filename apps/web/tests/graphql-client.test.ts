@@ -1473,7 +1473,7 @@ test('production web code contains no fixture or browser-storage fallback', asyn
   );
 });
 
-test('creation UI separates blocking clarification, summary review, manual edit, and AI follow-up', async () => {
+test('creation UI opens manual creation as a form and keeps AI drafts reviewable', async () => {
   const source = await readFile(
     fileURLToPath(new URL('../components/trip-dock-app.tsx', import.meta.url)),
     'utf8',
@@ -1484,10 +1484,24 @@ test('creation UI separates blocking clarification, summary review, manual edit,
   assert.match(source, /fieldStates\.get\('trip\.name'\)\?\.status === 'SUGGESTED'/u);
   assert.match(source, /stage === 'clarify'[\s\S]+renderQuestionStage\(blockingQuestions, true\)/u);
   assert.match(source, /stage === 'edit'/u);
-  assert.match(source, /Edit manually/u);
-  assert.match(source, /Continue with AI/u);
+  assert.match(source, /initialDraft[\s\S]+\? 'review'[\s\S]+: 'edit'/u);
+  assert.match(source, /initialDraft \? 'Trip details' : 'Create a trip'/u);
+  assert.match(source, /Update details/u);
+  assert.match(source, /Ask TripDock/u);
+  assert.match(source, /initialDraft \? 'Review trip' : busy \? 'Saving…' : 'Create trip'/u);
   assert.match(source, /Back to summary/u);
   assert.match(source, /fieldStates\?\.entries\(\)[\s\S]+state\.status === 'CONFIRMED'/u);
   assert.doesNotMatch(source, /<Field label="Trip area"/u);
+  assert.doesNotMatch(source, /Edit trip details|Manual edit|Adjust the trip details|Review changes/u);
+  assert.doesNotMatch(source, /creation-steps|Trip creation progress/u);
   assert.match(source, /Shared transfer dates are expected/u);
+});
+
+test('dashboard chrome keeps a single trips heading without a redundant tab', async () => {
+  const source = await readFile(
+    fileURLToPath(new URL('../components/trip-dock-app.tsx', import.meta.url)),
+    'utf8',
+  );
+  assert.match(source, /<h1>Your trips<\/h1>/u);
+  assert.doesNotMatch(source, /Your travel plans|<nav aria-label="Primary"|nav-link-active/u);
 });

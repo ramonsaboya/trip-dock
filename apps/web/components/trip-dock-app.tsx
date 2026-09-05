@@ -137,13 +137,11 @@ function Logo() {
 
 function Dialog({
   title,
-  eyebrow,
   children,
   onClose,
   wide = false,
 }: {
   title: string;
-  eyebrow?: string;
   children: ReactNode;
   onClose: () => void;
   wide?: boolean;
@@ -175,7 +173,6 @@ function Dialog({
       <div className="dialog-panel">
         <header className="dialog-header">
           <div>
-            {eyebrow ? <p className="overline">{eyebrow}</p> : null}
             <h2 id={titleId}>{title}</h2>
           </div>
           <button className="icon-button" type="button" onClick={onClose} aria-label="Close dialog">
@@ -891,7 +888,11 @@ function CreateTripDialog({
     () => initialDraft?.questions ?? [],
   );
   const [stage, setStage] = useState<'clarify' | 'review' | 'edit' | 'refine'>(() =>
-    initialDraft?.questions.some((question) => question.blocking) ? 'clarify' : 'review',
+    initialDraft?.questions.some((question) => question.blocking)
+      ? 'clarify'
+      : initialDraft
+        ? 'review'
+        : 'edit',
   );
   const [notes, setNotes] = useState(() => ({
     assumptions: initialDraft?.assumptions ?? [],
@@ -1215,8 +1216,8 @@ function CreateTripDialog({
       <div className="creation-question-stage">
         <div className="creation-stage-intro">
           <p className="section-kicker">{blocking ? 'Before we build the draft' : 'AI follow-up'}</p>
-          <h3>{blocking ? 'A few details need a clear answer' : 'What would you like to change?'}</h3>
-          <p>{blocking ? 'These answers change the essential destination or dates. Answer them together, then we’ll show you the interpreted trip.' : visibleQuestions.length ? 'Answer any of the suggested questions, or describe the changes you want in your own words. We’ll bring you back to an updated summary.' : 'Describe any change in your own words. We’ll interpret it and bring you back to an updated summary.'}</p>
+          <h3>{blocking ? 'A few details need a clear answer' : 'What should TripDock adjust?'}</h3>
+          <p>{blocking ? 'These answers affect the essential destination or dates. Answer them together, then we’ll show you the interpreted trip.' : visibleQuestions.length ? 'Answer any of the suggested questions, or describe the adjustment in your own words. We’ll bring you back to an updated summary.' : 'Describe the adjustment in your own words. We’ll interpret it and bring you back to an updated summary.'}</p>
         </div>
         <div className="clarification-list">
           {visibleQuestions.map((item, index) => (
@@ -1228,7 +1229,7 @@ function CreateTripDialog({
         </div>
         {visibleQuestions.some((item) => item.options.length) ? <button className="button-secondary apply-quick-answers" type="button" onClick={applySelectedAnswers} disabled={followUpBusy || !Object.keys(selectedOptions).length}>{blocking ? 'Continue with selected answers' : 'Use selected answers'}</button> : null}
         <div className="follow-up-compose">
-          <label htmlFor="trip-draft-follow-up">{blocking ? 'Or answer everything in one message' : 'Tell TripDock what to change'}</label>
+          <label htmlFor="trip-draft-follow-up">{blocking ? 'Or answer everything in one message' : 'Tell TripDock what to adjust'}</label>
           <textarea id="trip-draft-follow-up" rows={4} maxLength={1500} value={followUp} onChange={(event) => setFollowUp(event.target.value)} placeholder={blocking ? 'For example: Bristol, 10–14 May, using the later weekend.' : 'For example: Keep the proposed dates, but give Rome one extra night.'} disabled={followUpBusy} />
           <button className="button-primary" type="button" onClick={() => void submitFollowUp()} disabled={followUpBusy || !followUp.trim()}>{followUpBusy ? 'Updating your draft…' : 'Update interpreted draft'}</button>
         </div>
@@ -1239,24 +1240,18 @@ function CreateTripDialog({
   }
 
   return (
-    <Dialog title={stage === 'clarify' ? 'A few details first' : stage === 'refine' ? 'Continue with AI' : stage === 'edit' ? 'Edit trip details' : 'Review your trip'} eyebrow="Create a trip" onClose={onClose} wide>
-      {initialDraft ? <div className="creation-steps" aria-label="Trip creation progress"><span data-active={stage === 'clarify' || undefined}><b>1</b> Clarify</span><i aria-hidden="true" /><span data-active={stage !== 'clarify' || undefined}><b>2</b> Review</span></div> : null}
+    <Dialog title={stage === 'clarify' ? 'A few details first' : stage === 'refine' ? 'Ask TripDock' : stage === 'edit' ? (initialDraft ? 'Trip details' : 'Create a trip') : 'Review your trip'} onClose={onClose} wide>
       {stage === 'clarify'
         ? renderQuestionStage(blockingQuestions, true)
         : stage === 'refine'
           ? renderQuestionStage(optionalQuestions, false)
           : stage === 'edit'
             ? (
-              <form className="creation-edit-stage" onSubmit={(event) => { event.preventDefault(); setStage('review'); }}>
-                <div className="creation-stage-intro">
-                  <p className="section-kicker">Manual edit</p>
-                  <h3>Adjust the trip details</h3>
-                  <p>Change anything you need, then return to the summary to check the complete trip.</p>
-                </div>
+              <form className="creation-edit-stage" aria-busy={busy} onSubmit={(event) => { if (initialDraft) { event.preventDefault(); setStage('review'); } else { void createTrip(event); } }}>
                 <TripFields value={form} onChange={setForm} fieldStates={fieldStates} onFieldEdited={markFieldEdited} onFieldProtected={(path) => protectPaths([path])} onFieldConfirmed={(path) => confirmPaths([path])} onFieldDerived={markFieldDerived} onStopRemoved={handleStopRemoved} locale={formLocale} disabled={followUpBusy || busy} />
                 {omittedStops.length ? <p className="draft-omission-note" role="status">If you create now, {omittedStops.length} unresolved {omittedStops.length === 1 ? 'destination idea' : 'destination ideas'} will stay out of the saved trip. Confirm {omittedStops.length === 1 ? 'it' : 'them'} to include {omittedStops.length === 1 ? 'it' : 'them'}.</p> : null}
                 {error ? <p className="form-error" role="alert">{error}</p> : null}
-                <footer className="dialog-footer"><button className="button-text" type="button" onClick={onClose}>Cancel</button><button className="button-primary" type="submit">Review changes</button></footer>
+                <footer className="dialog-footer"><button className="button-text" type="button" onClick={onClose}>Cancel</button><div className="create-readiness-action">{!initialDraft && !minimumViable ? <small>Needs a confirmed city and valid dates</small> : null}<button className="button-primary" type="submit" disabled={busy || followUpBusy || (!initialDraft && !minimumViable)}>{initialDraft ? 'Review trip' : busy ? 'Saving…' : 'Create trip'}</button></div></footer>
               </form>
             )
             : (
@@ -1264,12 +1259,12 @@ function CreateTripDialog({
               {initialDraft ? <DraftReviewSummary form={form} fieldStates={fieldStates} locale={formLocale} /> : null}
               {(notes.assumptions.length || notes.warnings.length) ? <details className="draft-notes"><summary>Interpretation notes ({notes.assumptions.length + notes.warnings.length})</summary><div>{notes.assumptions.map((note) => <p key={note}><span aria-hidden="true">≈</span> {note}</p>)}{notes.warnings.map((note) => <p key={note}><span aria-hidden="true">!</span> {note}</p>)}</div></details> : null}
               <div className="draft-review-prompt">
-                <p className="section-kicker">Need a change?</p>
-                <h3>Choose how you want to refine it</h3>
+                <p className="section-kicker">Before you create it</p>
+                <h3>Make any final adjustments</h3>
               </div>
               <div className="draft-review-actions">
-                <button type="button" onClick={() => setStage('edit')}><span className="draft-review-action-icon" aria-hidden="true">✎</span><span><strong>Edit manually</strong><small>Open the form and adjust any field yourself.</small></span></button>
-                <button type="button" onClick={() => { setSelectedOptions({}); setStage('refine'); }}><span className="draft-review-action-icon" aria-hidden="true">✦</span><span><strong>Continue with AI</strong><small>{optionalQuestions.length ? `${optionalQuestions.length} suggested ${optionalQuestions.length === 1 ? 'question' : 'questions'}, or ask for any change.` : 'Describe the changes you want in your own words.'}</small></span></button>
+                <button type="button" onClick={() => setStage('edit')}><span className="draft-review-action-icon" aria-hidden="true">✎</span><span><strong>Update details</strong><small>Open the form and adjust any field.</small></span></button>
+                <button type="button" onClick={() => { setSelectedOptions({}); setStage('refine'); }}><span className="draft-review-action-icon" aria-hidden="true">✦</span><span><strong>Ask TripDock</strong><small>{optionalQuestions.length ? `${optionalQuestions.length} suggested ${optionalQuestions.length === 1 ? 'question' : 'questions'}, or describe another adjustment.` : 'Describe the adjustment you want in your own words.'}</small></span></button>
               </div>
               {omittedStops.length ? <p className="draft-omission-note" role="status">If you create now, {omittedStops.length} unresolved {omittedStops.length === 1 ? 'destination idea' : 'destination ideas'} will stay out of the saved trip. Confirm {omittedStops.length === 1 ? 'it' : 'them'} to include {omittedStops.length === 1 ? 'it' : 'them'}.</p> : null}
               {error ? <p className="form-error" role="alert">{error}</p> : null}
@@ -1748,7 +1743,7 @@ function TripDetail({ trip, onBack, onChanged, onDeleted, notify }: { trip: Trip
 function TripsOverview({ trips, onCreate, onDraft, onOpen }: { trips: Trip[]; onCreate: () => void; onDraft: (draft: TripDraft, prompt: string) => void; onOpen: (id: string) => void }) {
   return (
     <main id="main-content" className="page-wrap" tabIndex={-1}>
-      <section className="page-heading"><div><p className="overline">Your travel plans</p><h1>Your trips</h1><p className="page-intro">Start with a rough idea or build the details yourself.</p></div>{trips.length ? <button className="button-primary" type="button" onClick={onCreate}>+ New trip</button> : null}</section>
+      <section className="page-heading"><div><h1>Your trips</h1><p className="page-intro">Everything you’re planning, in one place.</p></div>{trips.length ? <button className="button-primary" type="button" onClick={onCreate}>+ New trip</button> : null}</section>
       <div className="overview-layout">
         <HomeDraftComposer onDraft={onDraft} />
         <div className="overview-plans">
@@ -1822,7 +1817,7 @@ export function TripDockApp() {
   return (
     <div className="app-shell">
       <a className="skip-link" href="#main-content">Skip to main content</a>
-      <header className="site-header"><div className="header-inner"><button className="logo-button" type="button" onClick={() => setSelectedTripId(null)} aria-label="TripDock trips home"><Logo /></button><nav aria-label="Primary"><button type="button" className="nav-link nav-link-active" onClick={() => setSelectedTripId(null)}>Trips</button></nav></div></header>
+      <header className="site-header"><div className="header-inner"><button className="logo-button" type="button" onClick={() => setSelectedTripId(null)} aria-label="TripDock trips home"><Logo /></button></div></header>
       {state.kind === 'loading' ? <main id="main-content" className="state-page" aria-busy="true"><Logo /><div className="loader" aria-hidden="true" /><h1>Opening your trips</h1><p>Getting your plans ready…</p></main> : null}
       {state.kind === 'error' ? <main id="main-content" className="state-page error-state"><Logo /><h1>TripDock could not open your data</h1><p role="alert">{state.message}</p><button className="button-primary" type="button" onClick={retry}>Retry connection</button></main> : null}
       {state.kind === 'ready' && !selectedTrip ? <TripsOverview trips={state.trips} onCreate={() => setCreateRequest({})} onDraft={(draft, sourcePrompt) => setCreateRequest({ draft, sourcePrompt })} onOpen={setSelectedTripId} /> : null}
