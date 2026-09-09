@@ -77,8 +77,10 @@ export const transportLegs = pgTable(
     tripId: uuid('trip_id')
       .notNull()
       .references(() => trips.id, { onDelete: 'cascade' }),
-    fromStopId: uuid('from_stop_id').notNull(),
-    toStopId: uuid('to_stop_id').notNull(),
+    fromStopId: uuid('from_stop_id'),
+    toStopId: uuid('to_stop_id'),
+    fromLocation: text('from_location'),
+    toLocation: text('to_location'),
     position: integer('position').notNull(),
     mode: text('mode').notNull(),
     title: text('title').notNull(),
@@ -102,6 +104,13 @@ export const transportLegs = pgTable(
     unique('transport_legs_trip_position_unique').on(table.tripId, table.position),
     index('transport_legs_trip_position_idx').on(table.tripId, table.position),
     check('transport_legs_position_check', sql`${table.position} >= 0`),
+    check('transport_legs_endpoints_check', sql`
+      ((${table.fromStopId} is not null and ${table.fromLocation} is null) or
+       (${table.fromStopId} is null and length(trim(${table.fromLocation})) > 0 and ${table.fromLocation} is not null)) and
+      ((${table.toStopId} is not null and ${table.toLocation} is null) or
+       (${table.toStopId} is null and length(trim(${table.toLocation})) > 0 and ${table.toLocation} is not null)) and
+      (${table.fromStopId} is not null or ${table.toStopId} is not null)
+    `),
   ],
 );
 

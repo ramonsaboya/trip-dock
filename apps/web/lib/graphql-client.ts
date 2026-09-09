@@ -11,8 +11,10 @@ export type TripStop = {
 export type TransportLeg = {
   id: string;
   tripId: string;
-  fromStopId: string;
-  toStopId: string;
+  fromStopId: string | null;
+  toStopId: string | null;
+  fromLocation: string | null;
+  toLocation: string | null;
   position: number;
   mode: string;
   title: string;
@@ -205,7 +207,7 @@ const TRIP_FIELDS = `
   id name destinationArea startDate endDate travelerCount revision createdAt updatedAt
   stops { id tripId name locationText position arrivalDate departureDate }
   transportLegs {
-    id tripId fromStopId toStopId position mode title details
+    id tripId fromStopId toStopId fromLocation toLocation position mode title details
     departureTime arrivalTime timezone
   }
   stays { id tripId stopId position name checkIn checkOut timezone }

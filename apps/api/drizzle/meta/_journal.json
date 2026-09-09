@@ -15,6 +15,13 @@
       "when": 1788454155876,
       "tag": "0001_big_raider",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1788972380533,
+      "tag": "0002_salty_masked_marvel",
+      "breakpoints": true
     }
   ]
 }

@@ -1,5 +1,7 @@
 'use client';
 
+import { ActivityPlanner } from './activity-planner';
+
 import {
   cloneElement,
   isValidElement,
@@ -107,11 +109,6 @@ function formatStopDates(stop: Pick<TripStop, 'arrivalDate' | 'departureDate'>):
   if (stop.arrivalDate) return `From ${formatCalendarDate(stop.arrivalDate)}`;
   if (stop.departureDate) return `Until ${formatCalendarDate(stop.departureDate)}`;
   return 'Dates open';
-}
-
-function formatTravelerCount(count: number | null): string {
-  if (count === null) return 'Travelers not set';
-  return `${count} ${count === 1 ? 'traveler' : 'travelers'}`;
 }
 
 function deviceTimezone(): string | null {
@@ -687,7 +684,7 @@ function TripFields({
     }
     const next = {
       ...value,
-      stops: value.stops.map((stop, stopIndex) =>
+      stops: (index === value.stops.length ? appendTripStop(value, { lastDepartureDirty: dirtyFields.has(stopFieldKey(index - 1, 'departureDate')) }).stops : value.stops).map((stop, stopIndex) =>
         stopIndex === index ? { ...stop, ...normalizedPatch } : stop,
       ),
     };
@@ -729,21 +726,6 @@ function TripFields({
     onChange(next);
   }
 
-  function addStop() {
-    const previousIndex = value.stops.length - 1;
-    const previousDepartureKey = stopFieldKey(previousIndex, 'departureDate');
-    const next = appendTripStop(value, {
-      lastDepartureDirty: dirtyFields.has(previousDepartureKey),
-    });
-    if (next.stops[previousIndex]?.departureDate !== value.stops[previousIndex]?.departureDate) {
-      markDerived(previousDepartureKey, next.stops[previousIndex]?.departureDate ?? null);
-    }
-    const nextIndex = next.stops.length - 1;
-    markDerived(stopFieldKey(nextIndex, 'arrivalDate'), next.stops[nextIndex]?.arrivalDate ?? null);
-    markDerived(stopFieldKey(nextIndex, 'departureDate'), next.stops[nextIndex]?.departureDate ?? null);
-    onChange(next);
-  }
-
   function removeStop(index: number) {
     const survivingDepartureKey = stopFieldKey(index - 1, 'departureDate');
     const next = removeTripStop(value, index, {
@@ -764,33 +746,34 @@ function TripFields({
   return (
     <fieldset disabled={disabled} style={{ border: 0, margin: 0, minWidth: 0, padding: 0 }}>
       <div className="form-stack">
+      <div className="form-grid form-grid-two">
+        <Field label="Start date" fieldState={fieldStates?.get('trip.startDate')}><DatePickerInput locale={locale} required max={value.endDate || undefined} value={value.startDate} onValueChange={(date) => updateBoundary('start', date)} /></Field>
+        <Field label="End date" fieldState={fieldStates?.get('trip.endDate')}><DatePickerInput locale={locale} required min={value.startDate || undefined} value={value.endDate} onValueChange={(date) => updateBoundary('end', date)} /></Field>
+
+      </div>
+      <fieldset className="stops-editor">
+        <legend>Destinations</legend>
+        {(value.stops.at(-1)?.name.trim() ? [...value.stops, blankStop()] : value.stops).map((stop, index) => (
+          <div className="draft-stop" role="group" aria-label={`Destination ${index + 1}`} key={stop.draftId ?? `draft-stop-${index}`}>
+            <div className="draft-stop-heading">
+              <strong>{index === 0 ? 'Your destination' : stop.name ? `Destination ${index + 1}` : 'Anywhere else?'}</strong>
+              <button className="icon-button remove-destination" type="button" disabled={value.stops.length === 1 || index === value.stops.length} aria-label={`Remove destination ${index + 1}`} onClick={() => removeStop(index)}>×</button>
+            </div>
+            <div className="destination-fields">
+              <Field label="City" fieldState={fieldStates?.get(stopFieldKey(index, 'name'))}><input value={stop.name} onChange={(event) => updateStop(index, { name: event.target.value })} onBlur={(event) => { const city = event.currentTarget.value.trim(); if (!city) return; onChange({ ...value, stops: value.stops.map((item, stopIndex) => stopIndex === index ? { ...item, name: city, localityKind: 'CITY', cityResolution: 'RESOLVED' } : item) }); onFieldConfirmed?.(stopFieldKey(index, 'name')); onFieldConfirmed?.(stopFieldKey(index, 'localityKind')); onFieldConfirmed?.(stopFieldKey(index, 'cityResolution')); }} placeholder="A specific city" /></Field>
+              {(value.stops.filter((item) => item.name.trim()).length > 1 || (stop.arrivalDate && stop.arrivalDate !== value.startDate) || (stop.departureDate && stop.departureDate !== value.endDate) || fieldStates?.get(stopFieldKey(index, 'arrivalDate'))?.blocking || fieldStates?.get(stopFieldKey(index, 'departureDate'))?.blocking) && stop.name.trim() ? <><Field label="Start" fieldState={fieldStates?.get(stopFieldKey(index, 'arrivalDate'))}><DatePickerInput locale={locale} min={value.startDate || undefined} max={(stop.departureDate ?? value.endDate) || undefined} value={stop.arrivalDate ?? ''} onValueChange={(date) => updateStopDate(index, 'arrivalDate', date)} /></Field>
+              <Field label="End" fieldState={fieldStates?.get(stopFieldKey(index, 'departureDate'))}><DatePickerInput locale={locale} min={(stop.arrivalDate ?? value.startDate) || undefined} max={value.endDate || undefined} value={stop.departureDate ?? ''} onValueChange={(date) => updateStopDate(index, 'departureDate', date)} /></Field></> : null}
+            </div>
+          </div>
+        ))}
+
+      </fieldset>
       <div className="form-grid">
         <Field label="Trip name" fieldState={fieldStates?.get('trip.name')}>
           <input maxLength={160} value={value.name} onChange={(event) => updateTripField('name', event.target.value)} placeholder="A name you’ll recognize" />
         </Field>
       </div>
-      <div className="form-grid form-grid-three">
-        <Field label="Start date" fieldState={fieldStates?.get('trip.startDate')}><DatePickerInput locale={locale} required max={value.endDate || undefined} value={value.startDate} onValueChange={(date) => updateBoundary('start', date)} /></Field>
-        <Field label="End date" fieldState={fieldStates?.get('trip.endDate')}><DatePickerInput locale={locale} required min={value.startDate || undefined} value={value.endDate} onValueChange={(date) => updateBoundary('end', date)} /></Field>
-        <Field label="Travelers (optional)" fieldState={fieldStates?.get('trip.travelerCount')}><input type="number" min="1" max="20" value={value.travelerCount ?? ''} onChange={(event) => updateTripField('travelerCount', event.target.value ? Number(event.target.value) : null)} placeholder="Not provided" /></Field>
-      </div>
-      <fieldset className="stops-editor">
-        <legend>Destinations</legend>
-        {value.stops.map((stop, index) => (
-          <div className="draft-stop" role="group" aria-label={`Destination ${index + 1}`} key={stop.draftId ?? `draft-stop-${index}`}>
-            <div className="draft-stop-heading">
-              <strong>Destination {index + 1}</strong>
-              <button className="icon-button remove-destination" type="button" disabled={value.stops.length === 1} aria-label={`Remove destination ${index + 1}`} onClick={() => removeStop(index)}>×</button>
-            </div>
-            <div className="destination-fields">
-              <Field label="City" fieldState={fieldStates?.get(stopFieldKey(index, 'name'))}><input value={stop.name} onChange={(event) => updateStop(index, { name: event.target.value })} onBlur={(event) => { const city = event.currentTarget.value.trim(); if (!city) return; onChange({ ...value, stops: value.stops.map((item, stopIndex) => stopIndex === index ? { ...item, name: city, localityKind: 'CITY', cityResolution: 'RESOLVED' } : item) }); onFieldConfirmed?.(stopFieldKey(index, 'name')); onFieldConfirmed?.(stopFieldKey(index, 'localityKind')); onFieldConfirmed?.(stopFieldKey(index, 'cityResolution')); }} placeholder="A specific city" /></Field>
-              <Field label="Start" fieldState={fieldStates?.get(stopFieldKey(index, 'arrivalDate'))}><DatePickerInput locale={locale} min={value.startDate || undefined} max={(stop.departureDate ?? value.endDate) || undefined} value={stop.arrivalDate ?? ''} onValueChange={(date) => updateStopDate(index, 'arrivalDate', date)} /></Field>
-              <Field label="End" fieldState={fieldStates?.get(stopFieldKey(index, 'departureDate'))}><DatePickerInput locale={locale} min={(stop.arrivalDate ?? value.startDate) || undefined} max={value.endDate || undefined} value={stop.departureDate ?? ''} onValueChange={(date) => updateStopDate(index, 'departureDate', date)} /></Field>
-            </div>
-          </div>
-        ))}
-        <button className="button-secondary add-destination" type="button" onClick={addStop}>+ Add destination</button>
-      </fieldset>
+
       </div>
     </fieldset>
   );
@@ -909,7 +892,7 @@ function CreateTripDialog({
   const [error, setError] = useState<string | null>(null);
   const minimumViable = isTripMinimumViable(form, fieldStates, questions);
   const blockingQuestions = questions.filter((question) => question.blocking);
-  const optionalQuestions = questions.filter((question) => !question.blocking);
+  const optionalQuestions = questions.filter((question) => !question.blocking && !question.fieldPaths.every((path) => path === 'trip.travelerCount'));
   const omittedStops = form.stops.filter((stop) => {
     const hasVisibleIdea = Boolean(stop.name.trim() || stop.locationText?.trim());
     const isResolvedCity = Boolean(
@@ -1309,7 +1292,7 @@ function HomeDraftComposer({ onDraft }: { onDraft: (draft: TripDraft, prompt: st
       <div>
         <p className="section-kicker">Start with an idea</p>
         <h2 id="home-compose-title">Describe your trip</h2>
-        <p>Share the places, dates, and travelers you already know. You can edit every detail before creating it.</p>
+        <p>Share the places and dates you already know. You can edit every detail before creating it.</p>
       </div>
       <form onSubmit={(event) => void generateDraft(event)} aria-busy={busy}>
         <label htmlFor="home-trip-prompt">What do you have in mind?</label>
@@ -1340,7 +1323,7 @@ function TripEditor({ trip, onClose, onSaved }: { trip: Trip; onClose: () => voi
     <Dialog title="Edit trip essentials" onClose={onClose} wide>
       <form onSubmit={(event) => void save(event)} aria-busy={busy}><div className="form-stack">
         <Field label="Trip name"><input required value={input.name} onChange={(e) => setInput({ ...input, name: e.target.value })} /></Field>
-        <div className="form-grid form-grid-three"><Field label="Start date"><DatePickerInput required max={input.endDate || undefined} value={input.startDate} onValueChange={(date) => setInput({ ...input, startDate: date })} /></Field><Field label="End date"><DatePickerInput required min={input.startDate} value={input.endDate} onValueChange={(date) => setInput({ ...input, endDate: date })} /></Field><Field label="Travelers (optional)"><input type="number" min="1" max="20" value={input.travelerCount ?? ''} onChange={(e) => setInput({ ...input, travelerCount: e.target.value ? Number(e.target.value) : null })} /></Field></div>
+        <div className="form-grid form-grid-three"><Field label="Start date"><DatePickerInput required max={input.endDate || undefined} value={input.startDate} onValueChange={(date) => setInput({ ...input, startDate: date })} /></Field><Field label="End date"><DatePickerInput required min={input.startDate} value={input.endDate} onValueChange={(date) => setInput({ ...input, endDate: date })} /></Field></div>
       </div>{error ? <p className="form-error" role="alert">{error}</p> : null}<footer className="dialog-footer"><button className="button-text" type="button" onClick={onClose}>Cancel</button><button className="button-primary" type="submit" disabled={busy || unchanged}>{busy ? 'Saving…' : 'Save changes'}</button></footer></form>
     </Dialog>
   );
@@ -1349,7 +1332,7 @@ function TripEditor({ trip, onClose, onSaved }: { trip: Trip; onClose: () => voi
 type EntityEditor =
   | { kind: 'trip' }
   | { kind: 'stop'; value?: TripStop }
-  | { kind: 'transport'; value?: TransportLeg; fromStopId?: string; toStopId?: string }
+  | { kind: 'transport'; value?: TransportLeg; fromStopId?: string | null; toStopId?: string | null }
   | { kind: 'stay'; value?: Stay; stopId?: string }
   | { kind: 'activity'; value?: Activity; stopId?: string }
   | null;
@@ -1396,19 +1379,21 @@ function StopEditor({ trip, stop, onClose, onSaved }: { trip: Trip; stop?: TripS
 }
 
 function transportTitle(fromStop: TripStop | undefined, toStop: TripStop | undefined): string {
-  if (!fromStop || !toStop || fromStop.id === toStop.id) return '';
-  return `${fromStop.name} to ${toStop.name}`;
+  if (fromStop && toStop && fromStop.id === toStop.id) return '';
+  return `${fromStop?.name ?? 'Origin'} to ${toStop?.name ?? 'Return point'}`;
 }
 
-function TransportEditor({ trip, leg, fromStopId, toStopId, onClose, onSaved }: { trip: Trip; leg?: TransportLeg; fromStopId?: string; toStopId?: string; onClose: () => void; onSaved: (trip: Trip) => void }) {
+function TransportEditor({ trip, leg, fromStopId, toStopId, onClose, onSaved }: { trip: Trip; leg?: TransportLeg; fromStopId?: string | null; toStopId?: string | null; onClose: () => void; onSaved: (trip: Trip) => void }) {
   const sortedStops = sortStopsByDate(trip.stops);
-  const localTimezone = deviceTimezone();
-  const initialFromStopId = leg?.fromStopId ?? fromStopId ?? sortedStops[0]?.id ?? '';
-  const initialToStopId = leg?.toStopId ?? toStopId ?? sortedStops[1]?.id ?? sortedStops[0]?.id ?? '';
+  const localTimezone = leg?.timezone ?? deviceTimezone();
+  const initialFromStopId = (leg ? leg.fromStopId : fromStopId !== undefined ? fromStopId : sortedStops[0]?.id) ?? '';
+  const initialToStopId = (leg ? leg.toStopId : toStopId !== undefined ? toStopId : sortedStops[1]?.id) ?? '';
   const initialFromStop = sortedStops.find((stop) => stop.id === initialFromStopId);
   const initialToStop = sortedStops.find((stop) => stop.id === initialToStopId);
   const initialTimes = transportDateTimesForStops(initialFromStop, initialToStop);
   const initialInput = {
+    fromLocation: leg?.fromLocation ?? '',
+    toLocation: leg?.toLocation ?? '',
     fromStopId: initialFromStopId,
     toStopId: initialToStopId,
     mode: leg?.mode ?? '',
@@ -1468,13 +1453,17 @@ function TransportEditor({ trip, leg, fromStopId, toStopId, onClose, onSaved }: 
     try {
       const normalized = {
         ...input,
+        fromStopId: input.fromStopId || null,
+        toStopId: input.toStopId || null,
+        fromLocation: input.fromStopId ? null : input.fromLocation,
+        toLocation: input.toStopId ? null : input.toLocation,
         departureTime: leg
           ? dateTimeLocalToIsoPreserving(input.departureTime, input.timezone, leg.departureTime)
           : dateTimeLocalToIso(input.departureTime, input.timezone),
         arrivalTime: leg
           ? dateTimeLocalToIsoPreserving(input.arrivalTime, input.timezone, leg.arrivalTime)
           : dateTimeLocalToIso(input.arrivalTime, input.timezone),
-        timezone: leg && timesUnchanged ? leg.timezone : input.timezone,
+        timezone: leg && timesUnchanged && input.timezone === initialInput.timezone ? leg.timezone : input.timezone,
       };
       const variables = leg ? { id: leg.id, expectedRevision: trip.revision, input: normalized } : { tripId: trip.id, expectedRevision: trip.revision, input: normalized };
       const data = await graphqlRequest<Record<string, Trip>, Record<string, unknown>>(leg ? operations.updateTransport : operations.addTransport, variables);
@@ -1485,11 +1474,13 @@ function TransportEditor({ trip, leg, fromStopId, toStopId, onClose, onSaved }: 
   return (
     <Dialog title={leg ? 'Edit transport' : 'Add transport'} onClose={onClose}>
       <form onSubmit={(event) => void save(event)} aria-busy={busy}><div className="form-stack">
-        <div className="form-grid form-grid-two"><Field label="From" fillStatus={autoFields.fromStopId ? 'auto' : undefined}><select value={input.fromStopId} onChange={(e) => selectRoute('fromStopId', e.target.value)}>{trip.stops.map((stop) => <option value={stop.id} key={stop.id} disabled={stop.id === input.toStopId}>{stop.name}</option>)}</select></Field><Field label="To" fillStatus={autoFields.toStopId ? 'auto' : undefined}><select value={input.toStopId} onChange={(e) => selectRoute('toStopId', e.target.value)}>{trip.stops.map((stop) => <option value={stop.id} key={stop.id} disabled={stop.id === input.fromStopId}>{stop.name}</option>)}</select></Field></div>
+        <div className="form-grid form-grid-two"><Field label="From" fillStatus={autoFields.fromStopId ? 'auto' : undefined}><select value={input.fromStopId} onChange={(e) => selectRoute('fromStopId', e.target.value)}><option value="">Home / other origin</option>{trip.stops.map((stop) => <option value={stop.id} key={stop.id} disabled={stop.id === input.toStopId}>{stop.name}</option>)}</select></Field><Field label="To" fillStatus={autoFields.toStopId ? 'auto' : undefined}><select value={input.toStopId} onChange={(e) => selectRoute('toStopId', e.target.value)}><option value="">Home / return point</option>{trip.stops.map((stop) => <option value={stop.id} key={stop.id} disabled={stop.id === input.fromStopId}>{stop.name}</option>)}</select></Field></div>
+        {!input.fromStopId ? <Field label="Origin"><input required value={input.fromLocation} onChange={(e) => setInput({ ...input, fromLocation: e.target.value })} placeholder="Home city or departure airport" /></Field> : null}
+        {!input.toStopId ? <Field label="Return point"><input required value={input.toLocation} onChange={(e) => setInput({ ...input, toLocation: e.target.value })} placeholder="Home city or arrival airport" /></Field> : null}
         <div className="form-grid form-grid-two"><Field label="Mode"><input required value={input.mode} onChange={(e) => setInput({ ...input, mode: e.target.value })} placeholder="Train, flight, ferry…" /></Field><Field label="Title" fillStatus={autoFields.title ? 'auto' : undefined}><input required value={input.title} onChange={(e) => { setDirtySuggested((current) => ({ ...current, title: true })); setAutoFields((current) => ({ ...current, title: false })); setInput({ ...input, title: e.target.value }); }} /></Field></div>
-        <Field label="Details"><textarea rows={2} value={input.details ?? ''} onChange={(e) => setInput({ ...input, details: e.target.value || null })} placeholder="Booking reference, route notes, or anything useful" /></Field>
+        <details className="advanced-details"><summary>Notes and booking details</summary><Field label="Details"><textarea rows={2} value={input.details ?? ''} onChange={(e) => setInput({ ...input, details: e.target.value || null })} placeholder="Booking reference, route notes, or anything useful" /></Field></details>
         <div className="form-grid form-grid-two"><Field label="Departure" fillStatus={autoFields.departureTime ? 'suggested' : undefined}><DatePickerInput includeTime value={input.departureTime ?? ''} onValueChange={(dateTime) => { setDirtySuggested((current) => ({ ...current, departureTime: true })); setAutoFields((current) => ({ ...current, departureTime: false })); setInput({ ...input, departureTime: dateTime || null }); }} /></Field><Field label="Arrival" fillStatus={autoFields.arrivalTime ? 'suggested' : undefined}><DatePickerInput includeTime value={input.arrivalTime ?? ''} onValueChange={(dateTime) => { setDirtySuggested((current) => ({ ...current, arrivalTime: true })); setAutoFields((current) => ({ ...current, arrivalTime: false })); setInput({ ...input, arrivalTime: dateTime || null }); }} /></Field></div>
-        <p className="local-time-note">Times use your device’s local timezone.</p>
+        <details className="advanced-details"><summary>Timezone · {input.timezone ?? 'device timezone'}</summary><Field label="Timezone" hint="Use the timezone for these times, for example Europe/London or Asia/Tokyo."><input value={input.timezone ?? ''} onChange={(e) => setInput({ ...input, timezone: e.target.value || null })} /></Field></details>
         {routeInvalid ? <p className="form-error">Choose two different destinations for this route.</p> : null}
       </div>{error ? <p className="form-error" role="alert">{error}</p> : null}<footer className="dialog-footer"><button className="button-text" type="button" onClick={onClose}>Cancel</button><button className="button-primary" disabled={busy || routeInvalid || unchanged} type="submit">{busy ? 'Saving…' : 'Save transport'}</button></footer></form>
     </Dialog>
@@ -1498,7 +1489,7 @@ function TransportEditor({ trip, leg, fromStopId, toStopId, onClose, onSaved }: 
 
 function StayEditor({ trip, stay, stopId, onClose, onSaved }: { trip: Trip; stay?: Stay; stopId?: string; onClose: () => void; onSaved: (trip: Trip) => void }) {
   const sortedStops = sortStopsByDate(trip.stops);
-  const localTimezone = deviceTimezone();
+  const localTimezone = stay?.timezone ?? deviceTimezone();
   const initialStopId = stay?.stopId ?? stopId ?? sortedStops[0]?.id ?? '';
   const initialStop = sortedStops.find((stop) => stop.id === initialStopId);
   const initialDefaults = stayDateTimesForStop(initialStop);
@@ -1555,7 +1546,7 @@ function StayEditor({ trip, stay, stopId, onClose, onSaved }: { trip: Trip; stay
         checkOut: stay
           ? dateTimeLocalToIsoPreserving(input.checkOut, input.timezone, stay.checkOut)
           : dateTimeLocalToIso(input.checkOut, input.timezone),
-        timezone: stay && timesUnchanged ? stay.timezone : input.timezone,
+        timezone: stay && timesUnchanged && input.timezone === initialInput.timezone ? stay.timezone : input.timezone,
       };
       const variables = stay ? { id: stay.id, expectedRevision: trip.revision, input: normalized } : { tripId: trip.id, expectedRevision: trip.revision, input: normalized };
       const data = await graphqlRequest<Record<string, Trip>, Record<string, unknown>>(stay ? operations.updateStay : operations.addStay, variables);
@@ -1566,10 +1557,10 @@ function StayEditor({ trip, stay, stopId, onClose, onSaved }: { trip: Trip; stay
   return (
     <Dialog title={stay ? 'Edit stay' : 'Add stay'} onClose={onClose}>
       <form onSubmit={(event) => void save(event)} aria-busy={busy}><div className="form-stack">
-        <Field label="Destination" fillStatus={autoFields.stopId ? 'auto' : undefined}><select value={input.stopId} onChange={(e) => selectStop(e.target.value)}>{trip.stops.map((stop) => <option value={stop.id} key={stop.id}>{stop.name}</option>)}</select></Field>
+        <details className="advanced-details"><summary>{trip.stops.find((stop) => stop.id === input.stopId)?.name} · change destination</summary><Field label="Destination" fillStatus={autoFields.stopId ? 'auto' : undefined}><select value={input.stopId} onChange={(e) => selectStop(e.target.value)}>{trip.stops.map((stop) => <option value={stop.id} key={stop.id}>{stop.name}</option>)}</select></Field></details>
         <Field label="Stay name" fillStatus={autoFields.name ? 'auto' : undefined}><input required value={input.name} onChange={(e) => { setDirtySuggested((current) => ({ ...current, name: true })); setAutoFields((current) => ({ ...current, name: false })); setInput({ ...input, name: e.target.value }); }} /></Field>
         <div className="form-grid form-grid-two"><Field label="Check-in" fillStatus={autoFields.checkIn ? 'suggested' : undefined}><DatePickerInput includeTime value={input.checkIn ?? ''} onValueChange={(dateTime) => { setDirtySuggested((current) => ({ ...current, checkIn: true })); setAutoFields((current) => ({ ...current, checkIn: false })); setInput({ ...input, checkIn: dateTime || null }); }} /></Field><Field label="Check-out" fillStatus={autoFields.checkOut ? 'suggested' : undefined}><DatePickerInput includeTime value={input.checkOut ?? ''} onValueChange={(dateTime) => { setDirtySuggested((current) => ({ ...current, checkOut: true })); setAutoFields((current) => ({ ...current, checkOut: false })); setInput({ ...input, checkOut: dateTime || null }); }} /></Field></div>
-        <p className="local-time-note">Times use your device’s local timezone.</p>
+        <details className="advanced-details"><summary>Timezone · {input.timezone ?? 'device timezone'}</summary><Field label="Timezone" hint="Use the timezone for these times, for example Europe/London or Asia/Tokyo."><input value={input.timezone ?? ''} onChange={(e) => setInput({ ...input, timezone: e.target.value || null })} /></Field></details>
       </div>{error ? <p className="form-error" role="alert">{error}</p> : null}<footer className="dialog-footer"><button className="button-text" type="button" onClick={onClose}>Cancel</button><button className="button-primary" disabled={busy || unchanged} type="submit">{busy ? 'Saving…' : 'Save stay'}</button></footer></form>
     </Dialog>
   );
@@ -1577,39 +1568,34 @@ function StayEditor({ trip, stay, stopId, onClose, onSaved }: { trip: Trip; stay
 
 function ActivityEditor({ trip, activity, stopId, onClose, onSaved }: { trip: Trip; activity?: Activity; stopId?: string; onClose: () => void; onSaved: (trip: Trip) => void }) {
   const sortedStops = sortStopsByDate(trip.stops);
-  const localTimezone = deviceTimezone();
+  const localTimezone = activity?.timezone ?? deviceTimezone();
   const initialStopId = activity?.stopId ?? stopId ?? sortedStops[0]?.id ?? '';
-  const initialStop = sortedStops.find((stop) => stop.id === initialStopId);
-  const suggestedTime = activityDateTimeForStop(initialStop);
   const initialInput = {
     stopId: initialStopId,
     title: activity?.title ?? '',
     status: activity?.status ?? 'IDEA' as Activity['status'],
-    scheduledAt: activity ? isoToDateTimeLocal(activity.scheduledAt, localTimezone) : suggestedTime,
+    scheduledAt: activity ? isoToDateTimeLocal(activity.scheduledAt, localTimezone) : null,
     timezone: localTimezone,
   };
   const [input, setInput] = useState(() => initialInput);
-  const [scheduledDirty, setScheduledDirty] = useState(Boolean(activity));
   const [autoFields, setAutoFields] = useState(() => ({
     stopId: !activity && Boolean(initialStopId),
     status: !activity,
-    scheduledAt: !activity && Boolean(suggestedTime),
+    scheduledAt: false,
   }));
+  const suggestedTime = activityDateTimeForStop(sortedStops.find((stop) => stop.id === input.stopId));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const unchanged = Boolean(activity && JSON.stringify(input) === JSON.stringify(initialInput));
   const scheduledTimeUnchanged = input.scheduledAt === initialInput.scheduledAt;
   function selectStop(nextStopId: string) {
-    const nextTime = activityDateTimeForStop(sortedStops.find((stop) => stop.id === nextStopId));
     setInput((current) => ({
       ...current,
       stopId: nextStopId,
-      scheduledAt: scheduledDirty ? current.scheduledAt : nextTime,
     }));
     setAutoFields((current) => ({
       ...current,
       stopId: false,
-      scheduledAt: scheduledDirty ? current.scheduledAt : Boolean(nextTime),
     }));
   }
 
@@ -1623,7 +1609,7 @@ function ActivityEditor({ trip, activity, stopId, onClose, onSaved }: { trip: Tr
         scheduledAt: activity
           ? dateTimeLocalToIsoPreserving(input.scheduledAt, input.timezone, activity.scheduledAt)
           : dateTimeLocalToIso(input.scheduledAt, input.timezone),
-        timezone: activity && scheduledTimeUnchanged ? activity.timezone : input.timezone,
+        timezone: activity && scheduledTimeUnchanged && input.timezone === initialInput.timezone ? activity.timezone : input.timezone,
       };
       const variables = activity ? { id: activity.id, expectedRevision: trip.revision, input: normalized } : { tripId: trip.id, expectedRevision: trip.revision, input: normalized };
       const data = await graphqlRequest<Record<string, Trip>, Record<string, unknown>>(activity ? operations.updateActivity : operations.addActivity, variables);
@@ -1634,10 +1620,11 @@ function ActivityEditor({ trip, activity, stopId, onClose, onSaved }: { trip: Tr
   return (
     <Dialog title={activity ? 'Edit activity' : 'Add activity'} onClose={onClose}>
       <form onSubmit={(event) => void save(event)} aria-busy={busy}><div className="form-stack">
-        <Field label="Destination" fillStatus={autoFields.stopId ? 'auto' : undefined}><select value={input.stopId} onChange={(e) => selectStop(e.target.value)}>{trip.stops.map((stop) => <option value={stop.id} key={stop.id}>{stop.name}</option>)}</select></Field>
+        <details className="advanced-details"><summary>{trip.stops.find((stop) => stop.id === input.stopId)?.name} · change destination</summary><Field label="Destination" fillStatus={autoFields.stopId ? 'auto' : undefined}><select value={input.stopId} onChange={(e) => selectStop(e.target.value)}>{trip.stops.map((stop) => <option value={stop.id} key={stop.id}>{stop.name}</option>)}</select></Field></details>
         <Field label="Activity title"><input required value={input.title} onChange={(e) => setInput({ ...input, title: e.target.value })} /></Field>
-        <div className="form-grid form-grid-two"><Field label="Status" fillStatus={autoFields.status ? 'auto' : undefined}><select value={input.status} onChange={(e) => { setAutoFields((current) => ({ ...current, status: false })); setInput({ ...input, status: e.target.value as Activity['status'] }); }}><option value="IDEA">Idea</option><option value="PLANNED">Planned</option><option value="BOOKED">Booked</option><option value="DONE">Done</option></select></Field><Field label="Scheduled time" fillStatus={autoFields.scheduledAt ? 'suggested' : undefined}><DatePickerInput includeTime value={input.scheduledAt ?? ''} onValueChange={(dateTime) => { setScheduledDirty(true); setAutoFields((current) => ({ ...current, scheduledAt: false })); setInput({ ...input, scheduledAt: dateTime || null }); }} /></Field></div>
-        <p className="local-time-note">Times use your device’s local timezone.</p>
+        <div className="form-grid form-grid-two"><Field label="Booking status" fillStatus={autoFields.status ? 'auto' : undefined}><select value={input.status} onChange={(e) => { setAutoFields((current) => ({ ...current, status: false })); setInput({ ...input, status: e.target.value as Activity['status'] }); }}><option value="IDEA">Idea</option><option value="PLANNED">Planned · not booked</option><option value="BOOKED">Booked</option><option value="DONE">Done</option></select></Field><Field label="Scheduled time (optional)" hint="Leave blank to keep this activity in the idea pool." fillStatus={autoFields.scheduledAt ? 'suggested' : undefined}><DatePickerInput includeTime value={input.scheduledAt ?? ''} onValueChange={(dateTime) => { setAutoFields((current) => ({ ...current, scheduledAt: false })); setInput({ ...input, scheduledAt: dateTime || null }); }} /></Field></div>
+        {!input.scheduledAt && suggestedTime ? <button className="button-text" type="button" onClick={() => { setInput({ ...input, scheduledAt: suggestedTime }); setAutoFields((current) => ({ ...current, scheduledAt: true })); }}>Use first day · {suggestedTime.replace('T', ' at ')}</button> : null}
+        <details className="advanced-details"><summary>Timezone · {input.timezone ?? 'device timezone'}</summary><Field label="Timezone" hint="Use the timezone for these times, for example Europe/London or Asia/Tokyo."><input value={input.timezone ?? ''} onChange={(e) => setInput({ ...input, timezone: e.target.value || null })} /></Field></details>
       </div>{error ? <p className="form-error" role="alert">{error}</p> : null}<footer className="dialog-footer"><button className="button-text" type="button" onClick={onClose}>Cancel</button><button className="button-primary" disabled={busy || unchanged} type="submit">{busy ? 'Saving…' : 'Save activity'}</button></footer></form>
     </Dialog>
   );
@@ -1647,6 +1634,15 @@ function Section({ title, kicker, action, children }: { title: string; kicker: s
   return <section className="detail-section"><header className="section-heading"><div><p className="section-kicker">{kicker}</p><h2>{title}</h2></div>{action}</header>{children}</section>;
 }
 
+function TransportSection({ trip, fromStopId, toStopId, title, legs, onEdit, onRemove }: { trip: Trip; fromStopId: string | null; toStopId: string | null; title: string; legs: TransportLeg[]; onEdit: (editor: EntityEditor) => void; onRemove: (id: string) => void }) {
+  const add = () => onEdit({ kind: 'transport', fromStopId, toStopId });
+  const endpoint = (id: string | null, location: string | null) => trip.stops.find((stop) => stop.id === id)?.name ?? location;
+  return <section className="transport-bridge" aria-label={title}><div className="transport-marker" aria-hidden="true">↘</div><div className="transport-content">
+    <header><h3>{title}</h3>{legs.length ? <button className="button-text" type="button" onClick={add}>+ Add another</button> : null}</header>
+    {legs.length ? legs.map((leg) => <article className="transport-item" key={leg.id}><button className="record-main" type="button" onClick={() => onEdit({ kind: 'transport', value: leg })}><span className="entity-label">{leg.mode}</span><strong>{leg.title}</strong><small>{endpoint(leg.fromStopId, leg.fromLocation)} → {endpoint(leg.toStopId, leg.toLocation)}</small><small>{formatDateTime(leg.departureTime, leg.timezone)} → {formatDateTime(leg.arrivalTime, leg.timezone)}</small>{leg.details ? <small>{leg.details}</small> : null}</button><button className="button-text button-danger" type="button" aria-label={`Remove ${leg.title}`} onClick={() => onRemove(leg.id)}>Remove</button></article>) : <button className="record-main record-empty" type="button" onClick={add}><strong>+ Plan transport</strong><small>Flight, train, car, ferry or another way there</small></button>}
+  </div></section>;
+}
+
 function TripDetail({ trip, onBack, onChanged, onDeleted, notify }: { trip: Trip; onBack: () => void; onChanged: (trip: Trip) => void; onDeleted: () => void; notify: (notice: Notice) => void }) {
   const [editor, setEditor] = useState<EntityEditor>(null);
   const sortedStops = useMemo(() => sortStopsByDate(trip.stops), [trip.stops]);
@@ -1654,7 +1650,6 @@ function TripDetail({ trip, onBack, onChanged, onDeleted, notify }: { trip: Trip
   const activeExpandedStopId = expandedStopId === null || sortedStops.some((stop) => stop.id === expandedStopId)
     ? expandedStopId
     : sortedStops[0]?.id ?? null;
-  const stopNames = useMemo(() => new Map(sortedStops.map((stop) => [stop.id, stop.name])), [sortedStops]);
 
   async function removeEntity(kind: 'stop' | 'transport' | 'stay' | 'activity', id: string) {
     const warning = kind === 'stop'
@@ -1682,14 +1677,14 @@ function TripDetail({ trip, onBack, onChanged, onDeleted, notify }: { trip: Trip
     <main id="main-content" className="detail-page" tabIndex={-1}>
       <button className="back-button" type="button" onClick={onBack}>← All trips</button>
 
-      <section className="trip-hero"><div><h1>{trip.name}</h1><p>{formatDateRange(trip.startDate, trip.endDate)} · {formatTravelerCount(trip.travelerCount)}</p></div><div className="hero-actions"><button className="button-secondary" type="button" onClick={() => setEditor({ kind: 'trip' })}>Edit trip</button><button className="button-text button-danger" type="button" onClick={() => void deleteTrip()}>Delete</button></div></section>
+      <section className="trip-hero"><div><h1>{trip.name}</h1><p>{formatDateRange(trip.startDate, trip.endDate)}</p></div><div className="hero-actions"><button className="button-secondary" type="button" onClick={() => setEditor({ kind: 'trip' })}>Edit trip</button><button className="button-text button-danger" type="button" onClick={() => void deleteTrip()}>Delete</button></div></section>
 
       <Section title="Your itinerary" kicker="Destinations by date" action={<button className="button-secondary" type="button" onClick={() => setEditor({ kind: 'stop' })}>+ Add destination</button>}>
         <div className="itinerary-timeline">
+          {sortedStops[0] ? <TransportSection trip={trip} fromStopId={null} toStopId={sortedStops[0].id} title="Getting there" legs={trip.transportLegs.filter((leg) => !leg.fromStopId)} onEdit={setEditor} onRemove={(id) => void removeEntity('transport', id)} /> : null}
           {sortedStops.map((stop, index) => {
             const isExpanded = activeExpandedStopId === stop.id;
             const destinationStays = trip.stays.filter((stay) => stay.stopId === stop.id);
-            const destinationActivities = trip.activities.filter((activity) => activity.stopId === stop.id);
             const outgoingLegs = trip.transportLegs.filter((leg) => leg.fromStopId === stop.id);
             const nextStop = sortedStops[index + 1];
             return (
@@ -1706,25 +1701,18 @@ function TripDetail({ trip, onBack, onChanged, onDeleted, notify }: { trip: Trip
                   {isExpanded ? (
                     <div className="destination-details" id={`destination-${stop.id}`}>
                       <section className="destination-zone" aria-labelledby={`stays-${stop.id}`}>
-                        <header><div><p className="entity-label">Accommodation</p><h3 id={`stays-${stop.id}`}>Stays</h3></div><button className="button-secondary" type="button" onClick={() => setEditor({ kind: 'stay', stopId: stop.id })}>+ Add stay</button></header>
-                        {destinationStays.length ? <div className="nested-entity-list">{destinationStays.map((stay) => <article className="nested-entity" key={stay.id}><div><strong>{stay.name}</strong><small>{formatDateTime(stay.checkIn, stay.timezone)} → {formatDateTime(stay.checkOut, stay.timezone)}</small></div><div className="entity-actions"><button className="button-text" type="button" onClick={() => setEditor({ kind: 'stay', value: stay })}>Edit</button><button className="button-text button-danger" type="button" onClick={() => void removeEntity('stay', stay.id)}>Remove</button></div></article>)}</div> : <p className="zone-empty">No accommodation added for {stop.name} yet.</p>}
+                        <header><div><p className="entity-label">Accommodation</p><h3 id={`stays-${stop.id}`}>Your stay</h3></div>{destinationStays.length ? <button className="button-secondary" type="button" onClick={() => setEditor({ kind: 'stay', stopId: stop.id })}>+ Add another</button> : null}</header>
+                        {destinationStays.length ? <div className="nested-entity-list">{destinationStays.map((stay) => <article className="nested-entity" key={stay.id}><button className="record-main" type="button" onClick={() => setEditor({ kind: 'stay', value: stay })}><strong>{stay.name}</strong><small>{formatDateTime(stay.checkIn, stay.timezone)} → {formatDateTime(stay.checkOut, stay.timezone)}</small></button><button className="button-text button-danger" type="button" aria-label={`Remove ${stay.name}`} onClick={() => void removeEntity('stay', stay.id)}>Remove</button></article>)}</div> : <button className="record-main record-empty" type="button" onClick={() => setEditor({ kind: 'stay', stopId: stop.id })}><strong>Where are you staying?</strong><small>+ Add accommodation in {stop.name}</small></button>}
                       </section>
                       <section className="destination-zone" aria-labelledby={`activities-${stop.id}`}>
                         <header><div><p className="entity-label">Things to do</p><h3 id={`activities-${stop.id}`}>Activities</h3></div><button className="button-secondary" type="button" onClick={() => setEditor({ kind: 'activity', stopId: stop.id })}>+ Add activity</button></header>
-                        {destinationActivities.length ? <div className="nested-entity-list">{destinationActivities.map((activity) => <article className="nested-entity" key={activity.id}><div><span className={`entity-label activity-${activity.status.toLowerCase()}`}>{activity.status}</span><strong>{activity.title}</strong><small>{formatDateTime(activity.scheduledAt, activity.timezone)}</small></div><div className="entity-actions"><button className="button-text" type="button" onClick={() => setEditor({ kind: 'activity', value: activity })}>Edit</button><button className="button-text button-danger" type="button" onClick={() => void removeEntity('activity', activity.id)}>Remove</button></div></article>)}</div> : <p className="zone-empty">No activities added for {stop.name} yet.</p>}
+                        <ActivityPlanner trip={trip} stop={stop} onChanged={onChanged} onEdit={(activity) => setEditor({ kind: 'activity', value: activity })} onRemove={(id) => void removeEntity('activity', id)} />
                       </section>
                     </div>
                   ) : null}
                 </article>
-                {nextStop || outgoingLegs.length ? (
-                  <section className="transport-bridge" aria-label={nextStop ? `Transport from ${stop.name} to ${nextStop.name}` : `Transport from ${stop.name}`}>
-                    <div className="transport-marker" aria-hidden="true"><span>↘</span></div>
-                    <div className="transport-content">
-                      <header><div><p className="entity-label">Between destinations</p><h3>{nextStop ? `Travel to ${nextStop.name}` : `Leaving ${stop.name}`}</h3></div>{nextStop ? <button className="button-text" type="button" onClick={() => setEditor({ kind: 'transport', fromStopId: stop.id, toStopId: nextStop.id })}>+ Add transport</button> : null}</header>
-                      {outgoingLegs.length ? <div className="transport-list">{outgoingLegs.map((leg) => <article className="transport-item" key={leg.id}><div><span className="entity-label">{leg.mode}</span><strong>{leg.title}</strong><small>{stopNames.get(leg.fromStopId)} → {stopNames.get(leg.toStopId)} · {formatDateTime(leg.departureTime, leg.timezone)}{leg.details ? ` · ${leg.details}` : ''}</small></div><div className="entity-actions"><button className="button-text" type="button" onClick={() => setEditor({ kind: 'transport', value: leg })}>Edit</button><button className="button-text button-danger" type="button" onClick={() => void removeEntity('transport', leg.id)}>Remove</button></div></article>)}</div> : <p className="transport-empty">Transport isn’t set yet.</p>}
-                    </div>
-                  </section>
-                ) : null}
+                <TransportSection trip={trip} fromStopId={stop.id} toStopId={nextStop?.id ?? null} title={nextStop ? `On to ${nextStop.name}` : 'Getting home'} legs={outgoingLegs} onEdit={setEditor} onRemove={(id) => void removeEntity('transport', id)} />
+
               </div>
             );
           })}
@@ -1752,7 +1740,7 @@ function TripsOverview({ trips, onCreate, onDraft, onOpen }: { trips: Trip[]; on
           ) : (
             <section className="trips-grid" aria-label="Trips">{trips.map((trip) => {
               const stops = sortStopsByDate(trip.stops);
-              return <article className="trip-card-real" key={trip.id}><div className="trip-card-art" aria-hidden="true"><span>{stops[0]?.name.slice(0, 2).toUpperCase() ?? 'TD'}</span></div><div className="trip-card-content"><div><p className="trip-eyebrow">{formatDateRange(trip.startDate, trip.endDate)}</p><h2>{trip.name}</h2><p>{formatTravelerCount(trip.travelerCount)} · {stops.length} {stops.length === 1 ? 'destination' : 'destinations'}</p></div><div className="route-ribbon route-ribbon-card">{stops.map((stop, index) => <span key={stop.id}><i>{index + 1}</i>{stop.name}</span>)}</div><div className="trip-card-stats"><span>{trip.transportLegs.length} transport</span><span>{trip.stays.length} stays</span><span>{trip.activities.length} activities</span></div><button className="button-text trip-open" type="button" onClick={() => onOpen(trip.id)}>Open trip <span aria-hidden="true">→</span></button></div></article>;
+              return <article className="trip-card-real" key={trip.id}><div className="trip-card-art" aria-hidden="true"><span>{stops[0]?.name.slice(0, 2).toUpperCase() ?? 'TD'}</span></div><div className="trip-card-content"><div><p className="trip-eyebrow">{formatDateRange(trip.startDate, trip.endDate)}</p><h2>{trip.name}</h2><p>{stops.length} {stops.length === 1 ? 'destination' : 'destinations'}</p></div><div className="route-ribbon route-ribbon-card">{stops.map((stop, index) => <span key={stop.id}><i>{index + 1}</i>{stop.name}</span>)}</div><div className="trip-card-stats"><span>{trip.transportLegs.length} transport</span><span>{trip.stays.length} stays</span><span>{trip.activities.length} activities</span></div><button className="button-text trip-open" type="button" onClick={() => onOpen(trip.id)}>Open trip <span aria-hidden="true">→</span></button></div></article>;
             })}</section>
           )}
         </div>

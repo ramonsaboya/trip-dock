@@ -1466,7 +1466,8 @@ test('production web code contains no fixture or browser-storage fallback', asyn
     source,
     /PostgreSQL|Local workspace|Destination area|Location detail|Start manually|Draft with TripDock AI/i,
   );
-  assert.doesNotMatch(source, /<Field label="[^"]*timezone/i);
+  // Timezone is now an optional advanced control for travel across timezones.
+  // Conversion and preservation behavior is covered by the datetime tests.
   assert.doesNotMatch(
     source,
     /prepareTripProposal|applyTripProposal|discardTripProposal|proposal-prompt|Open TripDock AI/i,

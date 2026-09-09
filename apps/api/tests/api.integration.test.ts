@@ -13,6 +13,10 @@ import { FixtureAiGateway, UnconfiguredAiGateway, type AiGateway } from '../src/
 import type { AppDatabase } from '../src/db/client.js';
 import * as schema from '../src/db/schema.js';
 import { createApi } from '../src/graphql.js';
+import { exerciseItinerary } from './itinerary-scenarios.js';
+
+// pg-mem's timestamp adapter uses the process timezone; keep the test adapter deterministic.
+process.env.TZ = 'UTC';
 
 type Yoga = ReturnType<typeof createApi>;
 
@@ -24,6 +28,8 @@ type Harness = {
 
 async function createHarness(gateway: AiGateway = new UnconfiguredAiGateway()): Promise<Harness> {
   const memory = newDb({ autoCreateForeignKeyIndices: true });
+  memory.public.registerFunction({ name: 'trim', args: [DataType.text], returns: DataType.text, implementation: (value: string) => value.trim() });
+  memory.public.registerFunction({ name: 'length', args: [DataType.text], returns: DataType.integer, implementation: (value: string) => value.length });
   memory.public.registerFunction({
     name: 'gen_random_uuid',
     returns: DataType.uuid,
@@ -82,7 +88,7 @@ async function createHarness(gateway: AiGateway = new UnconfiguredAiGateway()): 
   const migrationFiles = (await readdir(migrationDirectory))
     .filter((name) => /^\d+_.+\.sql$/.test(name))
     .sort();
-  assert.equal(migrationFiles.length, 2, 'The slice should have a baseline and one evolution migration.');
+  assert.equal(migrationFiles.length, 3, 'Baseline and both data-preserving evolution migrations are applied.');
   for (const migrationFile of migrationFiles) {
     const migration = await readFile(join(migrationDirectory, migrationFile), 'utf8');
     for (const statement of migration.split('--> statement-breakpoint')) {
@@ -849,4 +855,10 @@ test('existing-trip AI proposal fields are absent from the GraphQL schema', asyn
   } finally {
     await harness.pool.end();
   }
+});
+
+test('single-destination arrival and return transport and activity assignment persist safely', async () => {
+  const harness = await createHarness();
+  try { await exerciseItinerary(harness.yoga); }
+  finally { await harness.pool.end(); }
 });

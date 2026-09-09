@@ -89,8 +89,10 @@ const typeDefs = /* GraphQL */ `
   type TransportLeg {
     id: ID!
     tripId: ID!
-    fromStopId: ID!
-    toStopId: ID!
+    fromStopId: ID
+    toStopId: ID
+    fromLocation: String
+    toLocation: String
     position: Int!
     mode: String!
     title: String!
@@ -222,8 +224,10 @@ const typeDefs = /* GraphQL */ `
   }
 
   input TransportLegInput {
-    fromStopId: ID!
-    toStopId: ID!
+    fromStopId: ID
+    toStopId: ID
+    fromLocation: String
+    toLocation: String
     mode: String!
     title: String!
     details: String
@@ -277,8 +281,10 @@ const updateTripInputSchema = z
 const stopInputSchema = tripDraftStopSchema;
 const transportInputSchema = z
   .object({
-    fromStopId: idSchema,
-    toStopId: idSchema,
+    fromStopId: idSchema.nullish().transform((value) => value ?? null),
+    toStopId: idSchema.nullish().transform((value) => value ?? null),
+    fromLocation: nullableText.optional().transform((value) => value ?? null),
+    toLocation: nullableText.optional().transform((value) => value ?? null),
     mode: requiredText.max(60),
     title: requiredText.max(200),
     details: nullableText,
@@ -287,6 +293,13 @@ const transportInputSchema = z
     timezone: timezoneSchema,
   })
   .strict();
+function validateTransportEndpoints(input: z.infer<typeof transportInputSchema>) {
+  if ((!input.fromStopId && !input.toStopId) ||
+      Boolean(input.fromStopId) === Boolean(input.fromLocation) ||
+      Boolean(input.toStopId) === Boolean(input.toLocation)) {
+    throw new AppError('Choose a destination or enter an external location for each endpoint. At least one endpoint must be a trip destination.', 'BAD_USER_INPUT');
+  }
+}
 const stayInputSchema = z
   .object({
     stopId: idSchema,
@@ -803,13 +816,14 @@ function buildResolvers(db: AppDatabase, aiGateway: AiGateway) {
           const tripId = parse(idSchema, args.tripId);
           const expectedRevision = parse(revisionSchema, args.expectedRevision);
           const input = parse(transportInputSchema, args.input);
+          validateTransportEndpoints(input);
           if (input.fromStopId === input.toStopId) {
             throw new AppError('Transport must connect two different stops.', 'BAD_USER_INPUT');
           }
           validateTimestampRange(input.departureTime, input.arrivalTime, 'transport timing');
           await db.transaction(async (tx) => {
             const trip = await lockTrip(tx, tripId, expectedRevision);
-            await assertStopsBelong(tx, tripId, [input.fromStopId, input.toStopId]);
+            await assertStopsBelong(tx, tripId, [input.fromStopId, input.toStopId].filter((id): id is string => id !== null));
             const [positionRow] = await tx.select({ value: max(transportLegs.position) }).from(transportLegs).where(eq(transportLegs.tripId, tripId));
             await tx.insert(transportLegs).values({ tripId, position: (positionRow?.value ?? -1) + 1, ...input });
             await finishManualMutation(tx, tripId, trip.revision);
@@ -824,13 +838,14 @@ function buildResolvers(db: AppDatabase, aiGateway: AiGateway) {
           const id = parse(idSchema, args.id);
           const expectedRevision = parse(revisionSchema, args.expectedRevision);
           const input = parse(transportInputSchema, args.input);
+          validateTransportEndpoints(input);
           if (input.fromStopId === input.toStopId) throw new AppError('Transport must connect two different stops.', 'BAD_USER_INPUT');
           validateTimestampRange(input.departureTime, input.arrivalTime, 'transport timing');
           const [leg] = await db.select().from(transportLegs).where(eq(transportLegs.id, id)).limit(1);
           if (!leg) throw new AppError('Transport leg not found.', 'NOT_FOUND');
           await db.transaction(async (tx) => {
             const trip = await lockTrip(tx, leg.tripId, expectedRevision);
-            await assertStopsBelong(tx, leg.tripId, [input.fromStopId, input.toStopId]);
+            await assertStopsBelong(tx, leg.tripId, [input.fromStopId, input.toStopId].filter((id): id is string => id !== null));
             await tx.update(transportLegs).set({ ...input, updatedAt: new Date().toISOString() }).where(eq(transportLegs.id, id));
             await finishManualMutation(tx, leg.tripId, trip.revision);
           });
