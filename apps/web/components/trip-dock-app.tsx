@@ -1630,10 +1630,6 @@ function ActivityEditor({ trip, activity, stopId, onClose, onSaved }: { trip: Tr
   );
 }
 
-function Section({ title, kicker, action, children }: { title: string; kicker: string; action?: ReactNode; children: ReactNode }) {
-  return <section className="detail-section"><header className="section-heading"><div><p className="section-kicker">{kicker}</p><h2>{title}</h2></div>{action}</header>{children}</section>;
-}
-
 function TransportSection({ trip, fromStopId, toStopId, title, legs, onEdit, onRemove }: { trip: Trip; fromStopId: string | null; toStopId: string | null; title: string; legs: TransportLeg[]; onEdit: (editor: EntityEditor) => void; onRemove: (id: string) => void }) {
   const add = () => onEdit({ kind: 'transport', fromStopId, toStopId });
   const endpoint = (id: string | null, location: string | null) => trip.stops.find((stop) => stop.id === id)?.name ?? location;
@@ -1646,10 +1642,18 @@ function TransportSection({ trip, fromStopId, toStopId, title, legs, onEdit, onR
 function TripDetail({ trip, onBack, onChanged, onDeleted, notify }: { trip: Trip; onBack: () => void; onChanged: (trip: Trip) => void; onDeleted: () => void; notify: (notice: Notice) => void }) {
   const [editor, setEditor] = useState<EntityEditor>(null);
   const sortedStops = useMemo(() => sortStopsByDate(trip.stops), [trip.stops]);
-  const [expandedStopId, setExpandedStopId] = useState<string | null>(() => sortedStops[0]?.id ?? null);
-  const activeExpandedStopId = expandedStopId === null || sortedStops.some((stop) => stop.id === expandedStopId)
-    ? expandedStopId
-    : sortedStops[0]?.id ?? null;
+  const [selectedPanel, setSelectedPanel] = useState(() => sortedStops[0] ? 'stop-' + sortedStops[0].id : 'arrival');
+  const routeItems: Array<{ id: string; label: string; detail: string; stop?: TripStop; fromStopId?: string | null; toStopId?: string | null; legs?: TransportLeg[] }> = [];
+  if (sortedStops[0]) routeItems.push({ id: 'arrival', label: 'Getting there', detail: trip.transportLegs.filter((leg) => !leg.fromStopId).map((leg) => leg.mode).join(' · ') || 'Plan arrival', fromStopId: null, toStopId: sortedStops[0].id, legs: trip.transportLegs.filter((leg) => !leg.fromStopId) });
+  sortedStops.forEach((stop, index) => {
+    routeItems.push({ id: 'stop-' + stop.id, label: stop.name, detail: formatStopDates(stop), stop });
+    const next = sortedStops[index + 1];
+    const legs = trip.transportLegs.filter((leg) => leg.fromStopId === stop.id);
+    routeItems.push({ id: 'travel-' + stop.id, label: next ? 'On to ' + next.name : 'Getting home', detail: legs.map((leg) => leg.mode).join(' · ') || 'Plan transport', fromStopId: stop.id, toStopId: next?.id ?? null, legs });
+  });
+  const activePanel = routeItems.find((item) => item.id === selectedPanel) ?? routeItems.find((item) => item.stop) ?? routeItems[0];
+  const selectedStop = activePanel?.stop;
+  const destinationStays = trip.stays.filter((stay) => stay.stopId === selectedStop?.id);
 
   async function removeEntity(kind: 'stop' | 'transport' | 'stay' | 'activity', id: string) {
     const warning = kind === 'stop'
@@ -1674,50 +1678,29 @@ function TripDetail({ trip, onBack, onChanged, onDeleted, notify }: { trip: Trip
   }
 
   return (
-    <main id="main-content" className="detail-page" tabIndex={-1}>
-      <button className="back-button" type="button" onClick={onBack}>← All trips</button>
-
-      <section className="trip-hero"><div><h1>{trip.name}</h1><p>{formatDateRange(trip.startDate, trip.endDate)}</p></div><div className="hero-actions"><button className="button-secondary" type="button" onClick={() => setEditor({ kind: 'trip' })}>Edit trip</button><button className="button-text button-danger" type="button" onClick={() => void deleteTrip()}>Delete</button></div></section>
-
-      <Section title="Your itinerary" kicker="Destinations by date" action={<button className="button-secondary" type="button" onClick={() => setEditor({ kind: 'stop' })}>+ Add destination</button>}>
-        <div className="itinerary-timeline">
-          {sortedStops[0] ? <TransportSection trip={trip} fromStopId={null} toStopId={sortedStops[0].id} title="Getting there" legs={trip.transportLegs.filter((leg) => !leg.fromStopId)} onEdit={setEditor} onRemove={(id) => void removeEntity('transport', id)} /> : null}
-          {sortedStops.map((stop, index) => {
-            const isExpanded = activeExpandedStopId === stop.id;
-            const destinationStays = trip.stays.filter((stay) => stay.stopId === stop.id);
-            const outgoingLegs = trip.transportLegs.filter((leg) => leg.fromStopId === stop.id);
-            const nextStop = sortedStops[index + 1];
-            return (
-              <div className="itinerary-block" key={stop.id}>
-                <article className={`destination-card ${isExpanded ? 'destination-card-expanded' : ''}`}>
-                  <header className="destination-row">
-                    <button className="destination-toggle" type="button" aria-expanded={isExpanded} aria-controls={`destination-${stop.id}`} onClick={() => setExpandedStopId(isExpanded ? null : stop.id)}>
-                      <span className="position-badge">{index + 1}</span>
-                      <span className="destination-summary"><strong>{stop.name}</strong><small>{formatStopDates(stop)}</small></span>
-                      <span className="destination-chevron" aria-hidden="true">{isExpanded ? '−' : '+'}</span>
-                    </button>
-                    <div className="entity-actions destination-actions"><button className="button-text" type="button" aria-label={`Edit destination ${stop.name}`} onClick={() => setEditor({ kind: 'stop', value: stop })}>Edit</button><button className="button-text button-danger" type="button" aria-label={`Remove destination ${stop.name}`} disabled={sortedStops.length === 1} onClick={() => void removeEntity('stop', stop.id)}>Remove</button></div>
-                  </header>
-                  {isExpanded ? (
-                    <div className="destination-details" id={`destination-${stop.id}`}>
-                      <section className="destination-zone" aria-labelledby={`stays-${stop.id}`}>
-                        <header><div><p className="entity-label">Accommodation</p><h3 id={`stays-${stop.id}`}>Your stay</h3></div>{destinationStays.length ? <button className="button-secondary" type="button" onClick={() => setEditor({ kind: 'stay', stopId: stop.id })}>+ Add another</button> : null}</header>
-                        {destinationStays.length ? <div className="nested-entity-list">{destinationStays.map((stay) => <article className="nested-entity" key={stay.id}><button className="record-main" type="button" onClick={() => setEditor({ kind: 'stay', value: stay })}><strong>{stay.name}</strong><small>{formatDateTime(stay.checkIn, stay.timezone)} → {formatDateTime(stay.checkOut, stay.timezone)}</small></button><button className="button-text button-danger" type="button" aria-label={`Remove ${stay.name}`} onClick={() => void removeEntity('stay', stay.id)}>Remove</button></article>)}</div> : <button className="record-main record-empty" type="button" onClick={() => setEditor({ kind: 'stay', stopId: stop.id })}><strong>Where are you staying?</strong><small>+ Add accommodation in {stop.name}</small></button>}
-                      </section>
-                      <section className="destination-zone" aria-labelledby={`activities-${stop.id}`}>
-                        <header><div><p className="entity-label">Things to do</p><h3 id={`activities-${stop.id}`}>Activities</h3></div><button className="button-secondary" type="button" onClick={() => setEditor({ kind: 'activity', stopId: stop.id })}>+ Add activity</button></header>
-                        <ActivityPlanner trip={trip} stop={stop} onChanged={onChanged} onEdit={(activity) => setEditor({ kind: 'activity', value: activity })} onRemove={(id) => void removeEntity('activity', id)} />
-                      </section>
-                    </div>
-                  ) : null}
-                </article>
-                <TransportSection trip={trip} fromStopId={stop.id} toStopId={nextStop?.id ?? null} title={nextStop ? `On to ${nextStop.name}` : 'Getting home'} legs={outgoingLegs} onEdit={setEditor} onRemove={(id) => void removeEntity('transport', id)} />
-
-              </div>
-            );
-          })}
-        </div>
-      </Section>
+    <main id="main-content" className="detail-page trip-workbench" tabIndex={-1}>
+      <header className="trip-workbench-header">
+        <button className="back-button" type="button" onClick={onBack}>← All trips</button>
+        <div className="trip-workbench-title"><h1>{trip.name}</h1><p>{formatDateRange(trip.startDate, trip.endDate)}</p></div>
+        <div className="hero-actions"><button className="button-text" type="button" onClick={() => setEditor({ kind: 'trip' })}>Edit trip</button><button className="button-text button-danger" type="button" onClick={() => void deleteTrip()}>Delete</button></div>
+      </header>
+      <div className="trip-route-bar">
+        <nav className="horizontal-trip-timeline" aria-label="Trip timeline">{routeItems.map((item) => <button key={item.id} type="button" className={item.stop ? 'route-destination' : 'route-transport'} aria-pressed={activePanel?.id === item.id} aria-controls="trip-route-panel" onClick={() => setSelectedPanel(item.id)}><span className="route-node" aria-hidden="true">{item.stop ? '●' : '↗'}</span><strong>{item.label}</strong><small>{item.detail}</small></button>)}</nav>
+        <button className="button-text route-add" type="button" onClick={() => setEditor({ kind: 'stop' })}>+ Destination</button>
+      </div>
+      <section id="trip-route-panel" className="trip-route-panel" aria-label={activePanel?.label ?? 'Itinerary'}>
+        {selectedStop ? <div key={selectedStop.id}>
+          <header className="selected-destination-heading"><div><h2>{selectedStop.name}</h2><span>{formatStopDates(selectedStop)}</span></div><div className="entity-actions"><button className="button-text" type="button" onClick={() => setEditor({ kind: 'stop', value: selectedStop })}>Edit destination</button><button className="button-text button-danger" type="button" disabled={sortedStops.length === 1} onClick={() => void removeEntity('stop', selectedStop.id)}>Remove</button></div></header>
+          <details className="compact-stays">
+            <summary><span className="entity-label">Accommodation</span><strong>{destinationStays[0]?.name ?? 'Add a place to stay'}</strong><span className="stay-summary-dates">{destinationStays[0] ? [destinationStays[0].checkIn, destinationStays[0].checkOut].map((date) => formatDateTime(date, destinationStays[0]!.timezone)).join(' → ') : 'Not arranged yet'}</span>{destinationStays.length > 1 ? <span>+{destinationStays.length - 1} more</span> : null}<span className="stay-expand" aria-hidden="true">⌄</span></summary>
+            <div className="compact-stays-details">{destinationStays.map((stay) => <article className="nested-entity" key={stay.id}><button className="record-main" type="button" onClick={() => setEditor({ kind: 'stay', value: stay })}><strong>{stay.name}</strong><small>{formatDateTime(stay.checkIn, stay.timezone)} → {formatDateTime(stay.checkOut, stay.timezone)}</small></button><button className="button-text button-danger" type="button" aria-label={`Remove ${stay.name}`} onClick={() => void removeEntity('stay', stay.id)}>Remove</button></article>)}<button className="button-text" type="button" onClick={() => setEditor({ kind: 'stay', stopId: selectedStop.id })}>{destinationStays.length ? '+ Add another stay' : '+ Add accommodation'}</button></div>
+          </details>
+          <section className="destination-calendar" aria-label={`Activities in ${selectedStop.name}`}>
+            <header><h3>Activities</h3><button className="button-secondary" type="button" onClick={() => setEditor({ kind: 'activity', stopId: selectedStop.id })}>+ Add activity</button></header>
+            <ActivityPlanner trip={trip} stop={selectedStop} onChanged={onChanged} onEdit={(activity) => setEditor({ kind: 'activity', value: activity })} onRemove={(id) => void removeEntity('activity', id)} />
+          </section>
+        </div> : activePanel ? <TransportSection trip={trip} fromStopId={activePanel.fromStopId ?? null} toStopId={activePanel.toStopId ?? null} title={activePanel.label} legs={activePanel.legs ?? []} onEdit={setEditor} onRemove={(id) => void removeEntity('transport', id)} /> : <p>Add a destination to begin your itinerary.</p>}
+      </section>
 
       {editor?.kind === 'trip' ? <TripEditor trip={trip} onClose={() => setEditor(null)} onSaved={(updated) => { setEditor(null); onChanged(updated); }} /> : null}
       {editor?.kind === 'stop' ? <StopEditor trip={trip} stop={editor.value} onClose={() => setEditor(null)} onSaved={(updated) => { setEditor(null); onChanged(updated); }} /> : null}

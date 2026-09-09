@@ -12,14 +12,14 @@ test('destination days include arrival and departure across month and DST bounda
 });
 
 test('assignments group by the record timezone, and moving preserves booking status', () => {
-  assert.deepEqual(activityAssignment(activity), { day: '2027-06-02', slot: 'morning' });
-  const move = activityMoveInput(activity, 'kyoto', '2027-06-03', 'evening', 'Asia/Tokyo');
+  assert.deepEqual(activityAssignment(activity), { day: '2027-06-02', time: '09:00', hour: '09:00' });
+  const move = activityMoveInput(activity, 'kyoto', '2027-06-03', '19:00', 'Asia/Tokyo');
   assert.equal(move.scheduledAt, '2027-06-03T10:00:00.000Z');
   assert.equal(move.stopId, 'kyoto');
   assert.equal(move.status, 'BOOKED');
-  assert.equal(activityMoveInput({ ...activity, status: 'DONE' }, 'tokyo', '', 'morning', 'Asia/Tokyo').status, 'DONE');
-  assert.equal(activityMoveInput(activity, 'tokyo', '', 'morning', 'Asia/Tokyo').scheduledAt, null);
-  assert.equal(activityMoveInput(activity, 'tokyo', '2027-03-28', 'morning', 'Europe/London').scheduledAt, '2027-03-28T08:00:00.000Z');
+  assert.equal(activityMoveInput({ ...activity, status: 'DONE' }, 'tokyo', '', '09:00', 'Asia/Tokyo').status, 'DONE');
+  assert.equal(activityMoveInput(activity, 'tokyo', '', '09:00', 'Asia/Tokyo').scheduledAt, null);
+  assert.equal(activityMoveInput(activity, 'tokyo', '2027-03-28', '09:00', 'Europe/London').scheduledAt, '2027-03-28T08:00:00.000Z');
 });
 
 test('blank trailing creation rows do not block saving or become destinations', () => {
@@ -29,4 +29,13 @@ test('blank trailing creation rows do not block saving or become destinations', 
   ] };
   assert.equal(isTripMinimumViable(input), true);
   assert.deepEqual(tripStopsForCreation(input), [{ name: 'Tokyo', locationText: null, arrivalDate: '2027-06-01', departureDate: '2027-06-06' }]);
+});
+
+
+test('hourly moves support precise times, midnight and late evening without changing booking facts', () => {
+  assert.equal(activityMoveInput(activity, 'tokyo', '2027-06-03', '00:00', 'Asia/Tokyo').scheduledAt, '2027-06-02T15:00:00.000Z');
+  assert.equal(activityMoveInput(activity, 'tokyo', '2027-06-03', '23:45', 'Asia/Tokyo').scheduledAt, '2027-06-03T14:45:00.000Z');
+  assert.deepEqual(activityAssignment({ scheduledAt: '2027-06-03T14:45:00.000Z', timezone: 'Asia/Tokyo' }), { day: '2027-06-03', time: '23:45', hour: '23:00' });
+  assert.throws(() => activityMoveInput(activity, 'tokyo', '2027-06-03', '24:00', 'Asia/Tokyo'), /valid time/);
+  assert.throws(() => activityMoveInput(activity, 'tokyo', '2027-03-28', '01:30', 'Europe/London'), /does not exist/);
 });
