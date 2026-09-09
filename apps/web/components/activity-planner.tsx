@@ -25,17 +25,12 @@ export function ActivityPlanner({ trip, stop, onChanged, onEdit, onRemove }: {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [dropTarget, setDropTarget] = useState('');
-  const [move, setMove] = useState<{ activity: Activity; stopId: string; day: string; time: string; timezone: string } | null>(null);
-  const moveHeading = useRef<HTMLParagraphElement>(null);
-  const movingActivityId = move?.activity.id;
-  useEffect(() => { if (movingActivityId) moveHeading.current?.focus(); }, [movingActivityId]);
   const calendar = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const board = calendar.current;
     const firstHour = board?.querySelector<HTMLElement>('[data-hour="08:00"]');
     if (board && firstHour) board.scrollTop += firstHour.getBoundingClientRect().top - board.getBoundingClientRect().top - 48;
   }, [stop.id, view, activeDay]);
-  const moveDays = destinationDays(trip.stops.find((item) => item.id === move?.stopId) ?? stop);
 
   async function assign(activity: Activity, stopId: string, day: string, time: string, timezone: string) {
     if (moving.current) return;
@@ -45,7 +40,7 @@ export function ActivityPlanner({ trip, stop, onChanged, onEdit, onRemove }: {
         id: activity.id, expectedRevision: trip.revision,
         input: activityMoveInput(activity, stopId, day, time, timezone),
       });
-      onChanged(data.updateActivity); setMove(null);
+      onChanged(data.updateActivity);
       setMessage(`${activity.title} moved ${day ? `to ${dateLabel(day)} at ${time}` : 'to the idea pool'}.`);
     } catch (err) { setError(err instanceof Error ? err.message : 'Could not move activity.'); }
     finally { moving.current = false; setBusy(false); }
@@ -71,7 +66,7 @@ export function ActivityPlanner({ trip, stop, onChanged, onEdit, onRemove }: {
         <span className="note-meta">{assignment ? `${assignment.time} · ` : ''}{statusLabels[activity.status]}</span>
         <strong>{activity.title}</strong>
       </button>
-      <div className="note-actions"><button type="button" className="button-text" disabled={busy} aria-label={`Move ${activity.title}`} onClick={() => setMove({ activity, stopId: stop.id, day: assignment?.day ?? '', time: assignment?.time ?? '09:00', timezone: activity.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone })}>Move</button>
+      <div className="note-actions">
         <button type="button" className="button-text button-danger" disabled={busy} aria-label={`Remove ${activity.title}`} onClick={() => onRemove(activity.id)}>×</button></div>
     </article>;
   }
@@ -81,17 +76,10 @@ export function ActivityPlanner({ trip, stop, onChanged, onEdit, onRemove }: {
       <div className="calendar-day-picker" aria-label="Destination days">{days.map((day) => <button key={day} type="button" aria-pressed={activeDay === day} onClick={() => { setSelectedDay(day); setView('day'); }}>{dateLabel(day)}</button>)}</div>
       {days.length ? <div className="calendar-view-picker" aria-label="Calendar view"><button type="button" aria-pressed={view === 'day'} onClick={() => setView('day')}>Day</button><button type="button" aria-pressed={view === 'week'} onClick={() => setView('week')}>Week</button></div> : null}
     </div>
-    {move ? <form className="activity-move calendar-move" onSubmit={(event) => { event.preventDefault(); void assign(move.activity, move.stopId, move.day, move.time, move.timezone); }}>
-      <p ref={moveHeading} tabIndex={-1}><strong>Move {move.activity.title}</strong></p>
-      <label>Destination<select value={move.stopId} onChange={(event) => setMove({ ...move, stopId: event.target.value, day: '' })}>{trip.stops.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
-      <label>Day<select value={move.day} onChange={(event) => setMove({ ...move, day: event.target.value })}><option value="">Idea pool · unassigned</option>{move.day && !moveDays.includes(move.day) ? <option value={move.day}>{dateLabel(move.day)} · outside dates</option> : null}{moveDays.map((day) => <option value={day} key={day}>{dateLabel(day)}</option>)}</select></label>
-      {move.day ? <><label>Time<input required type="time" value={move.time} onChange={(event) => setMove({ ...move, time: event.target.value })} /></label><label>Timezone<input required value={move.timezone} onChange={(event) => setMove({ ...move, timezone: event.target.value })} /></label></> : null}
-      <div className="entity-actions"><button type="submit" className="button-primary" disabled={busy}>{busy ? 'Moving…' : 'Move activity'}</button><button type="button" className="button-text" onClick={() => setMove(null)}>Cancel</button></div>
-    </form> : null}
     <div className="calendar-workspace">
       <aside className={`calendar-pool ${dropTarget === 'pool' ? 'drop-active' : ''}`} onDragOver={(event) => dragOver(event, 'pool')} onDrop={(event) => drop(event)}>
         <h4>Idea pool <span>{activities.filter((item) => !item.scheduledAt).length}</span></h4>
-        <p className="planner-hint">Drag onto an hour, or choose Move.</p>
+        <p className="planner-hint">Drag onto an hour. Click an activity to edit its date and time.</p>
         {activities.filter((item) => !item.scheduledAt).map(card)}
         <p className="pool-return">Drop here to unschedule</p>
         {activities.some((item) => item.scheduledAt && !days.includes(activityAssignment(item)?.day ?? '')) ? <div className="outside-dates"><h4>Outside these dates</h4>{activities.filter((item) => item.scheduledAt && !days.includes(activityAssignment(item)?.day ?? '')).map(card)}</div> : null}

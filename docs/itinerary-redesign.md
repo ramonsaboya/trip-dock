@@ -19,7 +19,7 @@ The main app is unchanged. The preview uses database port 55433, API 4100 and we
 
 ## Workspace layout
 
-A horizontal trip timeline selects one destination or transport panel. The trip title and back control share a compact header, and the workspace uses the available screen width. Accommodation is a collapsed summary row above the activity calendar. The calendar has a compact idea pool, selectable dates, Day/Week views, and draggable notes on hourly rows. Multiple activities at the same hour stack without overlap; no durations or booking facts are invented.
+A horizontal trip timeline selects one destination or transport panel. The trip title and back control share a compact header, and the workspace uses the available screen width. Accommodation is a collapsed summary row above the activity calendar. The calendar has a compact idea pool, selectable dates, Day/Week views, and draggable notes on hourly rows. Destinations are numbered place markers in prominent green cards, with transport as smaller connecting links. Activity cards open the editor directly, without a separate Move button. Multiple activities at the same hour stack without overlap; no durations or booking facts are invented.
 
 ## Data model and migration review
 
@@ -27,7 +27,7 @@ A horizontal trip timeline selects one destination or transport panel. The trip 
 
 Existing internal routes retain both stop IDs, positions, titles and timestamps. No destinations are added for home. No records are rewritten or deleted. Apply the migration before running the updated API/client. Older clients cannot represent external endpoints and should not be used after external journeys have been created. Reverting the schema would require first converting or removing external journeys; do not blindly restore NOT NULL constraints.
 
-Activity assignment uses the existing nullable `scheduledAt` and `timezone`; booking status remains independent. New activities start in the idea pool. Moves retain IDEA, PLANNED, BOOKED or DONE, use the trip revision, and persist through the existing mutation. The calendar uses hourly drop targets from 00:00 through 23:00 in the activity timezone (device timezone if unset). The Move control accepts precise times, including minutes. Day and Week views share the same persisted schedule. Exact times remain editable. Transport departure and arrival are expressed in one explicitly editable record timezone. Activities outside destination dates remain visible and movable. Destination dates are required to show its day schedule.
+Activity assignment uses the existing nullable `scheduledAt` and `timezone`; booking status remains independent. New activities start in the idea pool. Moves retain IDEA, PLANNED, BOOKED or DONE, use the trip revision, and persist through the existing mutation. The calendar uses hourly drop targets from 00:00 through 23:00 in the activity timezone (device timezone if unset). Clicking an activity opens its editor for precise times, including minutes, or a change of destination. Day and Week views share the same persisted schedule. Exact times remain editable. Transport departure and arrival are expressed in one explicitly editable record timezone. Activities outside destination dates remain visible and movable. Destination dates are required to show its day schedule.
 
 Creation renders a virtual next destination as soon as the previous name is typed. The virtual field is only added to the draft when typed into. Blank rows are excluded at save; one city inherits the trip boundaries. Multi-city date controls appear when needed, and differing or blocking destination dates remain editable. Traveler count is retained only for data/API compatibility.
 
@@ -39,4 +39,4 @@ Creation renders a virtual next destination as soon as the previous name is type
 - The PostgreSQL upgrade test inserts a route into the previous schema, applies the migration and verifies that record survives. It also verifies database endpoint constraints and repeatable migration application.
 - Client tests cover blank trailing rows, single-day ranges, timezone grouping and DST-aware hourly moves.
 
-Interactive browser/visual QA has not been performed. Touch users have the Move form because native HTML drag-and-drop support varies. Existing-trip AI editing and booking integrations are outside this change.
+Interactive browser/visual QA has not been performed. Touch and keyboard users can click an activity to edit its schedule because native HTML drag-and-drop support varies. Existing-trip AI editing and booking integrations are outside this change.
