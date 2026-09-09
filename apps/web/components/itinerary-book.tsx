@@ -64,7 +64,7 @@ export function ItineraryBook({ pages, selectedId, onSelect }: {
   return <div className="itinerary-book">
     <div className="book-controls">
       <button type="button" className="button-text" disabled={index <= 0} onClick={() => onSelect(pages[index - 1]!.id)}>← Previous</button>
-      <span role="status">{pages[index]?.label} <small>{index + 1} / {pages.length}</small></span>
+      <span role="status">{pages[index]?.label}</span>
       <button type="button" className="button-text" disabled={index >= pages.length - 1} onClick={() => onSelect(pages[index + 1]!.id)}>Next →</button>
     </div>
     <div ref={viewport} className="book-viewport" onScroll={syncSelection} tabIndex={0} role="region" aria-label="Itinerary pages"

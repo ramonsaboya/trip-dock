@@ -1640,7 +1640,7 @@ function TransportSection({ trip, fromStopId, toStopId, title, legs, onEdit, onR
   </div></section>;
 }
 
-function TripDetail({ trip, onBack, onChanged, onDeleted, notify }: { trip: Trip; onBack: () => void; onChanged: (trip: Trip) => void; onDeleted: () => void; notify: (notice: Notice) => void }) {
+function TripDetail({ trip, onChanged, onDeleted, notify }: { trip: Trip; onChanged: (trip: Trip) => void; onDeleted: () => void; notify: (notice: Notice) => void }) {
   const [editor, setEditor] = useState<EntityEditor>(null);
   const sortedStops = useMemo(() => sortStopsByDate(trip.stops), [trip.stops]);
   const [selectedPanel, setSelectedPanel] = useState(() => sortedStops[0] ? 'stop-' + sortedStops[0].id : 'arrival');
@@ -1654,25 +1654,6 @@ function TripDetail({ trip, onBack, onChanged, onDeleted, notify }: { trip: Trip
   });
   const activePanel = routeItems.find((item) => item.id === selectedPanel) ?? routeItems.find((item) => item.stop) ?? routeItems[0];
 
-
-  const timelineRef = useRef<HTMLElement>(null);
-  const timelineReady = useRef(false);
-  const activePageId = activePanel?.id;
-  useEffect(() => {
-    const timeline = timelineRef.current;
-    if (!timeline) return;
-    const center = (animate: boolean) => {
-      const item = Array.from(timeline.children).find((child) => (child as HTMLElement).dataset.timelineId === activePageId) as HTMLElement | undefined;
-      if (!item) return;
-      timeline.scrollTo({ left: timeline.scrollLeft + item.getBoundingClientRect().left - timeline.getBoundingClientRect().left - (timeline.clientWidth - item.offsetWidth) / 2, behavior: animate && !window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'smooth' : 'instant' });
-    };
-    center(timelineReady.current);
-    timelineReady.current = true;
-    let width = timeline.clientWidth;
-    const observer = new ResizeObserver(() => { if (width !== timeline.clientWidth) { width = timeline.clientWidth; center(false); } });
-    observer.observe(timeline);
-    return () => observer.disconnect();
-  }, [activePageId]);
 
   async function removeEntity(kind: 'stop' | 'transport' | 'stay' | 'activity', id: string) {
     const warning = kind === 'stop'
@@ -1699,12 +1680,11 @@ function TripDetail({ trip, onBack, onChanged, onDeleted, notify }: { trip: Trip
   return (
     <main id="main-content" className="detail-page trip-workbench" tabIndex={-1}>
       <header className="trip-workbench-header">
-        <button className="back-button" type="button" onClick={onBack}>← All trips</button>
         <div className="trip-workbench-title"><h1>{trip.name}</h1><p>{formatDateRange(trip.startDate, trip.endDate)}</p></div>
         <div className="hero-actions"><button className="button-text" type="button" onClick={() => setEditor({ kind: 'stop' })}>+ Destination</button><button className="button-text" type="button" onClick={() => setEditor({ kind: 'trip' })}>Edit trip</button><button className="button-text button-danger" type="button" onClick={() => void deleteTrip()}>Delete</button></div>
       </header>
       <div className="trip-route-bar">
-        <nav ref={timelineRef} className="horizontal-trip-timeline centered-trip-timeline" aria-label="Trip timeline">{routeItems.map((item) => <button data-timeline-id={item.id} key={item.id} type="button" className={item.stop ? 'route-destination' : 'route-transport'} aria-pressed={activePanel?.id === item.id} aria-controls={`book-${item.id}`} onClick={() => setSelectedPanel(item.id)}><span className="route-node" aria-hidden="true">{item.stop ? <><svg viewBox="0 0 24 24" fill="none"><path d="M12 21s7-7 7-12a7 7 0 1 0-14 0c0 5 7 12 7 12Z" stroke="currentColor" strokeWidth="1.7"/><circle cx="12" cy="9" r="2.5" stroke="currentColor" strokeWidth="1.7"/></svg><span>{String(sortedStops.findIndex((stop) => stop.id === item.stop!.id) + 1).padStart(2, '0')}</span></> : <svg viewBox="0 0 24 24" fill="none"><path d="M4 12h16m-6-6 6 6-6 6" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/></svg>}</span><strong>{item.label}</strong><small>{item.detail}</small></button>)}</nav>
+        <nav className="horizontal-trip-timeline static-trip-timeline" aria-label="Trip timeline">{routeItems.map((item) => <button data-timeline-id={item.id} key={item.id} type="button" className={item.stop ? 'route-destination' : 'route-transport'} aria-pressed={activePanel?.id === item.id} aria-controls={`book-${item.id}`} onClick={() => setSelectedPanel(item.id)}><span className="route-node" aria-hidden="true">{item.stop ? <><svg viewBox="0 0 24 24" fill="none"><path d="M12 21s7-7 7-12a7 7 0 1 0-14 0c0 5 7 12 7 12Z" stroke="currentColor" strokeWidth="1.7"/><circle cx="12" cy="9" r="2.5" stroke="currentColor" strokeWidth="1.7"/></svg><span>{String(sortedStops.findIndex((stop) => stop.id === item.stop!.id) + 1).padStart(2, '0')}</span></> : <svg viewBox="0 0 24 24" fill="none"><path d="M4 12h16m-6-6 6 6-6 6" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/></svg>}</span><strong>{item.label}</strong><small>{item.detail}</small></button>)}</nav>
       </div>
       <div className="trip-route-panel">
         {activePanel ? <ItineraryBook selectedId={activePanel.id} onSelect={setSelectedPanel} pages={routeItems.map((page) => {
@@ -1810,11 +1790,11 @@ export function TripDockApp() {
   return (
     <div className="app-shell">
       <a className="skip-link" href="#main-content">Skip to main content</a>
-      <header className="site-header"><div className="header-inner"><button className="logo-button" type="button" onClick={() => setSelectedTripId(null)} aria-label="TripDock trips home"><Logo /></button></div></header>
+      <header className="site-header"><div className={`header-inner ${selectedTrip ? 'header-inner-workbench' : ''}`}><button className="logo-button" type="button" onClick={() => setSelectedTripId(null)} aria-label="TripDock trips home"><Logo /></button>{selectedTrip ? <button className="button-text header-home" type="button" onClick={() => setSelectedTripId(null)}><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m3 10 9-7 9 7M5 9v12h5v-7h4v7h5V9" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" /></svg>Home</button> : null}</div></header>
       {state.kind === 'loading' ? <main id="main-content" className="state-page" aria-busy="true"><Logo /><div className="loader" aria-hidden="true" /><h1>Opening your trips</h1><p>Getting your plans ready…</p></main> : null}
       {state.kind === 'error' ? <main id="main-content" className="state-page error-state"><Logo /><h1>TripDock could not open your data</h1><p role="alert">{state.message}</p><button className="button-primary" type="button" onClick={retry}>Retry connection</button></main> : null}
       {state.kind === 'ready' && !selectedTrip ? <TripsOverview trips={state.trips} onCreate={() => setCreateRequest({})} onDraft={(draft, sourcePrompt) => setCreateRequest({ draft, sourcePrompt })} onOpen={setSelectedTripId} /> : null}
-      {state.kind === 'ready' && selectedTrip ? <TripDetail trip={selectedTrip} onBack={() => setSelectedTripId(null)} onChanged={replaceTrip} onDeleted={() => { setState({ kind: 'ready', trips: state.trips.filter((trip) => trip.id !== selectedTrip.id) }); setSelectedTripId(null); setNotice({ tone: 'success', message: 'Trip deleted.' }); }} notify={setNotice} /> : null}
+      {state.kind === 'ready' && selectedTrip ? <TripDetail trip={selectedTrip} onChanged={replaceTrip} onDeleted={() => { setState({ kind: 'ready', trips: state.trips.filter((trip) => trip.id !== selectedTrip.id) }); setSelectedTripId(null); setNotice({ tone: 'success', message: 'Trip deleted.' }); }} notify={setNotice} /> : null}
       {createRequest ? <CreateTripDialog initialDraft={createRequest.draft} sourcePrompt={createRequest.sourcePrompt} onClose={() => setCreateRequest(null)} onCreated={(trip) => { setCreateRequest(null); replaceTrip(trip); setSelectedTripId(trip.id); setNotice({ tone: 'success', message: 'Trip created.' }); }} /> : null}
       {notice ? <div className={`notice notice-${notice.tone}`} role={notice.tone === 'error' ? 'alert' : 'status'}><span>{notice.message}</span><button type="button" onClick={() => setNotice(null)} aria-label="Dismiss message">×</button></div> : null}
     </div>
