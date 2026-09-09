@@ -1,6 +1,7 @@
 'use client';
 
 import { ActivityPlanner } from './activity-planner';
+import { ItineraryBook } from './itinerary-book';
 
 import {
   cloneElement,
@@ -1652,8 +1653,26 @@ function TripDetail({ trip, onBack, onChanged, onDeleted, notify }: { trip: Trip
     routeItems.push({ id: 'travel-' + stop.id, label: next ? 'On to ' + next.name : 'Getting home', detail: legs.map((leg) => leg.mode).join(' · ') || 'Plan transport', fromStopId: stop.id, toStopId: next?.id ?? null, legs });
   });
   const activePanel = routeItems.find((item) => item.id === selectedPanel) ?? routeItems.find((item) => item.stop) ?? routeItems[0];
-  const selectedStop = activePanel?.stop;
-  const destinationStays = trip.stays.filter((stay) => stay.stopId === selectedStop?.id);
+
+
+  const timelineRef = useRef<HTMLElement>(null);
+  const timelineReady = useRef(false);
+  const activePageId = activePanel?.id;
+  useEffect(() => {
+    const timeline = timelineRef.current;
+    if (!timeline) return;
+    const center = (animate: boolean) => {
+      const item = Array.from(timeline.children).find((child) => (child as HTMLElement).dataset.timelineId === activePageId) as HTMLElement | undefined;
+      if (!item) return;
+      timeline.scrollTo({ left: timeline.scrollLeft + item.getBoundingClientRect().left - timeline.getBoundingClientRect().left - (timeline.clientWidth - item.offsetWidth) / 2, behavior: animate && !window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'smooth' : 'instant' });
+    };
+    center(timelineReady.current);
+    timelineReady.current = true;
+    let width = timeline.clientWidth;
+    const observer = new ResizeObserver(() => { if (width !== timeline.clientWidth) { width = timeline.clientWidth; center(false); } });
+    observer.observe(timeline);
+    return () => observer.disconnect();
+  }, [activePageId]);
 
   async function removeEntity(kind: 'stop' | 'transport' | 'stay' | 'activity', id: string) {
     const warning = kind === 'stop'
@@ -1682,14 +1701,16 @@ function TripDetail({ trip, onBack, onChanged, onDeleted, notify }: { trip: Trip
       <header className="trip-workbench-header">
         <button className="back-button" type="button" onClick={onBack}>← All trips</button>
         <div className="trip-workbench-title"><h1>{trip.name}</h1><p>{formatDateRange(trip.startDate, trip.endDate)}</p></div>
-        <div className="hero-actions"><button className="button-text" type="button" onClick={() => setEditor({ kind: 'trip' })}>Edit trip</button><button className="button-text button-danger" type="button" onClick={() => void deleteTrip()}>Delete</button></div>
+        <div className="hero-actions"><button className="button-text" type="button" onClick={() => setEditor({ kind: 'stop' })}>+ Destination</button><button className="button-text" type="button" onClick={() => setEditor({ kind: 'trip' })}>Edit trip</button><button className="button-text button-danger" type="button" onClick={() => void deleteTrip()}>Delete</button></div>
       </header>
       <div className="trip-route-bar">
-        <nav className="horizontal-trip-timeline" aria-label="Trip timeline">{routeItems.map((item) => <button key={item.id} type="button" className={item.stop ? 'route-destination' : 'route-transport'} aria-pressed={activePanel?.id === item.id} aria-controls="trip-route-panel" onClick={() => setSelectedPanel(item.id)}><span className="route-node" aria-hidden="true">{item.stop ? <><svg viewBox="0 0 24 24" fill="none"><path d="M12 21s7-7 7-12a7 7 0 1 0-14 0c0 5 7 12 7 12Z" stroke="currentColor" strokeWidth="1.7"/><circle cx="12" cy="9" r="2.5" stroke="currentColor" strokeWidth="1.7"/></svg><span>{String(sortedStops.findIndex((stop) => stop.id === item.stop!.id) + 1).padStart(2, '0')}</span></> : <svg viewBox="0 0 24 24" fill="none"><path d="M4 12h16m-6-6 6 6-6 6" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/></svg>}</span><strong>{item.label}</strong><small>{item.detail}</small></button>)}</nav>
-        <button className="button-text route-add" type="button" onClick={() => setEditor({ kind: 'stop' })}>+ Destination</button>
+        <nav ref={timelineRef} className="horizontal-trip-timeline centered-trip-timeline" aria-label="Trip timeline">{routeItems.map((item) => <button data-timeline-id={item.id} key={item.id} type="button" className={item.stop ? 'route-destination' : 'route-transport'} aria-pressed={activePanel?.id === item.id} aria-controls={`book-${item.id}`} onClick={() => setSelectedPanel(item.id)}><span className="route-node" aria-hidden="true">{item.stop ? <><svg viewBox="0 0 24 24" fill="none"><path d="M12 21s7-7 7-12a7 7 0 1 0-14 0c0 5 7 12 7 12Z" stroke="currentColor" strokeWidth="1.7"/><circle cx="12" cy="9" r="2.5" stroke="currentColor" strokeWidth="1.7"/></svg><span>{String(sortedStops.findIndex((stop) => stop.id === item.stop!.id) + 1).padStart(2, '0')}</span></> : <svg viewBox="0 0 24 24" fill="none"><path d="M4 12h16m-6-6 6 6-6 6" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/></svg>}</span><strong>{item.label}</strong><small>{item.detail}</small></button>)}</nav>
       </div>
-      <section id="trip-route-panel" className="trip-route-panel" aria-label={activePanel?.label ?? 'Itinerary'}>
-        {selectedStop ? <div key={selectedStop.id}>
+      <div className="trip-route-panel">
+        {activePanel ? <ItineraryBook selectedId={activePanel.id} onSelect={setSelectedPanel} pages={routeItems.map((page) => {
+          const selectedStop = page.stop;
+          const destinationStays = trip.stays.filter((stay) => stay.stopId === selectedStop?.id);
+          return { id: page.id, label: page.label, kind: selectedStop ? 'destination' as const : 'transport' as const, content: selectedStop ? <div>
           <header className="selected-destination-heading"><div><h2>{selectedStop.name}</h2><span>{formatStopDates(selectedStop)}</span></div><div className="entity-actions"><button className="button-text" type="button" onClick={() => setEditor({ kind: 'stop', value: selectedStop })}>Edit destination</button><button className="button-text button-danger" type="button" disabled={sortedStops.length === 1} onClick={() => void removeEntity('stop', selectedStop.id)}>Remove</button></div></header>
           <details className="compact-stays">
             <summary><span className="entity-label">Accommodation</span><strong>{destinationStays[0]?.name ?? 'Add a place to stay'}</strong><span className="stay-summary-dates">{destinationStays[0] ? [destinationStays[0].checkIn, destinationStays[0].checkOut].map((date) => formatDateTime(date, destinationStays[0]!.timezone)).join(' → ') : 'Not arranged yet'}</span>{destinationStays.length > 1 ? <span>+{destinationStays.length - 1} more</span> : null}<span className="stay-expand" aria-hidden="true">⌄</span></summary>
@@ -1699,8 +1720,9 @@ function TripDetail({ trip, onBack, onChanged, onDeleted, notify }: { trip: Trip
             <header><h3>Activities</h3><button className="button-secondary" type="button" onClick={() => setEditor({ kind: 'activity', stopId: selectedStop.id })}>+ Add activity</button></header>
             <ActivityPlanner trip={trip} stop={selectedStop} onChanged={onChanged} onEdit={(activity) => setEditor({ kind: 'activity', value: activity })} onRemove={(id) => void removeEntity('activity', id)} />
           </section>
-        </div> : activePanel ? <TransportSection trip={trip} fromStopId={activePanel.fromStopId ?? null} toStopId={activePanel.toStopId ?? null} title={activePanel.label} legs={activePanel.legs ?? []} onEdit={setEditor} onRemove={(id) => void removeEntity('transport', id)} /> : <p>Add a destination to begin your itinerary.</p>}
-      </section>
+        </div> : <TransportSection trip={trip} fromStopId={page.fromStopId ?? null} toStopId={page.toStopId ?? null} title={page.label} legs={page.legs ?? []} onEdit={setEditor} onRemove={(id) => void removeEntity('transport', id)} /> };
+        })} /> : <p>Add a destination to begin your itinerary.</p>}
+      </div>
 
       {editor?.kind === 'trip' ? <TripEditor trip={trip} onClose={() => setEditor(null)} onSaved={(updated) => { setEditor(null); onChanged(updated); }} /> : null}
       {editor?.kind === 'stop' ? <StopEditor trip={trip} stop={editor.value} onClose={() => setEditor(null)} onSaved={(updated) => { setEditor(null); onChanged(updated); }} /> : null}

@@ -2038,3 +2038,39 @@ textarea {
   .calendar-move { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .selected-destination-heading { align-items: flex-start; }
 }
+/* Connected pages, centered on the same axis as the route control. */
+.centered-trip-timeline::before, .centered-trip-timeline::after { content: ''; flex: 0 0 calc(50% - 65px); }
+.centered-trip-timeline { scrollbar-width: thin; }
+.centered-trip-timeline .route-destination { flex: 0 0 210px; }
+.book-controls { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.book-controls > span { font-size: .95rem; font-weight: 650; text-align: center; }
+.book-controls small { margin-left: 10px; color: var(--muted); font-size: .875rem; font-weight: 400; }
+.book-viewport { --transport-page-width: min(440px, calc(100% - 48px)); display: flex; align-items: stretch; overflow-x: auto; overscroll-behavior-x: contain; scroll-snap-type: x mandatory; padding: 8px 0 18px; scrollbar-width: thin; }
+.book-viewport::before, .book-viewport::after { content: ''; flex: 0 0 calc((100% - var(--transport-page-width)) / 2); }
+.book-page { flex-shrink: 0; scroll-snap-align: center; min-width: 0; padding: 20px; border: 1px solid #d2d9cd; border-right: 0; background: #fffef9; box-shadow: inset 9px 0 14px -14px #4b483d80, 0 4px 10px #33351d09; }
+.book-page:last-child { border-right: 1px solid #d2d9cd; }
+.book-page-destination { flex-basis: calc(100% - 112px); }
+.book-page-transport { flex-basis: var(--transport-page-width); background: #f6f2e9; }
+.book-page-selected { border-top-color: #527049; }
+.book-page-transport.book-page-selected { border-top-color: #a45335; }
+.book-page .transport-bridge { display: block; margin: 0; padding: 0; }
+.book-page .transport-marker { display: none; }
+.book-page .transport-content > header { align-items: flex-start; flex-wrap: wrap; padding-bottom: 14px; border-bottom: 1px solid #ded5c6; margin-bottom: 14px; }
+.book-page .transport-content h3 { font-size: 1.25rem; }
+.book-page .transport-item { flex-wrap: wrap; }
+.book-page .transport-item .record-main { flex-basis: 100%; }
+.book-page .calendar-scroll { max-height: 57vh; }
+.book-page .calendar-workspace { grid-template-columns: 200px minmax(0, 1fr); }
+.book-page .calendar-pool { max-height: 57vh; }
+@media (max-width: 800px) {
+  .centered-trip-timeline::before, .centered-trip-timeline::after { flex-basis: calc(50% - 55px); }
+  .centered-trip-timeline .route-destination { flex-basis: 175px; }
+  .book-page { padding: 14px; }
+  .book-page-destination { flex-basis: calc(100% - 28px); }
+  .book-viewport { --transport-page-width: min(380px, calc(100% - 48px)); }
+  .book-page .calendar-workspace { grid-template-columns: 1fr; }
+  .book-page .calendar-pool { max-height: 200px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .book-viewport, .centered-trip-timeline { scroll-behavior: auto; }
+}
