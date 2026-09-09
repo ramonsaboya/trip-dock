@@ -2038,42 +2038,68 @@ textarea {
   .calendar-move { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .selected-destination-heading { align-items: flex-start; }
 }
-/* Connected pages, centered on the same axis as the route control. */
-.horizontal-trip-timeline.static-trip-timeline { justify-content: center; flex-wrap: wrap; overflow: visible; row-gap: 12px; }
-.static-trip-timeline .route-destination { flex: 0 1 210px; min-width: 150px; }
-.static-trip-timeline strong, .static-trip-timeline small { overflow-wrap: anywhere; min-width: 0; }
 .header-inner.header-inner-workbench { width: calc(100% - 48px); max-width: 1800px; justify-content: space-between; }
 .header-home { display: inline-flex; align-items: center; gap: 7px; }
 .header-home svg { width: 18px; height: 18px; }
-.book-controls { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
-.book-controls > span { font-size: .95rem; font-weight: 650; text-align: center; }
-.book-viewport { --page-gap: 24px; gap: var(--page-gap); --transport-page-width: min(440px, calc(100% - 48px)); display: flex; align-items: stretch; overflow-x: auto; overscroll-behavior-x: contain; scroll-snap-type: x mandatory; padding: 8px 0 18px; scrollbar-width: none; -ms-overflow-style: none; mask-image: linear-gradient(to right, transparent, black 32px, black calc(100% - 32px), transparent); -webkit-mask-image: linear-gradient(to right, transparent, black 32px, black calc(100% - 32px), transparent); }
-.book-viewport::-webkit-scrollbar { display: none; }
-.book-viewport::before, .book-viewport::after { content: ''; flex: 0 0 calc((100% - var(--transport-page-width)) / 2 - var(--page-gap)); }
-.book-page { flex-shrink: 0; scroll-snap-align: center; min-width: 0; padding: 20px; border: 1px solid #d2d9cd; border-radius: 12px; background: #fffef9; box-shadow: inset 9px 0 14px -14px #4b483d80, 0 4px 10px #33351d09; }
-.book-page:last-child { border-right: 1px solid #d2d9cd; }
-.book-page-destination { flex-basis: calc(100% - 112px); }
-.book-page-transport { flex-basis: var(--transport-page-width); background: #f6f2e9; }
-.book-page-selected { border-top-color: #527049; }
-.book-page-transport.book-page-selected { border-top-color: #a45335; }
-.book-page .transport-bridge { display: block; margin: 0; padding: 0; }
-.book-page .transport-marker { display: none; }
-.book-page .transport-content > header { align-items: flex-start; flex-wrap: wrap; padding-bottom: 14px; border-bottom: 1px solid #ded5c6; margin-bottom: 14px; }
-.book-page .transport-content h3 { font-size: 1.25rem; }
-.book-page .transport-item { flex-wrap: wrap; }
-.book-page .transport-item .record-main { flex-basis: 100%; }
-.book-page .calendar-scroll { max-height: 57vh; }
-.book-page .calendar-workspace { grid-template-columns: 200px minmax(0, 1fr); }
-.book-page .calendar-pool { max-height: 57vh; }
+@media (max-width: 800px) { .header-inner.header-inner-workbench { width: calc(100% - 24px); } }
+
+/* One continuous calendar, with destination bands rather than separate pages. */
+.unified-calendar-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin: 16px 0; flex-wrap: wrap; }
+.unified-calendar-toolbar .calendar-view-picker { align-items: center; flex-wrap: wrap; }
+.unified-calendar-toolbar [aria-pressed="true"] { background: var(--brand-dark); color: white; border-color: var(--brand-dark); }
+.trip-calendar-workspace { display: grid; grid-template-columns: 220px minmax(0, 1fr); align-items: start; gap: 16px; }
+.trip-calendar-pool { max-height: 75vh; }
+.trip-calendar-pool h3 { margin: 0; font-size: 1rem; }
+.trip-calendar-scroll { overflow: auto; max-height: 76vh; min-height: 360px; position: relative; border: 1px solid #d4ddcf; border-radius: 12px; background: white; overscroll-behavior: contain; }
+.trip-calendar-table { border-collapse: separate; border-spacing: 0; width: 100%; table-layout: fixed; }
+.trip-calendar-table col:not(:first-child) { width: 220px; }
+.trip-calendar-table th, .trip-calendar-table td { border-right: 1px solid #cfdbca; border-bottom: 1px solid #dfe6da; vertical-align: top; }
+.trip-calendar-table thead { position: sticky; top: 0; z-index: 4; box-shadow: 0 2px 4px #293d1610; }
+.trip-calendar-table tr > :first-child { position: sticky; left: 0; z-index: 2; background: #f4f6f0; color: var(--muted); font-size: .875rem; font-weight: 500; text-align: center; padding: 10px 4px; width: 62px; }
+.trip-calendar-table thead tr > :first-child { z-index: 5; }
+.destination-tint-0 { --day-paper: #f0f6ec; --day-ink: #32583a; --day-grain: #36552b09; }
+.destination-tint-1 { --day-paper: #fcf2e9; --day-ink: #88543a; --day-grain: #82442609; }
+.destination-tint-2 { --day-paper: #eef4f9; --day-ink: #3f607d; --day-grain: #305c8109; }
+.destination-tint-3 { --day-paper: #f5f0f8; --day-ink: #6d527f; --day-grain: #68438409; }
+.destination-tint-4 { --day-paper: #f9f6e7; --day-ink: #78652c; --day-grain: #80682609; }
+.destination-tint--1 { --day-paper: #f7f7f5; --day-ink: #596468; --day-grain: #44553906; }
+.trip-calendar-table [class*="destination-tint-"] { background-color: var(--day-paper); background-image: repeating-linear-gradient(125deg, transparent 0 5px, var(--day-grain) 5px 6px); }
+.destination-band th { text-align: left; padding: 12px; color: var(--day-ink); border-top: 3px solid currentColor; }
+.destination-band button { font: inherit; font-size: 1rem; font-weight: 700; border: 0; color: inherit; background: transparent; cursor: pointer; }
+.destination-band button span { font-size: .875rem; opacity: .8; margin-right: 8px; }
+.calendar-stay-row td { padding: 7px; }
+.calendar-stay { display: flex; align-items: start; gap: 3px; margin-bottom: 3px; }
+.calendar-stay > button:first-child { flex: 1; min-width: 0; text-align: left; border: 1px solid #c9d1bf; border-radius: 6px; background: #ffffffaa; padding: 6px 8px; cursor: pointer; }
+.calendar-stay strong { display: block; font-size: .875rem; overflow-wrap: anywhere; }
+.calendar-stay small { display: block; font-size: .75rem; color: var(--muted); line-height: 1.35; margin-top: 3px; }
+.calendar-add-stay { border: 0; background: transparent; color: var(--day-ink); font-size: .875rem; padding: 4px 8px; cursor: pointer; }
+.calendar-date-row th { padding: 9px; text-align: left; font-size: .95rem; color: var(--day-ink); }
+.calendar-date-row small { display: block; margin-top: 4px; font-size: .75rem; font-weight: 500; }
+.travel-planning-row td { padding: 5px; }
+.plan-journey { width: 100%; display: block; padding: 10px; border: 1px dashed #ba8d65; background: #fff4e5; border-radius: 7px; color: #784524; font-size: .875rem; text-align: left; cursor: pointer; }
+.plan-journey small { display: block; margin-top: 4px; }
+.trip-calendar-hour { height: 80px; padding: 5px; }
+.journey-options { display: grid; grid-template-columns: minmax(0, 1fr); gap: 5px; }
+.journey-options:has(> :nth-child(2)) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.journey-note { min-width: 0; background: #f9d8b8; border: 1px solid #d19a6d; border-top: 4px solid #a75a36; border-radius: 7px; box-shadow: 0 3px 5px #75411b14; margin: 3px 0; }
+.journey-note .record-main { padding: 12px 10px 6px; width: 100%; min-height: 125px; }
+.journey-note .record-main:hover { background: #f8cda6; }
+.journey-note strong { font-size: 1rem; line-height: 1.3; }
+.journey-note span, .journey-note small { font-size: .875rem; overflow-wrap: anywhere; line-height: 1.35; }
+.journey-note-mode { text-transform: uppercase; letter-spacing: .04em; font-weight: 700; color: #854423; }
+.journey-note-actions { display: flex; justify-content: space-between; align-items: center; padding: 0 8px 6px; gap: 4px; }
+.journey-note-actions .button-text { font-size: .875rem; }
+.trip-calendar-table .drop-active { outline: 2px solid #a75a36; outline-offset: -2px; background-color: #f9e5d1; }
+.calendar-management { border-top: 1px solid #d4d8c9; margin-top: 18px; padding-top: 10px; }
+.calendar-management summary { cursor: pointer; font-size: .875rem; font-weight: 650; margin-bottom: 8px; }
+.calendar-management > div { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.unified-trip-calendar > [role="status"]:empty { display: none; }
 @media (max-width: 800px) {
-  .static-trip-timeline .route-destination { flex-basis: 175px; }
-  .header-inner.header-inner-workbench { width: calc(100% - 24px); }
-  .book-page { padding: 14px; }
-  .book-page-destination { flex-basis: calc(100% - 48px); }
-  .book-viewport { --page-gap: 12px; --transport-page-width: min(380px, calc(100% - 48px)); }
-  .book-page .calendar-workspace { grid-template-columns: 1fr; }
-  .book-page .calendar-pool { max-height: 200px; }
+  .trip-calendar-workspace { grid-template-columns: 1fr; }
+  .trip-calendar-pool { max-height: 230px; }
+  .trip-calendar-scroll { max-height: 74vh; }
+  .trip-calendar-table col:not(:first-child) { width: 190px; }
 }
-@media (prefers-reduced-motion: reduce) {
-  .book-viewport { scroll-behavior: auto; }
-}
+
+.calendar-stay-items { max-height: 96px; overflow-y: auto; }
+.travel-planning-row .journey-options { max-height: 210px; overflow-y: auto; }
