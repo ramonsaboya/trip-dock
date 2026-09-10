@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { calendarColumns, calendarHourDestination, calendarTransition, calendarStartHour, calendarStayBands, stayCoversDay, transportPlacement, transportMoveInput, tripRoutes } from '../lib/trip-calendar.ts';
+import { calendarHalfHours, dragStartMinute, resizeStart, calendarColumns, calendarHourDestination, calendarTransition, calendarStartHour, calendarStayBands, stayCoversDay, transportPlacement, transportMoveInput, tripRoutes } from '../lib/trip-calendar.ts';
 import { type Stay, type TransportLeg, type Trip, type TripStop } from '../lib/graphql-client.ts';
 
 const stops: TripStop[] = [
@@ -113,4 +113,23 @@ test('dragging transport preserves route, details and elapsed travel duration', 
   const arrivalOnly = transportMoveInput({ ...leg, arrivalTime: booked.arrivalTime }, '2027-06-04', '14:00', 'Europe/Rome');
   assert.equal(arrivalOnly.departureTime, null);
   assert.equal(arrivalOnly.arrivalTime, '2027-06-04T12:00:00.000Z');
+});
+
+test('half-hour grid and drag footprint preserve the grabbed offset and duration', () => {
+  assert.equal(calendarHalfHours.length, 48);
+  assert.equal(calendarHalfHours[21], '10:30');
+  assert.equal(dragStartMinute(690, 120, 60), 630);
+  assert.equal(dragStartMinute(30, 120, 60), 0);
+  assert.equal(dragStartMinute(1410, 120, 0), 1320);
+});
+test('top resizing preserves the end while bottom resizing preserves the start', () => {
+  assert.equal(resizeStart('2027-06-03T10:00:00Z', 60, 90, 'top'), '2027-06-03T09:30:00.000Z');
+  assert.equal(resizeStart('2027-06-03T10:00:00Z', 60, 90, 'bottom'), '2027-06-03T10:00:00.000Z');
+});
+test('transport paper changes at the exact half-hour arrival boundary', () => {
+  const scheduled = { ...trip, transportLegs: [{ ...leg, departureTime: '2027-06-03T08:30:00Z', arrivalTime: '2027-06-03T10:30:00Z' }] };
+  assert.deepEqual(calendarTransition(scheduled, '2027-06-03', '10:30'), { start: 10.5, end: 12.5, from: 'rome', to: 'florence' });
+  assert.ok(calendarTransition(scheduled, '2027-06-03', '12:00'));
+  assert.equal(calendarTransition(scheduled, '2027-06-03', '12:30'), undefined);
+  assert.equal(calendarHourDestination(scheduled, '2027-06-03', '12:30')?.id, 'florence');
 });

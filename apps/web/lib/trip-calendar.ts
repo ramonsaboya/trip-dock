@@ -80,10 +80,10 @@ function dayTransitions(trip: Trip, day: string) {
     return legs.flatMap((leg) => {
       const place = transportPlacement(leg, stops);
       if (place.day !== day) return [];
-      const start = Number(place.hour.slice(0, 2));
+      const start = timeMinutes(transportLocalTime(leg)) / 60;
       const arrival = isoToDateTimeLocal(leg.arrivalTime, leg.timezone);
       const end = arrival && arrival.slice(0, 10) === day
-        ? Math.max(start + 1, Number(arrival.slice(11, 13)) + (arrival.slice(14, 16) === '00' ? 0 : 1))
+        ? Math.max(start + .5, timeMinutes(arrival.slice(11, 16)) / 60)
         : arrival && arrival.slice(0, 10) > day ? 24 : start + (place.suggested ? 2 : 1);
       return [{ start, end, from: route.fromStopId, to: route.toStopId }];
     });
@@ -92,7 +92,7 @@ function dayTransitions(trip: Trip, day: string) {
 }
 
 export function calendarTransition(trip: Trip, day: string, hour: string) {
-  const time = Number(hour.slice(0, 2));
+  const time = timeMinutes(hour) / 60;
   return dayTransitions(trip, day).find((item) => item.from && item.to && time >= item.start && time < item.end);
 }
 
@@ -101,7 +101,7 @@ export function calendarHourDestination(trip: Trip, day: string, hour: string): 
   const present = stops.filter((stop) => stop.arrivalDate && stop.departureDate && day >= stop.arrivalDate && day <= stop.departureDate);
   const transitions = dayTransitions(trip, day);
   if (!transitions.length) return present.at(-1);
-  const time = Number(hour.slice(0, 2));
+  const time = timeMinutes(hour) / 60;
   const active = transitions.find((item) => time >= item.start && time < item.end);
   const preceding = transitions.filter((item) => item.end <= time).at(-1);
   const id = active ? active.from ?? active.to : preceding ? preceding.to ?? preceding.from : transitions[0]!.from ?? transitions[0]!.to;
@@ -117,3 +117,11 @@ export function transportMoveInput(leg: TransportLeg, day: string, time: string,
     arrivalTime: !leg.departureTime && leg.arrivalTime ? departureTime : duration !== null && departureTime ? new Date(new Date(departureTime).getTime() + duration).toISOString() : null,
   };
 }
+
+export const calendarHalfHours = Array.from({ length: 48 }, (_, index) => String(Math.floor(index / 2)).padStart(2, '0') + (index % 2 ? ':30' : ':00'));
+export const slotHeight = 64;
+export function timeMinutes(time: string) { return Number(time.slice(0, 2)) * 60 + Number(time.slice(3, 5)); }
+export function halfHourSlot(time: string) { const minutes = timeMinutes(time); return calendarHalfHours[Math.floor(minutes / 30)]!; }
+export function transportLocalTime(leg: TransportLeg) { return isoToDateTimeLocal(leg.departureTime ?? leg.arrivalTime, leg.timezone)?.slice(11, 16) ?? '10:00'; }
+export function dragStartMinute(target: number, duration: number, grabOffset: number) { return Math.max(0, Math.min(1440 - duration, Math.round((target - grabOffset) / 30) * 30)); }
+export function resizeStart(iso: string, oldDuration: number, newDuration: number, edge: 'top' | 'bottom') { return new Date(new Date(iso).getTime() + (edge === 'top' ? oldDuration - newDuration : 0) * 60000).toISOString(); }
