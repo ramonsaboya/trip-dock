@@ -4,6 +4,7 @@ import { PackingWorkspace } from './packing-workspace';
 import { navigateHome, navigateTrip, useTripNavigation } from '../lib/packing-navigation';
 
 import { TripCalendar } from './trip-calendar';
+import { DictationTextarea, VoiceAttribution } from './dictation-textarea';
 
 import {
   cloneElement,
@@ -874,8 +875,10 @@ function CreateTripDialog({
   }));
   const [selectedOptions, setSelectedOptions] = useState<Record<string, string>>({});
   const [followUp, setFollowUp] = useState('');
+  const [followUpVoiceUsed, setFollowUpVoiceUsed] = useState(false);
   const [followUpHistory, setFollowUpHistory] = useState<string[]>([]);
   const [followUpBusy, setFollowUpBusy] = useState(false);
+  const [followUpDictating, setFollowUpDictating] = useState(false);
   const formLocale = initialDraft?.locale ??
     (typeof navigator === 'undefined' ? 'en-GB' : navigator.language || 'en-GB');
   const protectedPaths = useRef(new Set<string>());
@@ -1018,7 +1021,7 @@ function CreateTripDialog({
   }
 
   async function submitFollowUp() {
-    if (!followUp.trim() || followUpBusy) return;
+    if (!followUp.trim() || followUpBusy || followUpDictating) return;
     const answer = followUp.trim();
     setFollowUpBusy(true);
     setError(null);
@@ -1204,8 +1207,11 @@ function CreateTripDialog({
         {visibleQuestions.some((item) => item.options.length) ? <button className="button-secondary apply-quick-answers" type="button" onClick={applySelectedAnswers} disabled={followUpBusy || !Object.keys(selectedOptions).length}>{blocking ? 'Continue with selected answers' : 'Use selected answers'}</button> : null}
         <div className="follow-up-compose">
           <label htmlFor="trip-draft-follow-up">{blocking ? 'Or answer everything in one message' : 'Tell TripDock what to adjust'}</label>
-          <textarea id="trip-draft-follow-up" rows={4} maxLength={1500} value={followUp} onChange={(event) => setFollowUp(event.target.value)} placeholder={blocking ? 'For example: Bristol, 10–14 May, using the later weekend.' : 'For example: Keep the proposed dates, but give Rome one extra night.'} disabled={followUpBusy} />
-          <button className="button-primary" type="button" onClick={() => void submitFollowUp()} disabled={followUpBusy || !followUp.trim()}>{followUpBusy ? 'Updating your draft…' : 'Update interpreted draft'}</button>
+          <DictationTextarea id="trip-draft-follow-up" rows={4} maxLength={1500} value={followUp} context={sourcePrompt} onChange={setFollowUp} onActiveChange={setFollowUpDictating} onVoiceUsed={() => setFollowUpVoiceUsed(true)} placeholder={blocking ? 'For example: Bristol, 10–14 May, using the later weekend.' : 'For example: Keep the proposed dates, but give Rome one extra night.'} disabled={followUpBusy} />
+          <div className="composer-actions">
+            <button className="button-primary" type="button" onClick={() => void submitFollowUp()} disabled={followUpBusy || followUpDictating || !followUp.trim()}>{followUpBusy ? 'Updating your draft…' : 'Update interpreted draft'}</button>
+            <VoiceAttribution visible={followUpVoiceUsed} />
+          </div>
         </div>
         {error ? <p className="form-error" role="alert">{error}</p> : null}
         <footer className="dialog-footer"><button className="button-text" type="button" onClick={onClose}>Cancel</button>{!blocking ? <button className="button-secondary" type="button" onClick={() => { setSelectedOptions({}); setStage('review'); }}>Back to summary</button> : <small className="creation-stage-note">Your trip summary appears after the essentials are clear.</small>}</footer>
@@ -1249,13 +1255,16 @@ function CreateTripDialog({
   );
 }
 
-function HomeDraftComposer({ onDraft }: { onDraft: (draft: TripDraft, prompt: string) => void }) {
+function HomeDraftComposer({ onDraft, disabled }: { onDraft: (draft: TripDraft, prompt: string) => void; disabled: boolean }) {
   const [prompt, setPrompt] = useState('');
+  const [dictating, setDictating] = useState(false);
+  const [voiceUsed, setVoiceUsed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function generateDraft(event: FormEvent) {
     event.preventDefault();
+    if (busy || disabled || dictating || !prompt.trim()) return;
     setBusy(true);
     setError(null);
     try {
@@ -1287,9 +1296,12 @@ function HomeDraftComposer({ onDraft }: { onDraft: (draft: TripDraft, prompt: st
       </div>
       <form onSubmit={(event) => void generateDraft(event)} aria-busy={busy}>
         <label htmlFor="home-trip-prompt">What do you have in mind?</label>
-        <textarea id="home-trip-prompt" rows={8} maxLength={5000} value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder="Ten days in Japan for two people, starting in Tokyo and ending in Kyoto…" />
+        <DictationTextarea id="home-trip-prompt" rows={8} maxLength={5000} value={prompt} onChange={setPrompt} onActiveChange={setDictating} onVoiceUsed={() => setVoiceUsed(true)} disabled={busy || disabled} placeholder="Ten days in Japan for two people, starting in Tokyo and ending in Kyoto…" />
         {error ? <p className="form-error" role="alert">{error}</p> : null}
-        <button className="button-primary" type="submit" disabled={busy || !prompt.trim()}>{busy ? 'Building your draft…' : 'Build a trip draft'}</button>
+        <div className="composer-actions">
+          <button className="button-primary" type="submit" disabled={busy || disabled || dictating || !prompt.trim()}>{busy ? 'Building your draft…' : 'Build a trip draft'}</button>
+          <VoiceAttribution visible={voiceUsed} />
+        </div>
       </form>
     </section>
   );
@@ -1668,12 +1680,12 @@ function TripDetail({ trip, onChanged, onDeleted, notify }: { trip: Trip; onChan
   );
 }
 
-function TripsOverview({ trips, onCreate, onDraft, onOpen }: { trips: Trip[]; onCreate: () => void; onDraft: (draft: TripDraft, prompt: string) => void; onOpen: (id: string) => void }) {
+function TripsOverview({ trips, onCreate, onDraft, onOpen, composerDisabled }: { trips: Trip[]; onCreate: () => void; onDraft: (draft: TripDraft, prompt: string) => void; onOpen: (id: string) => void; composerDisabled: boolean }) {
   return (
     <main id="main-content" className="page-wrap" tabIndex={-1}>
       <section className="page-heading"><div><h1>Your trips</h1><p className="page-intro">Everything you’re planning, in one place.</p></div>{trips.length ? <button className="button-primary" type="button" onClick={onCreate}>+ New trip</button> : null}</section>
       <div className="overview-layout">
-        <HomeDraftComposer onDraft={onDraft} />
+        <HomeDraftComposer onDraft={onDraft} disabled={composerDisabled} />
         <div className="overview-plans">
           {trips.length === 0 ? (
             <section className="empty-state"><span className="empty-mark" aria-hidden="true">01</span><h2>Your first trip starts here</h2><p>Add the essentials now. You can fill in accommodation, activities, and transport as the plan takes shape.</p><button className="button-primary" type="button" onClick={onCreate}>Create your first trip</button></section>
@@ -1764,7 +1776,7 @@ export function TripDockApp() {
       </div></header>
       {state.kind === 'loading' ? <main id="main-content" className="state-page" aria-busy="true"><Logo /><div className="loader" aria-hidden="true" /><h1>Opening your trips</h1><p>Getting your plans ready…</p></main> : null}
       {state.kind === 'error' ? <main id="main-content" className="state-page error-state"><Logo /><h1>TripDock could not open your data</h1><p role="alert">{state.message}</p><button className="button-primary" type="button" onClick={retry}>Retry connection</button></main> : null}
-      {state.kind === 'ready' && !navigation.tripId ? <TripsOverview trips={state.trips} onCreate={() => setCreateRequest({})} onDraft={(draft, sourcePrompt) => setCreateRequest({ draft, sourcePrompt })} onOpen={id => navigateTrip(id)} /> : null}
+      {state.kind === 'ready' && !navigation.tripId ? <TripsOverview trips={state.trips} composerDisabled={Boolean(createRequest)} onCreate={() => setCreateRequest({})} onDraft={(draft, sourcePrompt) => setCreateRequest({ draft, sourcePrompt })} onOpen={id => navigateTrip(id)} /> : null}
       {state.kind === 'ready' && navigation.tripId && !selectedTrip ? <main id="main-content" className="state-page" tabIndex={-1}><h1>Trip unavailable</h1><p>This trip may have been deleted.</p><button className="button-primary" type="button" onClick={navigateHome}>Back to Home</button></main> : null}
       {state.kind === 'ready' && selectedTrip ? <>
         <div className="app-section-panel" id="schedule-panel" role="tabpanel" aria-labelledby="schedule-tab" hidden={navigation.view !== 'schedule'}>

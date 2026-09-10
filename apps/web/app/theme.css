@@ -89,6 +89,11 @@
   & .home-compose { background: linear-gradient(145deg, var(--brand-soft), var(--surface)); }
   & .home-compose > div > p:last-child { color: var(--muted); }
   & .home-compose textarea, & .transfer-date-note { background: var(--surface); }
+  & .dictation-toggle { background: var(--surface); }
+  & .dictation-toggle:hover:not(:disabled) { background: var(--brand-soft); }
+  & .dictation-compose[data-phase="listening"] .dictation-toggle { color: var(--canvas); }
+  & .dictation-preparing { background: #1d2925f5; }
+  & .dictation-spinner { border-color: var(--line); border-top-color: var(--brand); }
   & .empty-state, & .state-page { background: radial-gradient(circle at 50% 5%, var(--brand-soft), transparent 60%), var(--canvas-warm); }
   & .trip-card-art { background: linear-gradient(145deg, var(--brand-soft), var(--surface) 56%, var(--terracotta-soft)); }
   & .route-ribbon span:not(:last-child)::after { color: var(--muted); }

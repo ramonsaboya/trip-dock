@@ -1,9 +1,9 @@
 # Dark-mode development
 
-Run from the dedicated `codex/dark-mode` worktree. The main checkout stays on `main`:
+Run from your checkout after merging dark mode:
 
 ```powershell
-cd C:\Users\Ramon\trip-dock\.worktrees\dark-mode
+cd C:\Users\Ramon\trip-dock
 pnpm dev:dark-mode
 ```
 
