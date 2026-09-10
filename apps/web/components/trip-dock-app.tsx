@@ -1,6 +1,6 @@
 'use client';
 import { PackingWorkspace } from './packing-workspace';
-import { navigatePacking, usePackingNavigation } from '../lib/packing-navigation';
+import { navigateHome, navigateTrip, useTripNavigation } from '../lib/packing-navigation';
 
 import { TripCalendar } from './trip-calendar';
 
@@ -1682,10 +1682,8 @@ function TripsOverview({ trips, onCreate, onDraft, onOpen }: { trips: Trip[]; on
 }
 
 export function TripDockApp() {
-  const navigation = usePackingNavigation();
-  const [lastPackingTrip, setLastPackingTrip] = useState<string | null>(null);
+  const navigation = useTripNavigation();
   const [state, setState] = useState<LoadState>({ kind: 'loading' });
-  const [selectedTripId, setSelectedTripId] = useState<string | null>(null);
   const [createRequest, setCreateRequest] = useState<{
     draft?: TripDraft;
     sourcePrompt?: string;
@@ -1710,7 +1708,7 @@ export function TripDockApp() {
       document.getElementById('main-content')?.focus();
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [selectedTripId, state.kind]);
+  }, [navigation.tripId, state.kind]);
 
   useEffect(() => {
     if (!notice) return;
@@ -1734,34 +1732,38 @@ export function TripDockApp() {
     );
   }
 
-  const selectedTrip = state.kind === 'ready' ? state.trips.find((trip) => trip.id === selectedTripId) : undefined;
+  const selectedTrip = state.kind === 'ready' ? state.trips.find((trip) => trip.id === navigation.tripId) : undefined;
 
   return (
     <div className="app-shell">
-      <a className="skip-link" href="#main-content">Skip to main content</a>
-      <header className="site-header"><div className={`header-inner ${selectedTrip && !navigation.packing ? 'header-inner-workbench' : ''}`}><button className="logo-button" type="button" onClick={() => { window.location.hash = 'trips'; setSelectedTripId(null); }} aria-label="TripDock trips home"><Logo /></button>
-        <div className="app-section-tabs" role="tablist" aria-label="TripDock sections" onKeyDown={event => {
+      <a className="skip-link" href="#main-content" onClick={event => { event.preventDefault(); document.getElementById('main-content')?.focus(); }}>Skip to main content</a>
+      <header className="site-header"><div className={`header-inner ${selectedTrip ? 'header-inner-workbench' : ''}`}>
+        <button className="logo-button" type="button" onClick={navigateHome} aria-label="TripDock home"><Logo /></button>
+        {selectedTrip ? <div className="app-section-tabs" role="tablist" aria-label="Trip views" onKeyDown={event => {
           if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
           event.preventDefault();
           const buttons = [...event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
           const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
           buttons[event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1 : (index + (event.key === 'ArrowLeft' ? -1 : 1) + buttons.length) % buttons.length]?.focus();
         }}>
-          <button id="trips-tab" role="tab" aria-selected={!navigation.packing} aria-controls="trips-panel" tabIndex={navigation.packing ? -1 : 0} onClick={() => { setLastPackingTrip(navigation.tripId); window.location.hash = 'trips'; }}>Trips</button>
-          <button id="packing-tab" role="tab" aria-selected={navigation.packing} aria-controls="packing-panel" tabIndex={navigation.packing ? 0 : -1} onClick={() => navigatePacking(lastPackingTrip)}>Packing</button>
-        </div>
-        {selectedTrip && !navigation.packing ? <button className="button-text header-home" type="button" onClick={() => setSelectedTripId(null)}>Home</button> : null}
+          <button id="schedule-tab" role="tab" aria-selected={navigation.view === 'schedule'} aria-controls="schedule-panel" tabIndex={navigation.view === 'schedule' ? 0 : -1} onClick={() => navigateTrip(selectedTrip.id, 'schedule')}>Schedule</button>
+          <button id="packing-tab" role="tab" aria-selected={navigation.view === 'packing'} aria-controls="packing-panel" tabIndex={navigation.view === 'packing' ? 0 : -1} onClick={() => navigateTrip(selectedTrip.id, 'packing')}>Packing</button>
+        </div> : null}
+        <button className="button-text header-home" type="button" aria-current={!navigation.tripId ? 'page' : undefined} onClick={navigateHome}>Home</button>
       </div></header>
       {state.kind === 'loading' ? <main id="main-content" className="state-page" aria-busy="true"><Logo /><div className="loader" aria-hidden="true" /><h1>Opening your trips</h1><p>Getting your plans ready…</p></main> : null}
       {state.kind === 'error' ? <main id="main-content" className="state-page error-state"><Logo /><h1>TripDock could not open your data</h1><p role="alert">{state.message}</p><button className="button-primary" type="button" onClick={retry}>Retry connection</button></main> : null}
-      <div className="app-section-panel" id="trips-panel" role="tabpanel" aria-labelledby="trips-tab" hidden={navigation.packing}>
-      {state.kind === 'ready' && !navigation.packing && !selectedTrip ? <TripsOverview trips={state.trips} onCreate={() => setCreateRequest({})} onDraft={(draft, sourcePrompt) => setCreateRequest({ draft, sourcePrompt })} onOpen={setSelectedTripId} /> : null}
-      {state.kind === 'ready' && !navigation.packing && selectedTrip ? <TripDetail trip={selectedTrip} onChanged={replaceTrip} onDeleted={() => { setState({ kind: 'ready', trips: state.trips.filter((trip) => trip.id !== selectedTrip.id) }); setSelectedTripId(null); setNotice({ tone: 'success', message: 'Trip deleted.' }); }} notify={setNotice} /> : null}
-      </div>
-      <div className="app-section-panel" id="packing-panel" role="tabpanel" aria-labelledby="packing-tab" hidden={!navigation.packing}>
-      {state.kind === 'ready' && navigation.packing ? <PackingWorkspace trips={state.trips} selectedTripId={navigation.tripId} onSelectTrip={id => { setLastPackingTrip(id); navigatePacking(id); }} onCreateTrip={() => { window.location.hash = 'trips'; setCreateRequest({}); }} /> : null}
-      </div>
-      {createRequest ? <CreateTripDialog initialDraft={createRequest.draft} sourcePrompt={createRequest.sourcePrompt} onClose={() => setCreateRequest(null)} onCreated={(trip) => { setCreateRequest(null); replaceTrip(trip); setSelectedTripId(trip.id); setNotice({ tone: 'success', message: 'Trip created.' }); }} /> : null}
+      {state.kind === 'ready' && !navigation.tripId ? <TripsOverview trips={state.trips} onCreate={() => setCreateRequest({})} onDraft={(draft, sourcePrompt) => setCreateRequest({ draft, sourcePrompt })} onOpen={id => navigateTrip(id)} /> : null}
+      {state.kind === 'ready' && navigation.tripId && !selectedTrip ? <main id="main-content" className="state-page" tabIndex={-1}><h1>Trip unavailable</h1><p>This trip may have been deleted.</p><button className="button-primary" type="button" onClick={navigateHome}>Back to Home</button></main> : null}
+      {state.kind === 'ready' && selectedTrip ? <>
+        <div className="app-section-panel" id="schedule-panel" role="tabpanel" aria-labelledby="schedule-tab" hidden={navigation.view !== 'schedule'}>
+          {navigation.view === 'schedule' ? <TripDetail key={selectedTrip.id} trip={selectedTrip} onChanged={replaceTrip} onDeleted={() => { setState({ kind: 'ready', trips: state.trips.filter((trip) => trip.id !== selectedTrip.id) }); navigateHome(); setNotice({ tone: 'success', message: 'Trip deleted.' }); }} notify={setNotice} /> : null}
+        </div>
+        <div className="app-section-panel" id="packing-panel" role="tabpanel" aria-labelledby="packing-tab" hidden={navigation.view !== 'packing'}>
+          {navigation.view === 'packing' ? <PackingWorkspace key={selectedTrip.id} trip={selectedTrip} /> : null}
+        </div>
+      </> : null}
+      {createRequest ? <CreateTripDialog initialDraft={createRequest.draft} sourcePrompt={createRequest.sourcePrompt} onClose={() => setCreateRequest(null)} onCreated={(trip) => { setCreateRequest(null); replaceTrip(trip); navigateTrip(trip.id); setNotice({ tone: 'success', message: 'Trip created.' }); }} /> : null}
       {notice ? <div className={`notice notice-${notice.tone}`} role={notice.tone === 'error' ? 'alert' : 'status'}><span>{notice.message}</span><button type="button" onClick={() => setNotice(null)} aria-label="Dismiss message">×</button></div> : null}
     </div>
   );

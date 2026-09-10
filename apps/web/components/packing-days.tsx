@@ -40,7 +40,7 @@ export function PackingDays({ trip, plan, library, busy, edit, onLibrarySaved, o
   return <div className="packing-days-layout">
     <section className="packing-day-section">
       <div className="packing-section-heading">
-        <h2>{trip.name} <small>{dates.length} days · {Math.max(0, dates.length - 1)} nights</small></h2>
+        <h2>Trip days <small>{dates.length} days · {Math.max(0, dates.length - 1)} nights</small></h2>
         <button className="button-text" disabled={busy} onClick={() => setSelectedDays(selected.length === dates.length ? [] : dates)}>{selected.length === dates.length ? 'Clear selection' : 'Select all'}</button>
       </div>
       <div className="packing-assignment-hint" role="status">
@@ -92,4 +92,3 @@ export function PackingDays({ trip, plan, library, busy, edit, onLibrarySaved, o
     </aside>
   </div>;
 }
-

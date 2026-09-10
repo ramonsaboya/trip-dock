@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { createApi } from '../src/graphql.js';
 import { UnconfiguredAiGateway } from '../src/ai.js';
-import { trips, packingTagItems } from '../src/db/schema.js';
+import { packingTagItems } from '../src/db/schema.js';
 import { loadLibrary } from '../src/packing-data.js';
 import type { AppDatabase } from '../src/db/client.js';
 import type { Library, Entry } from '../src/packing-domain.js';
@@ -28,8 +28,13 @@ export async function exercisePacking(db: AppDatabase, concurrent = false) {
   assert.equal((await a<Library>(`mutation { result: initializePacking { ${libraryFields} } }`)).items.length,lib.items.length);
   const other=await b<Library>(`mutation { result: initializePacking { ${libraryFields} } }`);
   assert.notEqual(lib.items[0]!.id,other.items[0]!.id);
-  const [trip] = await db.insert(trips).values({name:'Packing test',destinationArea:'Coast',startDate:'2026-09-10',endDate:'2026-09-14',travelerCount:4}).returning();
-  const tripId=trip!.id;
+  const tripInput = { name: 'Packing test', destinationArea: 'Coast', startDate: '2026-09-10', endDate: '2026-09-14', travelerCount: 4 };
+  const createTrip = (name: string) => a<{ id: string; revision: number }>(
+    'mutation($input:CreateTripInput!){result:createTrip(input:$input){id revision}}',
+    { input: { ...tripInput, name, stops: [{ name: 'Lisbon', locationText: null, arrivalDate: tripInput.startDate, departureDate: tripInput.endDate }] } },
+  );
+  const trip = await createTrip(tripInput.name);
+  const tripId=trip.id;
   let plan=await a<Plan>(`mutation($tripId:ID!){result:openPackingPlan(tripId:$tripId){${planFields}}}`,{tripId});
   const mutate=(input:Record<string,unknown>,revision=plan.revision)=>a<Plan>(`mutation($tripId:ID!,$revision:Int!,$input:PackingPlanEditInput!){result:editPackingPlan(tripId:$tripId,expectedRevision:$revision,input:$input){${planFields}}}`,{tripId,revision,input});
   const get=()=>a<Plan>(`query($tripId:ID!){result:packingPlan(tripId:$tripId){${planFields}}}`,{tripId});
@@ -38,6 +43,12 @@ export async function exercisePacking(db: AppDatabase, concurrent = false) {
   assert.equal((await get()).assignments.length,0,'atomic invalid batch');
   plan=await mutate({action:'ASSIGN',days:['2026-09-11','2026-09-12','2026-09-12'],tagId});
   assert.equal(plan.assignments.length,2);
+  const secondTrip = await createTrip('Separate packing trip');
+  const separatePlan = await a<Plan>(`mutation($tripId:ID!){result:openPackingPlan(tripId:$tripId){${planFields}}}`, { tripId: secondTrip.id });
+  assert.equal(separatePlan.tripId, secondTrip.id);
+  assert.deepEqual(separatePlan.assignments, [], 'opening another real trip starts with its own day tags');
+  assert.deepEqual(separatePlan.entries, []);
+  assert.equal((await get()).assignments.length, 2, 'returning to the first trip keeps its assigned days');
   await assert.rejects(mutate({action:'ASSIGN',days:['2026-09-11'],tagId:other.tags[0]!.id}),/your library/);
   const generate=()=>mutate({action:'GENERATE',expectedLibraryRevision:lib.revision,startDate:plan.startDate,endDate:plan.endDate});
   plan=await generate();
@@ -106,13 +117,16 @@ export async function exercisePacking(db: AppDatabase, concurrent = false) {
     assert.equal(outcomes.filter(o=>o.status==='fulfilled').length,1);
     plan=await get();
   }
-  const {eq}=await import('drizzle-orm');
-  await db.update(trips).set({endDate:'2026-09-11'}).where(eq(trips.id,tripId));
+  const updatedTrip = await a<{ revision: number }>(
+    'mutation($id:ID!,$revision:Int!,$input:UpdateTripInput!){result:updateTrip(id:$id,expectedRevision:$revision,input:$input){revision}}',
+    { id: tripId, revision: trip.revision, input: { ...tripInput, endDate: '2026-09-11' } },
+  );
   plan=await get(); assert.equal(plan.stale,true); assert.equal(plan.assignments.length,2);
+  assert.equal(plan.endDate, '2026-09-11', 'packing follows dates edited through the schedule API');
   plan=await generate(); assert.equal(plan.entries.find(e=>e.name==='Underwear')!.suggested,2);
   plan=await mutate({action:'ASSIGN',days:['2026-09-12'],tagId,remove:true});
   assert.equal(plan.assignments.length,1);
-  await db.delete(trips).where(eq(trips.id,tripId));
+  await a('mutation($id:ID!,$revision:Int!){result:deleteTrip(id:$id,expectedRevision:$revision)}', { id: tripId, revision: updatedTrip.revision });
   assert.equal(await get(),null);
   assert.ok((await loadLibrary(db,first))!.items.some(i=>i.id===custom.id));
 }

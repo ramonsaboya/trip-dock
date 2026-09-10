@@ -6,7 +6,8 @@ import { PackingLibraryView } from './packing-library';
 import { PackingChecklist } from './packing-checklist';
 import { PackingDays } from './packing-days';
 
-export function PackingWorkspace({ trips, selectedTripId, onSelectTrip, onCreateTrip }: { trips: Trip[]; selectedTripId: string | null; onSelectTrip: (id: string | null) => void; onCreateTrip: () => void }) {
+export function PackingWorkspace({ trip }: { trip: Trip }) {
+  const selectedTripId = trip.id;
   const [library, setLibrary] = useState<PackingLibrary | null>(null);
   const [plan, setPlan] = useState<PackingPlan | null>(null);
   const [view, setView] = useState<'days' | 'list' | 'library'>('days');
@@ -18,7 +19,6 @@ export function PackingWorkspace({ trips, selectedTripId, onSelectTrip, onCreate
   const planVersion = useRef(0);
   const [reload, setReload] = useState(0);
   const busy = saving || libraryBusy;
-  const trip = trips.find(t => t.id === selectedTripId);
   const libraryReady = Boolean(library);
   useEffect(() => {
     const controller = new AbortController();
@@ -33,7 +33,7 @@ export function PackingWorkspace({ trips, selectedTripId, onSelectTrip, onCreate
       if (!controller.signal.aborted && version === planVersion.current) setPlan(next);
     }).catch(e => { if (!controller.signal.aborted) setError(e.message); });
     return () => controller.abort();
-  }, [selectedTripId, libraryReady, reload]);
+  }, [selectedTripId, trip.startDate, trip.endDate, libraryReady, reload]);
   const current = plan?.tripId === selectedTripId ? plan : null;
   const dates = current ? packingDates(current.startDate, current.endDate) : [];
   const outside = current?.assignments.filter(a => !dates.includes(a.day)) ?? [];
@@ -75,11 +75,11 @@ export function PackingWorkspace({ trips, selectedTripId, onSelectTrip, onCreate
     } finally { pending.current = false; setSaving(false); }
   }
   return <main id="main-content" className="packing-page" tabIndex={-1}>
-    <header className="packing-heading"><h1>Packing</h1><div className="packing-trip-choice"><label htmlFor="packing-trip">Packing for</label><select id="packing-trip" value={selectedTripId ?? ''} disabled={busy} onChange={e => { onSelectTrip(e.target.value || null); setPlan(null); setError(''); setStatus(''); }}><option value="">Choose a trip</option>{trips.map(t => <option value={t.id} key={t.id}>{t.name} · {formatDateRange(t.startDate,t.endDate)}</option>)}</select></div></header>
+    <header className="packing-heading"><div><h1>{trip.name}</h1><p>{formatDateRange(trip.startDate, trip.endDate)}</p></div></header>
     <div className="packing-toolbar"><div className="packing-segments" aria-label="Packing views"><button disabled={busy} aria-pressed={view === 'days'} onClick={() => setView('days')}>Day tags</button><button disabled={busy} aria-pressed={view === 'list'} onClick={() => setView('list')}>Packing list{progress.total ? ` · ${progress.done}/${progress.total}` : ''}</button><button disabled={busy} aria-pressed={view === 'library'} onClick={() => setView('library')}>Your library</button></div>{current && library && view !== 'library' ? <button className="button-primary" disabled={busy} onClick={() => void edit({ action: 'GENERATE', expectedLibraryRevision: library.revision, startDate: current.startDate, endDate: current.endDate })}>{saving ? 'Saving…' : current.generatedAt ? 'Recalculate list' : 'Generate packing list'}</button> : null}</div>
     {error ? <div className="packing-error" role="alert">{error} <button type="button" disabled={busy} onClick={() => { setError(''); setReload(n => n + 1); }}>Refresh and retry</button></div> : null}
     <p className="packing-save-status" role="status" aria-live="polite">{busy ? 'Saving…' : status}</p>
-    {!library ? <div className="packing-empty" aria-busy="true">Opening your library…</div> : view === 'library' ? <PackingLibraryView library={library} onSaved={savedLibrary} onRefresh={refresh} onBusyChange={setLibraryBusy} disabled={busy} /> : !trip ? <section className="packing-empty"><h2>{trips.length ? 'Choose a trip to start packing.' : 'Create a trip to start packing.'}</h2><p>Tag your days, then generate your packing list.</p><div className="packing-inline-actions">{!trips.length ? <button className="button-primary" onClick={onCreateTrip}>Create a trip</button> : null}<button className="button-secondary" onClick={() => setView('library')}>Explore your library</button></div></section> : !current ? <section className="packing-empty" aria-busy="true">Opening {trip.name}…</section> : <>
+    {!library ? <div className="packing-empty" aria-busy="true">Opening your library…</div> : view === 'library' ? <PackingLibraryView library={library} onSaved={savedLibrary} onRefresh={refresh} onBusyChange={setLibraryBusy} disabled={busy} /> : !current ? <section className="packing-empty" aria-busy="true">Opening {trip.name}…</section> : <>
       {current.stale ? <div className="packing-stale" role="status">Plans changed. Recalculate to refresh suggestions; your adjustments stay.</div> : null}
       {outside.length ? <details className="packing-stale"><summary>{outside.length} tags outside the trip dates</summary>{outside.map(a => <p key={a.day + a.tagId}>{a.day} · {library.tags.find(t => t.id === a.tagId)?.name} <button disabled={busy} onClick={() => void edit({ action: 'ASSIGN', days: [a.day], tagId: a.tagId, remove: true })}>Remove</button></p>)}</details> : null}
       {view === 'days' ? <PackingDays key={current.tripId} trip={trip} plan={current} library={library} busy={busy} edit={edit} onLibrarySaved={savedLibrary} onRefresh={refresh} onLibraryBusy={setLibraryBusy} />

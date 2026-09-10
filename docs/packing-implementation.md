@@ -1,15 +1,15 @@
 # Packing implementation
 
-Status: first version implemented and verified, 10 September 2026. Local candidate, uncommitted.
+Status: local packing candidate with trip-scoped Schedule/Packing navigation. Work is saved on codex/packing-helper; no push or deployment.
 
-Branch: codex/packing-helper. Tracking and integration base: origin/main. Base commit: eb10981c9334f98b0e7c584cb27974fd3cb0a687, verified against the pushed main branch on 10 September 2026. Main is now the reference for continued packing work.
+Branch: codex/packing-helper. Tracking and integration base: origin/main. Latest main e5c7d2b was fetched and merged in local merge commit 2d3a1e3, preserving the calendar rendering optimizations and product idea documents.
 Worktree: C:/Users/Ramon/trip-dock/.worktrees/packing-helper.
 
-The planning brief is docs/packing-helper-plan.md. No source or main checkout edits are part of this candidate. No merge, push or deployment is requested.
+The planning brief is docs/packing-helper-plan.md. Main was merged into this feature branch as requested. The main checkout has not been modified; no merge back to main, push or deployment has been performed.
 
 ## Open the candidate
 
-Start the candidate below, then open [http://localhost:3200/#packing](http://localhost:3200/#packing) in your own browser. The temporary verification server has been stopped.
+Start the candidate below, then open [Home](http://localhost:3200/#home) in your own browser. Open or create a trip to see Schedule and Packing. No preview server was started for this integration pass.
 
 To restart it in PowerShell:
 
@@ -26,8 +26,9 @@ The preview database contains one clearly named browser-test trip, **Packing pre
 
 ## Delivered behavior
 
-- Global Trips/Packing tabs with keyboard navigation and selected-state semantics. Trips retains its selected itinerary while switching sections. Packing trip selection is in the URL and survives refresh.
-- A separate Packing workspace with trip selection, compact date rows, a persistent searchable tag tray, drag-and-drop assignment, click/keyboard assignment, multi-day selection, removable tags and collapsed everyday essentials.
+- Home offers trip creation and the trip list, with no Schedule/Packing tabs. Opening or creating a trip opens Schedule; Schedule and Packing then appear in the top bar for that trip. Home returns to the overview from either tab.
+- Both trip views use the same trip ID in the URL, including on refresh and browser history navigation. Prior links containing a packing trip ID remain supported. Missing trip links show an unavailable state rather than selecting another trip.
+- Packing uses the opened trip and its saved dates directly, with no trip selector. It has compact date rows, a persistent searchable tag tray, drag-and-drop assignment, click/keyboard assignment, multi-day selection, removable tags and collapsed everyday essentials.
 - Personal library with 30 starter tags, over 100 starter items and ten categories; create, edit, archive and restore entries, change quantity rules, and edit tag-item associations.
 - Deterministic calculation using inclusive trip dates, nights, per-item reuse intervals and distinct eligible dates across tags. Quantities are for one person and do not multiply by traveler count.
 - Compact checklists and library rows grouped in collapsible categories. Item explanations and editors expand in place; adding an item or tag uses an inline panel without a dialog. Checklist quantities and packed progress remain directly editable.
@@ -44,6 +45,14 @@ The first catalog is bootstrapped transactionally once per profile. The profile'
 Calculation version 1 is included in the saved input fingerprint. Staleness is based on trip dates and the calculation's relevant output/explanations, so unrelated library items and itinerary edits do not unnecessarily invalidate a list. Item modes and names are snapshotted in list entries. If changing an item to checkbox mode would invalidate a manual quantity, the entry retains its previous mode and is marked for review.
 
 Tag associations select dates; the item's rule controls quantity. Advanced tag-combination conflicts, automatic itinerary tagging, laundry, weather, equipment rental and outfit alternatives are intentionally deferred. Pajamas default to one set per three nights and can be edited.
+
+## Trip integration verification
+
+- Automated navigation cases cover opening in Schedule, switching between Schedule/Packing while keeping the same trip, separate trip links, Home, incomplete links and previous packing links.
+- The packing database scenario now creates trips through the normal createTrip API, verifies independent plans for two trips, edits dates through updateTrip, checks the refreshed packing dates and quantities, and deletes through deleteTrip.
+- The real PostgreSQL suite passed these integration scenarios. The full project check covers the merged calendar tests, packing tests, lint, type checking and production builds.
+- The local development command still uses its separate packing database. Trips created or opened through Home in this running app are real persisted trips shared by Schedule and Packing; it does not copy trips from another local preview database.
+- External-browser visual verification remains unavailable in this session. No in-app preview was opened.
 
 ## Compact-layout refinement verification
 
