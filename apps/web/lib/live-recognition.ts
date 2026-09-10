@@ -68,32 +68,38 @@ export class LiveRecognition implements Recognition {
         stream.getTracks().forEach((track) => { track.enabled = false; track.onended = () => this.fail('The microphone disconnected.'); });
         return stream;
       });
-      const [key, stream] = await Promise.all([credential, microphone]);
-      if (this.closed) return;
-      const pc = this.dependencies.peer();
-      this.peerConnection = pc;
-      stream.getTracks().forEach((track) => pc.addTrack(track, stream));
-      pc.onconnectionstatechange = () => {
-        if (['failed', 'disconnected'].includes(pc.connectionState)) this.fail('The live dictation connection was interrupted.');
-      };
-      const channel = pc.createDataChannel('oai-events');
-      this.channel = channel;
-      channel.onmessage = (event) => {
+      // Prepare the WebRTC offer while the credential request is in flight.
+      const connection = microphone.then(async (stream) => {
         if (this.closed) return;
-        try { this.receive(JSON.parse(event.data)); } catch { this.fail('Live dictation returned an unreadable event.'); }
-      };
-      channel.onopen = () => {
+        const pc = this.dependencies.peer();
+        this.peerConnection = pc;
+        stream.getTracks().forEach((track) => pc.addTrack(track, stream));
+        pc.onconnectionstatechange = () => {
+          if (['failed', 'disconnected'].includes(pc.connectionState)) this.fail('The live dictation connection was interrupted.');
+        };
+        const channel = pc.createDataChannel('oai-events');
+        this.channel = channel;
+        channel.onmessage = (event) => {
+          if (this.closed) return;
+          try { this.receive(JSON.parse(event.data)); } catch { this.fail('Live dictation returned an unreadable event.'); }
+        };
+        channel.onopen = () => {
+          if (this.closed) return;
+          stream.getTracks().forEach((track) => { track.enabled = true; });
+          this.durationTimer = setTimeout(() => this.fail('Dictation reached its five-minute limit. Review the text and click Speak to continue.'), 300000);
+          this.onstart?.();
+        };
+        channel.onclose = () => { if (!this.closed) this.fail('The live dictation session ended unexpectedly.'); };
+        channel.onerror = () => this.fail('The live dictation connection failed.');
+        const offer = await pc.createOffer();
         if (this.closed) return;
-        stream.getTracks().forEach((track) => { track.enabled = true; });
-        this.durationTimer = setTimeout(() => this.fail('Dictation reached its five-minute limit. Review the text and click Speak to continue.'), 300000);
-        this.onstart?.();
-      };
-      channel.onclose = () => { if (!this.closed) this.fail('The live dictation session ended unexpectedly.'); };
-      channel.onerror = () => this.fail('The live dictation connection failed.');
-      const offer = await pc.createOffer();
-      if (this.closed) return;
-      await pc.setLocalDescription(offer);
-      if (this.closed) return;
+        await pc.setLocalDescription(offer);
+        if (this.closed) return;
+        return { pc, offer };
+      });
+      const [key, prepared] = await Promise.all([credential, connection]);
+      if (this.closed || !prepared) return;
+      const { pc, offer } = prepared;
       const answer = await this.dependencies.request('https://api.openai.com/v1/realtime/calls', {
         method: 'POST', body: offer.sdp, signal: this.abortController.signal,
         headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/sdp' },

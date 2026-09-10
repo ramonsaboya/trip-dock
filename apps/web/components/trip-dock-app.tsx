@@ -1,7 +1,7 @@
 'use client';
 
 import { TripCalendar } from './trip-calendar';
-import { DictationTextarea } from './dictation-textarea';
+import { DictationTextarea, VoiceAttribution } from './dictation-textarea';
 
 import {
   cloneElement,
@@ -865,6 +865,7 @@ function CreateTripDialog({
   }));
   const [selectedOptions, setSelectedOptions] = useState<Record<string, string>>({});
   const [followUp, setFollowUp] = useState('');
+  const [followUpVoiceUsed, setFollowUpVoiceUsed] = useState(false);
   const [followUpHistory, setFollowUpHistory] = useState<string[]>([]);
   const [followUpBusy, setFollowUpBusy] = useState(false);
   const [followUpDictating, setFollowUpDictating] = useState(false);
@@ -1196,8 +1197,11 @@ function CreateTripDialog({
         {visibleQuestions.some((item) => item.options.length) ? <button className="button-secondary apply-quick-answers" type="button" onClick={applySelectedAnswers} disabled={followUpBusy || !Object.keys(selectedOptions).length}>{blocking ? 'Continue with selected answers' : 'Use selected answers'}</button> : null}
         <div className="follow-up-compose">
           <label htmlFor="trip-draft-follow-up">{blocking ? 'Or answer everything in one message' : 'Tell TripDock what to adjust'}</label>
-          <DictationTextarea id="trip-draft-follow-up" rows={4} maxLength={1500} value={followUp} context={sourcePrompt} onChange={setFollowUp} onActiveChange={setFollowUpDictating} placeholder={blocking ? 'For example: Bristol, 10–14 May, using the later weekend.' : 'For example: Keep the proposed dates, but give Rome one extra night.'} disabled={followUpBusy} />
-          <button className="button-primary" type="button" onClick={() => void submitFollowUp()} disabled={followUpBusy || followUpDictating || !followUp.trim()}>{followUpBusy ? 'Updating your draft…' : 'Update interpreted draft'}</button>
+          <DictationTextarea id="trip-draft-follow-up" rows={4} maxLength={1500} value={followUp} context={sourcePrompt} onChange={setFollowUp} onActiveChange={setFollowUpDictating} onVoiceUsed={() => setFollowUpVoiceUsed(true)} placeholder={blocking ? 'For example: Bristol, 10–14 May, using the later weekend.' : 'For example: Keep the proposed dates, but give Rome one extra night.'} disabled={followUpBusy} />
+          <div className="composer-actions">
+            <button className="button-primary" type="button" onClick={() => void submitFollowUp()} disabled={followUpBusy || followUpDictating || !followUp.trim()}>{followUpBusy ? 'Updating your draft…' : 'Update interpreted draft'}</button>
+            <VoiceAttribution visible={followUpVoiceUsed} />
+          </div>
         </div>
         {error ? <p className="form-error" role="alert">{error}</p> : null}
         <footer className="dialog-footer"><button className="button-text" type="button" onClick={onClose}>Cancel</button>{!blocking ? <button className="button-secondary" type="button" onClick={() => { setSelectedOptions({}); setStage('review'); }}>Back to summary</button> : <small className="creation-stage-note">Your trip summary appears after the essentials are clear.</small>}</footer>
@@ -1244,6 +1248,7 @@ function CreateTripDialog({
 function HomeDraftComposer({ onDraft, disabled }: { onDraft: (draft: TripDraft, prompt: string) => void; disabled: boolean }) {
   const [prompt, setPrompt] = useState('');
   const [dictating, setDictating] = useState(false);
+  const [voiceUsed, setVoiceUsed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -1281,9 +1286,12 @@ function HomeDraftComposer({ onDraft, disabled }: { onDraft: (draft: TripDraft, 
       </div>
       <form onSubmit={(event) => void generateDraft(event)} aria-busy={busy}>
         <label htmlFor="home-trip-prompt">What do you have in mind?</label>
-        <DictationTextarea id="home-trip-prompt" rows={8} maxLength={5000} value={prompt} onChange={setPrompt} onActiveChange={setDictating} disabled={busy || disabled} placeholder="Ten days in Japan for two people, starting in Tokyo and ending in Kyoto…" />
+        <DictationTextarea id="home-trip-prompt" rows={8} maxLength={5000} value={prompt} onChange={setPrompt} onActiveChange={setDictating} onVoiceUsed={() => setVoiceUsed(true)} disabled={busy || disabled} placeholder="Ten days in Japan for two people, starting in Tokyo and ending in Kyoto…" />
         {error ? <p className="form-error" role="alert">{error}</p> : null}
-        <button className="button-primary" type="submit" disabled={busy || disabled || dictating || !prompt.trim()}>{busy ? 'Building your draft…' : 'Build a trip draft'}</button>
+        <div className="composer-actions">
+          <button className="button-primary" type="submit" disabled={busy || disabled || dictating || !prompt.trim()}>{busy ? 'Building your draft…' : 'Build a trip draft'}</button>
+          <VoiceAttribution visible={voiceUsed} />
+        </div>
       </form>
     </section>
   );

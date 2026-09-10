@@ -32,9 +32,9 @@ class SimulatedRecognition implements Recognition {
       this.timers.push(setTimeout(() => this.onerror?.({ error: mode === 'denied' ? 'not-allowed' : 'network' }), 250));
       return;
     }
-    this.onstart?.();
+    this.timers.push(setTimeout(() => this.onstart?.(), mode === 'starting' ? 8000 : 1200));
     const phrases = ['Ten days in Jap', 'Ten days in Japan', 'Ten days in Japan for two people'];
-    phrases.forEach((transcript, index) => this.timers.push(setTimeout(() => this.onresult?.({ results: [[{ transcript }]] }), 200 + index * 650)));
+    phrases.forEach((transcript, index) => this.timers.push(setTimeout(() => this.onresult?.({ results: [[{ transcript }]] }), (mode === 'starting' ? 8500 : 1600) + index * 650)));
   }
   stop() {
     this.timers.forEach(clearTimeout);

@@ -115,3 +115,42 @@ test('connection and provider failures terminate media without discarding prior 
   assert.equal(failure.error, 'Check API billing');
   assert.equal(failure.track.stops, 1);
 });
+
+test('prepares the offer during authentication, with no audio or call sent before the credential', async (t) => {
+  let credential!: (response: Response) => void;
+  let calls = 0;
+  const h = harness(t, { request: async (url) => {
+    if (String(url).endsWith('/voice/session')) return new Promise<Response>((resolve) => { credential = resolve; });
+    calls++;
+    return new Response('answer-sdp');
+  } });
+  let offered = false;
+  h.pc.createOffer = async () => { offered = true; return { type: 'offer', sdp: 'offer-sdp' }; };
+  h.recognition.start();
+  await flush();
+  assert.equal(offered, true);
+  assert.equal(h.track.enabled, false);
+  assert.equal(calls, 0);
+  credential(Response.json({ clientSecret: 'short-lived' }));
+  await flush();
+  assert.equal(h.remoteSet, true);
+  assert.equal(calls, 1);
+});
+
+test('cancelling during authentication closes the prepared peer and never exchanges an offer', async (t) => {
+  let credential!: (response: Response) => void;
+  let calls = 0;
+  const h = harness(t, { request: async (url) => {
+    if (String(url).endsWith('/voice/session')) return new Promise<Response>((resolve) => { credential = resolve; });
+    calls++;
+    return new Response('answer-sdp');
+  } });
+  h.recognition.start();
+  await flush();
+  h.recognition.abort();
+  credential(Response.json({ clientSecret: 'short-lived' }));
+  await flush();
+  assert.equal(h.peerClosed, true);
+  assert.equal(h.track.stops, 1);
+  assert.equal(calls, 0);
+});
