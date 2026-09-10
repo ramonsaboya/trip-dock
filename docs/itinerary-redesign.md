@@ -53,4 +53,4 @@ The grid uses hourly rows with half-hour placement inside each row with activity
 
 The upper-left header gutter is clipped out of the viewport with a rounded destination corner until horizontal scrolling reveals the header behind it. Hover highlighting updates only the affected DOM classes; cached paper calculations no longer run for every pointer move. Pointer time uses one body measurement rather than scanning all rows.
 
-Cell add overlays clear on pointer exit, whether selected manually or by hover. The overlay recognizes both halves of an hourly cell. Crosshairs outline row and column borders while preserving header highlights. The opaque sticky header and bordered, rounded Date corner prevent scrolled clock labels from showing above it.
+Cell add overlays clear on pointer exit, whether selected manually or by hover. The overlay recognizes both halves of an hourly cell. Crosshairs outline row and column borders while preserving header highlights. The opaque sticky header and square Date corner with the standard grid border prevent scrolled clock labels from showing above it.
