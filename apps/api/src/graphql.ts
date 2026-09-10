@@ -125,6 +125,7 @@ const typeDefs = /* GraphQL */ `
     title: String!
     status: String!
     scheduledAt: String
+    durationMinutes: Int
     timezone: String
     createdAt: String!
     updatedAt: String!
@@ -249,6 +250,7 @@ const typeDefs = /* GraphQL */ `
     title: String!
     status: String!
     scheduledAt: String
+    durationMinutes: Int
     timezone: String
   }
 `;
@@ -315,6 +317,7 @@ const activityInputSchema = z
     title: requiredText.max(200),
     status: activityStatusSchema,
     scheduledAt: isoDateTimeSchema.nullable(),
+    durationMinutes: z.number().int().min(1).max(1440).optional(),
     timezone: timezoneSchema,
   })
   .strict();

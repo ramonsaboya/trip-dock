@@ -88,7 +88,7 @@ async function createHarness(gateway: AiGateway = new UnconfiguredAiGateway()): 
   const migrationFiles = (await readdir(migrationDirectory))
     .filter((name) => /^\d+_.+\.sql$/.test(name))
     .sort();
-  assert.equal(migrationFiles.length, 3, 'Baseline and both data-preserving evolution migrations are applied.');
+  assert.equal(migrationFiles.length, 4, 'Baseline and all data-preserving evolution migrations are applied.');
   for (const migrationFile of migrationFiles) {
     const migration = await readFile(join(migrationDirectory, migrationFile), 'utf8');
     for (const statement of migration.split('--> statement-breakpoint')) {

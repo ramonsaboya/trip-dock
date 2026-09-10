@@ -153,6 +153,7 @@ export const activities = pgTable(
     title: text('title').notNull(),
     status: text('status').default('IDEA').notNull(),
     scheduledAt: timestamp('scheduled_at', { withTimezone: true, mode: 'string' }),
+    durationMinutes: integer('duration_minutes').default(60).notNull(),
     timezone: text('timezone'),
     ...timestamps,
   },
@@ -164,6 +165,7 @@ export const activities = pgTable(
     }).onDelete('cascade'),
     unique('activities_stop_position_unique').on(table.stopId, table.position),
     index('activities_trip_stop_position_idx').on(table.tripId, table.stopId, table.position),
+    check('activities_duration_check', sql`${table.durationMinutes} > 0 AND ${table.durationMinutes} <= 1440`),
     check('activities_position_check', sql`${table.position} >= 0`),
     check(
       'activities_status_check',

@@ -23,7 +23,7 @@ export function activityAssignment(activity: Pick<Activity, 'scheduledAt' | 'tim
 export function activityMoveInput(activity: Activity, stopId: string, day: string, time: string, timezone: string) {
   if (day && !/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) throw new Error('Choose a valid time.');
   return {
-    stopId, title: activity.title, status: activity.status,
+    stopId, title: activity.title, status: activity.status, durationMinutes: activity.durationMinutes ?? 60,
     scheduledAt: day ? dateTimeLocalToIso(`${day}T${time}`, timezone) : null,
     timezone: day ? timezone : activity.timezone,
   };

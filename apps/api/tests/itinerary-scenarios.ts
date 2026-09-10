@@ -3,8 +3,8 @@ import { createApi } from '../src/graphql.js';
 
 // Run exactly the same persistence contract against pg-mem and real PostgreSQL.
 export async function exerciseItinerary(api: ReturnType<typeof createApi>) {
-  type Trip = { id: string; revision: number; stops: { id: string }[]; transportLegs: { id: string; fromStopId: string | null; toStopId: string | null; fromLocation: string | null; toLocation: string | null }[]; activities: { id: string; status: string; scheduledAt: string | null; timezone: string | null; stopId: string }[] };
-  const fields = 'id revision stops { id } transportLegs { id fromStopId toStopId fromLocation toLocation } activities { id status scheduledAt timezone stopId }';
+  type Trip = { id: string; revision: number; stops: { id: string }[]; transportLegs: { id: string; fromStopId: string | null; toStopId: string | null; fromLocation: string | null; toLocation: string | null }[]; activities: { id: string; status: string; scheduledAt: string | null; durationMinutes: number; timezone: string | null; stopId: string }[] };
+  const fields = 'id revision stops { id } transportLegs { id fromStopId toStopId fromLocation toLocation } activities { id status scheduledAt durationMinutes timezone stopId }';
   async function request(query: string, variables: Record<string, unknown>) {
     const response = await api.fetch('http://localhost:4000/graphql', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ query, variables }) });
     return await response.json() as { data?: Record<string, Trip>; errors?: { message: string; extensions: { code: string } }[] };
@@ -33,6 +33,7 @@ export async function exerciseItinerary(api: ReturnType<typeof createApi>) {
   const activityInput = { stopId, title: 'Museum', status: 'BOOKED', scheduledAt: null, timezone: 'Asia/Tokyo' };
   let result = await request(`mutation($tripId: ID!, $revision: Int!, $input: ActivityInput!) { addActivity(tripId: $tripId, expectedRevision: $revision, input: $input) { ${fields} } }`, { tripId: trip.id, revision: trip.revision, input: activityInput });
   assert.equal(result.errors, undefined); trip = result.data!.addActivity!;
+  assert.equal(trip.activities[0]!.durationMinutes, 60);
   const id = trip.activities[0]!.id;
   const move = `mutation($id: ID!, $revision: Int!, $input: ActivityInput!) { updateActivity(id: $id, expectedRevision: $revision, input: $input) { ${fields} } }`;
   const staleRevision = trip.revision;
@@ -53,4 +54,16 @@ export async function exerciseItinerary(api: ReturnType<typeof createApi>) {
   const reloaded = await request(`query($id: ID!) { trip(id: $id) { ${fields} } }`, { id: trip.id });
   assert.equal(new Date(reloaded.data!.trip!.activities[0]!.scheduledAt!).toISOString(), '2027-06-04T00:00:00.000Z');
   assert.equal(reloaded.data!.trip!.transportLegs.length, 3);
+  trip = reloaded.data!.trip!;
+  const resized = await request(move, { id, revision: trip.revision, input: { ...activityInput, scheduledAt: new Date(trip.activities[0]!.scheduledAt!).toISOString(), durationMinutes: 150 } });
+  assert.equal(resized.errors, undefined);
+  trip = resized.data!.updateActivity!;
+  assert.equal(trip.activities[0]!.durationMinutes, 150);
+  const persisted = await request(`query($id: ID!) { trip(id: $id) { ${fields} } }`, { id: trip.id });
+  assert.equal(persisted.data!.trip!.activities[0]!.durationMinutes, 150);
+  for (const durationMinutes of [0, -30, 1441]) {
+    const invalid = await request(move, { id, revision: trip.revision, input: { ...activityInput, durationMinutes } });
+    assert.ok(invalid.errors);
+  }
+
 }

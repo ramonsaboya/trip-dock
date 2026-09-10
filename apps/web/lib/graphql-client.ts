@@ -43,6 +43,7 @@ export type Activity = {
   title: string;
   status: 'IDEA' | 'PLANNED' | 'BOOKED' | 'DONE';
   scheduledAt: string | null;
+  durationMinutes?: number;
   timezone: string | null;
 };
 
@@ -211,7 +212,7 @@ const TRIP_FIELDS = `
     departureTime arrivalTime timezone
   }
   stays { id tripId stopId position name checkIn checkOut timezone }
-  activities { id tripId stopId position title status scheduledAt timezone }
+  activities { id tripId stopId position title status scheduledAt durationMinutes timezone }
 `;
 
 export const operations = {

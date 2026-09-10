@@ -52,6 +52,12 @@ test('generated migrations apply to an explicitly configured real PostgreSQL dat
     const stops = (await database.pool.query("insert into trip_stops (trip_id, name, position) values ($1, 'A', 0), ($1, 'B', 1) returning id", [trip])).rows;
     const oldLeg = (await database.pool.query("insert into transport_legs (trip_id, from_stop_id, to_stop_id, position, mode, title) values ($1, $2, $3, 0, 'TRAIN', 'Existing train') returning id", [trip, stops[0].id, stops[1].id])).rows[0].id;
     await database.pool.query(await readFile(new URL('../drizzle/0002_salty_masked_marvel.sql', import.meta.url), 'utf8'));
+    const oldActivity = (await database.pool.query("insert into activities (trip_id, stop_id, position, title) values ($1, $2, 0, 'Existing activity') returning id", [trip, stops[0].id])).rows[0].id;
+    await database.pool.query(await readFile(new URL('../drizzle/0003_rich_banshee.sql', import.meta.url), 'utf8'));
+    const preservedActivity = (await database.pool.query('select title, duration_minutes from activities where id = $1', [oldActivity])).rows[0];
+    assert.equal(preservedActivity.title, 'Existing activity');
+    assert.equal(preservedActivity.duration_minutes, 60);
+    await assert.rejects(database.pool.query('update activities set duration_minutes = 0 where id = $1', [oldActivity]), /activities_duration_check/);
     const preserved = (await database.pool.query('select * from transport_legs where id = $1', [oldLeg])).rows[0];
     assert.equal(preserved.title, 'Existing train');
     assert.equal(preserved.from_stop_id, stops[0].id);

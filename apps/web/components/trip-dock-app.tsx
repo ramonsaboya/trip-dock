@@ -1555,6 +1555,7 @@ function ActivityEditor({ trip, activity, stopId, scheduledLocal, onClose, onSav
     stopId: initialStopId,
     title: activity?.title ?? '',
     status: activity?.status ?? 'IDEA' as Activity['status'],
+    durationMinutes: activity?.durationMinutes ?? 60,
     scheduledAt: activity ? isoToDateTimeLocal(activity.scheduledAt, localTimezone) : scheduledLocal ?? null,
     timezone: localTimezone,
   };
