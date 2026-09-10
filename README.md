@@ -123,7 +123,7 @@ The deterministic brand generator is `scripts/generate-brand-assets.py`. It requ
 ## Current limitations
 
 - This is intentionally local-only: no deployment, authentication, authorization, collaboration, or multi-user concurrency beyond optimistic revision protection.
-- Voice dictation depends on browser speech recognition and its service availability; spoken AI responses remain out of scope. See [dictation behavior, browser support, and verification](docs/voice-dictation.md).
+- Voice dictation uses GPT Live Transcribe in its fastest mode and requires server-only OpenAI API access plus browser microphone/WebRTC support. Spoken AI responses remain out of scope. See [dictation setup, cost, and verification](docs/voice-dictation.md).
 - WhatsApp, booking providers, uploads, background workers, notifications, and AI changes to existing trips are out of scope.
 - Live model compatibility uses `pnpm test:ai-live`; trip-creation quality uses `pnpm test:ai-eval`. Deterministic tests do not spend API credits.
 - Production hosting and infrastructure providers remain undecided.

@@ -10,6 +10,7 @@ const server = await createServer({
   envDir: false,
   define: { 'process.env.NEXT_PUBLIC_GRAPHQL_URL': JSON.stringify('/__voice-preview/graphql') },
   plugins: [react()],
+  resolve: { alias: [{ find: /\.\.\/lib\/live-recognition$/, replacement: fileURLToPath(new URL('./simulated-live.ts', import.meta.url)) }] },
   css: { postcss: { plugins: [tailwindcss()] } },
   server: { host: '127.0.0.1', port: 3201, strictPort: true },
 });

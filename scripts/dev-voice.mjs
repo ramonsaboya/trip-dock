@@ -83,7 +83,7 @@ try {
       child.once('exit', (code) => { if (!stopping) void stop(code ?? 1); });
     }
     console.log('\nOpen http://localhost:3202 in Chrome once the web server is ready.\n');
-    console.log('Speak uses your real microphone. Draft requests use the server-only OpenAI settings in .env.');
+    console.log('Speak uses GPT Live Transcribe in fastest mode. Dictation and drafts use the server-only OpenAI settings in .env.');
     console.log('Ctrl+C stops these app servers. Your test trips remain in the separate Docker volume.\n');
   }
 } catch (error) {

@@ -1,12 +1,14 @@
 // A small structural adapter also covers browsers with the webkit prefix.
 export interface Recognition {
+  context?: string;
+  finalizationTimeoutMs?: number;
   lang: string;
   continuous: boolean;
   interimResults: boolean;
   maxAlternatives: number;
   onstart: (() => void) | null;
   onend: (() => void) | null;
-  onerror: ((event: { error: string }) => void) | null;
+  onerror: ((event: { error: string; message?: string }) => void) | null;
   onresult: ((event: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null;
   start(): void;
   stop(): void;
@@ -70,7 +72,7 @@ export class VoiceDictation {
 
   get active() { return this.recognition !== null; }
 
-  start(base: string, maxLength: number, language: string) {
+  start(base: string, maxLength: number, language: string, context = base) {
     if (this.disposed || this.recognition) return;
     if (base.length >= maxLength) {
       this.publish('idle', 'The text limit is reached. Shorten your message before dictating more.');
@@ -81,6 +83,7 @@ export class VoiceDictation {
       const recognition = new this.create();
       this.recognition = recognition;
       recognition.lang = language;
+      recognition.context = context;
       recognition.continuous = true;
       recognition.interimResults = true;
       recognition.maxAlternatives = 1;
@@ -98,8 +101,8 @@ export class VoiceDictation {
         this.onText(text);
         if (text.length >= maxLength) this.cancel('Text limit reached. Review your message before sending.');
       };
-      recognition.onerror = ({ error }) => {
-        if (current()) this.cancel(recognitionError(error));
+      recognition.onerror = ({ error, message }) => {
+        if (current()) this.cancel(message || recognitionError(error));
       };
       recognition.onend = () => {
         if (!current()) return;
@@ -122,7 +125,7 @@ export class VoiceDictation {
     }
     clearTimeout(this.timer);
     this.publish('stopping', 'Finishing dictation…');
-    this.timer = setTimeout(() => this.cancel('Dictation stopped. Review your text before sending.'), 2000);
+    this.timer = setTimeout(() => this.cancel('Dictation stopped. Review your text before sending.'), this.recognition.finalizationTimeoutMs ?? 2000);
     try { this.recognition.stop(); } catch { this.cancel('Dictation stopped. Review your text before sending.'); }
   }
 

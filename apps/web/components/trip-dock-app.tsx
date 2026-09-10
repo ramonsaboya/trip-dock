@@ -1196,7 +1196,7 @@ function CreateTripDialog({
         {visibleQuestions.some((item) => item.options.length) ? <button className="button-secondary apply-quick-answers" type="button" onClick={applySelectedAnswers} disabled={followUpBusy || !Object.keys(selectedOptions).length}>{blocking ? 'Continue with selected answers' : 'Use selected answers'}</button> : null}
         <div className="follow-up-compose">
           <label htmlFor="trip-draft-follow-up">{blocking ? 'Or answer everything in one message' : 'Tell TripDock what to adjust'}</label>
-          <DictationTextarea id="trip-draft-follow-up" rows={4} maxLength={1500} value={followUp} onChange={setFollowUp} onActiveChange={setFollowUpDictating} placeholder={blocking ? 'For example: Bristol, 10–14 May, using the later weekend.' : 'For example: Keep the proposed dates, but give Rome one extra night.'} disabled={followUpBusy} />
+          <DictationTextarea id="trip-draft-follow-up" rows={4} maxLength={1500} value={followUp} context={sourcePrompt} onChange={setFollowUp} onActiveChange={setFollowUpDictating} placeholder={blocking ? 'For example: Bristol, 10–14 May, using the later weekend.' : 'For example: Keep the proposed dates, but give Rome one extra night.'} disabled={followUpBusy} />
           <button className="button-primary" type="button" onClick={() => void submitFollowUp()} disabled={followUpBusy || followUpDictating || !followUp.trim()}>{followUpBusy ? 'Updating your draft…' : 'Update interpreted draft'}</button>
         </div>
         {error ? <p className="form-error" role="alert">{error}</p> : null}
