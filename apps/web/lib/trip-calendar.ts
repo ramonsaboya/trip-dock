@@ -1,4 +1,4 @@
-import { isoToDateTimeLocal, sortStopsByDate, type Stay, type TransportLeg, type Trip, type TripStop } from './graphql-client.ts';
+import { dateTimeLocalToIso, isoToDateTimeLocal, sortStopsByDate, type Stay, type TransportLeg, type Trip, type TripStop } from './graphql-client.ts';
 import { activityAssignment, destinationDays } from './activity-planning.ts';
 
 export function calendarColumns(trip: Trip) {
@@ -106,4 +106,14 @@ export function calendarHourDestination(trip: Trip, day: string, hour: string): 
   const preceding = transitions.filter((item) => item.end <= time).at(-1);
   const id = active ? active.from ?? active.to : preceding ? preceding.to ?? preceding.from : transitions[0]!.from ?? transitions[0]!.to;
   return stops.find((stop) => stop.id === id);
+}
+
+export function transportMoveInput(leg: TransportLeg, day: string, time: string, timezone: string) {
+  const departureTime = dateTimeLocalToIso(day + 'T' + time, timezone);
+  const duration = leg.departureTime && leg.arrivalTime ? new Date(leg.arrivalTime).getTime() - new Date(leg.departureTime).getTime() : null;
+  return {
+    fromStopId: leg.fromStopId, toStopId: leg.toStopId, fromLocation: leg.fromLocation, toLocation: leg.toLocation,
+    mode: leg.mode, title: leg.title, details: leg.details, timezone, departureTime: !leg.departureTime && leg.arrivalTime ? null : departureTime,
+    arrivalTime: !leg.departureTime && leg.arrivalTime ? departureTime : duration !== null && departureTime ? new Date(new Date(departureTime).getTime() + duration).toISOString() : null,
+  };
 }

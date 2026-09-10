@@ -1315,7 +1315,7 @@ type EntityEditor =
   | { kind: 'stop'; value?: TripStop }
   | { kind: 'transport'; value?: TransportLeg; fromStopId?: string | null; toStopId?: string | null }
   | { kind: 'stay'; value?: Stay; stopId?: string }
-  | { kind: 'activity'; value?: Activity; stopId?: string }
+  | { kind: 'activity'; value?: Activity; stopId?: string; scheduledLocal?: string }
   | null;
 
 function StopEditor({ trip, stop, onClose, onSaved }: { trip: Trip; stop?: TripStop; onClose: () => void; onSaved: (trip: Trip) => void }) {
@@ -1547,7 +1547,7 @@ function StayEditor({ trip, stay, stopId, onClose, onSaved }: { trip: Trip; stay
   );
 }
 
-function ActivityEditor({ trip, activity, stopId, onClose, onSaved }: { trip: Trip; activity?: Activity; stopId?: string; onClose: () => void; onSaved: (trip: Trip) => void }) {
+function ActivityEditor({ trip, activity, stopId, scheduledLocal, onClose, onSaved }: { trip: Trip; activity?: Activity; stopId?: string; scheduledLocal?: string; onClose: () => void; onSaved: (trip: Trip) => void }) {
   const sortedStops = sortStopsByDate(trip.stops);
   const localTimezone = activity?.timezone ?? deviceTimezone();
   const initialStopId = activity?.stopId ?? stopId ?? sortedStops[0]?.id ?? '';
@@ -1555,7 +1555,7 @@ function ActivityEditor({ trip, activity, stopId, onClose, onSaved }: { trip: Tr
     stopId: initialStopId,
     title: activity?.title ?? '',
     status: activity?.status ?? 'IDEA' as Activity['status'],
-    scheduledAt: activity ? isoToDateTimeLocal(activity.scheduledAt, localTimezone) : null,
+    scheduledAt: activity ? isoToDateTimeLocal(activity.scheduledAt, localTimezone) : scheduledLocal ?? null,
     timezone: localTimezone,
   };
   const [input, setInput] = useState(() => initialInput);
@@ -1639,10 +1639,10 @@ function TripDetail({ trip, onChanged, onDeleted, notify }: { trip: Trip; onChan
     <main id="main-content" className="detail-page trip-workbench" tabIndex={-1}>
       <header className="trip-workbench-header">
         <div className="trip-workbench-title"><h1>{trip.name}</h1><p>{formatDateRange(trip.startDate, trip.endDate)}</p></div>
-        <div className="hero-actions"><button className="button-text" type="button" onClick={() => setEditor({ kind: 'stop' })}>+ Destination</button><button className="button-text" type="button" onClick={() => setEditor({ kind: 'trip' })}>Edit trip</button><button className="button-text button-danger" type="button" onClick={() => void deleteTrip()}>Delete</button></div>
+        <div className="hero-actions"><button className="button-text" type="button" onClick={() => setEditor({ kind: 'trip' })}>Edit trip</button><button className="button-text button-danger" type="button" onClick={() => void deleteTrip()}>Delete</button></div>
       </header>
       <TripCalendar trip={trip} onChanged={onChanged}
-        onActivity={(activity, stopId) => setEditor({ kind: 'activity', value: activity, stopId })}
+        onActivity={(activity, stopId, scheduledLocal) => setEditor({ kind: 'activity', value: activity, stopId, scheduledLocal })}
         onStay={(stay, stopId) => setEditor({ kind: 'stay', value: stay, stopId })}
         onTransport={(leg, fromStopId, toStopId) => setEditor({ kind: 'transport', value: leg, fromStopId, toStopId })}
         onDestination={(stop) => setEditor({ kind: 'stop', value: stop })}
@@ -1652,7 +1652,7 @@ function TripDetail({ trip, onChanged, onDeleted, notify }: { trip: Trip; onChan
       {editor?.kind === 'stop' ? <StopEditor trip={trip} stop={editor.value} onClose={() => setEditor(null)} onSaved={(updated) => { setEditor(null); onChanged(updated); }} /> : null}
       {editor?.kind === 'transport' ? <TransportEditor trip={trip} leg={editor.value} fromStopId={editor.fromStopId} toStopId={editor.toStopId} onClose={() => setEditor(null)} onSaved={(updated) => { setEditor(null); onChanged(updated); }} /> : null}
       {editor?.kind === 'stay' ? <StayEditor trip={trip} stay={editor.value} stopId={editor.stopId} onClose={() => setEditor(null)} onSaved={(updated) => { setEditor(null); onChanged(updated); }} /> : null}
-      {editor?.kind === 'activity' ? <ActivityEditor trip={trip} activity={editor.value} stopId={editor.stopId} onClose={() => setEditor(null)} onSaved={(updated) => { setEditor(null); onChanged(updated); }} /> : null}
+      {editor?.kind === 'activity' ? <ActivityEditor trip={trip} activity={editor.value} stopId={editor.stopId} scheduledLocal={editor.scheduledLocal} onClose={() => setEditor(null)} onSaved={(updated) => { setEditor(null); onChanged(updated); }} /> : null}
     </main>
   );
 }

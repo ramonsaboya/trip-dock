@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { calendarColumns, calendarHourDestination, calendarTransition, calendarStartHour, calendarStayBands, stayCoversDay, transportPlacement, tripRoutes } from '../lib/trip-calendar.ts';
+import { calendarColumns, calendarHourDestination, calendarTransition, calendarStartHour, calendarStayBands, stayCoversDay, transportPlacement, transportMoveInput, tripRoutes } from '../lib/trip-calendar.ts';
 import { type Stay, type TransportLeg, type Trip, type TripStop } from '../lib/graphql-client.ts';
 
 const stops: TripStop[] = [
@@ -99,4 +99,18 @@ test('placeholder transition spans two hours and excludes external trip boundari
   assert.equal(calendarTransition(trip, '2027-06-03', '12:00'), undefined);
   assert.equal(calendarTransition(trip, '2027-06-01', '10:00'), undefined);
   assert.equal(calendarTransition(trip, '2027-06-05', '10:00'), undefined);
+});
+
+test('dragging transport preserves route, details and elapsed travel duration', () => {
+  const booked = { ...leg, departureTime: '2027-06-03T08:00:00Z', arrivalTime: '2027-06-03T10:00:00Z', details: 'Seat 12A' };
+  const moved = transportMoveInput(booked, '2027-06-04', '14:00', 'Europe/Rome');
+  assert.equal(moved.departureTime, '2027-06-04T12:00:00.000Z');
+  assert.equal(moved.arrivalTime, '2027-06-04T14:00:00.000Z');
+  assert.equal(moved.fromStopId, 'rome');
+  assert.equal(moved.toStopId, 'florence');
+  assert.equal(moved.details, 'Seat 12A');
+  assert.equal(transportMoveInput(leg, '2027-06-04', '14:00', 'Europe/Rome').arrivalTime, null);
+  const arrivalOnly = transportMoveInput({ ...leg, arrivalTime: booked.arrivalTime }, '2027-06-04', '14:00', 'Europe/Rome');
+  assert.equal(arrivalOnly.departureTime, null);
+  assert.equal(arrivalOnly.arrivalTime, '2027-06-04T12:00:00.000Z');
 });

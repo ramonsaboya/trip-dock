@@ -2164,3 +2164,30 @@ html:has(.trip-workbench), body:has(.trip-workbench) { overflow: hidden; height:
 }
 
 .trip-calendar-scroll:focus-visible { outline: 2px solid #718665; outline-offset: 2px; }
+
+/* Separate destination paper and compact stay pills from the hourly grid. */
+.trip-calendar-table thead tr > .calendar-upper-panel { position: static; padding: 0 0 14px; border: 0; background: var(--canvas); }
+.calendar-places-table { border: 1px solid #cfdbca; border-radius: 10px; overflow: hidden; }
+.calendar-places-table .calendar-stay-row td { border: 0; background: var(--canvas); padding: 7px; }
+.calendar-places-table .calendar-stay-row > th { border: 0; background: var(--canvas); }
+.calendar-places-table .calendar-stay-row .calendar-stay { display: inline-flex; max-width: 100%; margin: 0 4px; align-items: center; }
+.calendar-places-table .calendar-stay > button:first-child, .calendar-add-stay { border: 1px solid #c9d1bf; border-radius: 999px; background: #fff; padding: 7px 15px; box-shadow: 0 2px 4px #263e2d08; }
+.calendar-places-table .calendar-stay small { display: none; }
+.calendar-stay-items:empty { display: none; }
+.calendar-stay-items { display: inline; }
+.trip-calendar-table .calendar-date-row th { border-top: 0; }
+.pool-add-activity { width: 100%; margin-top: 12px; }
+.trip-calendar-table .destination-tint-1 { background-image: radial-gradient(circle, #82442615 1px, transparent 1.5px); background-size: 10px 10px; }
+.trip-calendar-table .destination-tint-2 { background-image: repeating-linear-gradient(55deg, transparent 0 5px, var(--day-grain) 5px 6px); background-size: auto; }
+.calendar-transfer-divider { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 2; }
+.calendar-transfer-divider line { stroke: #cfdbca; stroke-width: 1; vector-effect: non-scaling-stroke; }
+.trip-calendar-hour.cell-selected { outline: 2px solid #819778; outline-offset: -2px; }
+.cell-add-activity { position: relative; z-index: 2; display: block; margin: 3px 0; padding: 6px 8px; border: 1px solid #819778; border-radius: 6px; background: #fff; font-size: .8rem; cursor: pointer; }
+.has-placeholder > .journey-options { position: absolute; top: 5px; left: 5px; width: 56%; z-index: 2; }
+.trip-calendar-hour.placeholder-origin { z-index: 1; }
+.journey-continuous { width: 100%; min-height: 0; border: 1px dashed #ba8d65; border-radius: 8px; background: #fff4e5; }
+.has-placeholder > .calendar-note, .has-placeholder > .cell-add-activity { margin-left: 59%; }
+.calendar-note .record-main[draggable="true"] { cursor: grab; }
+.calendar-note .record-main[draggable="true"]:active { cursor: grabbing; }
+.calendar-unplaced { max-height: 140px; overflow: auto; font-size: .8rem; }
+.calendar-unplaced > .journey-note, .calendar-unplaced > .calendar-stay { display: inline-flex; max-width: 260px; }
