@@ -2103,3 +2103,16 @@ textarea {
 
 .calendar-stay-items { max-height: 96px; overflow-y: auto; }
 .travel-planning-row .journey-options { max-height: 210px; overflow-y: auto; }
+/* Keep the calendar flush left, with ideas alongside on the right. */
+.trip-calendar-workspace { grid-template-columns: minmax(0, 1fr) 220px; }
+.destination-tint--2 { --day-paper: #f5f4ef; --day-ink: #4d5e50; --day-grain: #53614f08; }
+.shared-place-divider { display: inline-block; margin: 0 6px; color: #687464; }
+.calendar-stay-row td { background: #fff; border-bottom: 1px solid #ccd5c8; padding: 9px 12px; }
+.calendar-stay-row .calendar-stay { max-width: 430px; }
+.calendar-stay-row .calendar-stay > button:first-child { background: #f8faf5; }
+.trip-calendar-table .calendar-date-row th { background: #e1e9dc; background-image: none !important; color: #263e2d; font-size: 1rem; font-weight: 750; padding: 13px 10px; border-top: 9px solid var(--canvas); border-bottom: 2px solid #819778; }
+.trip-calendar-table .calendar-date-row th:first-child { background: #e1e9dc; }
+.calendar-date-row small { font-weight: 500; color: #51634c; }
+.journey-placeholder { min-height: 110px; margin: 3px 0; }
+.journey-placeholder strong { display: block; margin: 9px 0 4px; font-size: 1rem; }
+@media (max-width: 800px) { .trip-calendar-workspace { grid-template-columns: 1fr; } }

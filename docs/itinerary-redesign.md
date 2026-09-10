@@ -19,11 +19,11 @@ The main app is unchanged. The preview uses database port 55433, API 4100 and we
 
 ## Workspace layout
 
-The itinerary is one calendar spanning the whole trip, with an optional Week view. Every date appears once. Contiguous destination groups have numbered headings, distinct pale colors and a light CSS texture. A shared transfer day shows both destination names; dropping an activity on that day assigns it to the arriving destination, and its editor can change that assignment.
+The itinerary is one calendar spanning the whole trip, with an optional Week view. Every date appears once. Contiguous destination groups have numbered headings, distinct pale colors and a light CSS texture. A shared transfer day shows both destination names; both destination colors share that column, and dropping an activity there preserves its destination.
 
-Accommodation occupies one compact row above the date headings. Confirmed local check-in and check-out dates control coverage; checkout does not count as another night. Missing dates use the destination range and are marked for confirmation. Unplaced stays and transport remain accessible under Dates to review.
+The calendar sits on the left with the idea pool on the right. Accommodation occupies one compact row above the clearly separated date headings; adjacent cells merge until the stay or set of stays changes. Confirmed local check-in and check-out dates control coverage; checkout does not count as another night. Missing dates use the destination range and are marked for confirmation. Unplaced stays and transport remain accessible under Dates to review.
 
-Transport appears as large terracotta notes at its recorded local departure hour (arrival hour if only arrival is available). Multiple records split side by side. With no timestamp, a destination boundary provides an explicitly suggested calendar day in the Travel row; no time is invented or saved. Arrival, transfers and return journeys each retain add controls. The page strip and scrolling timeline are removed. Home remains in the aligned top bar.
+Transport appears as large terracotta notes at its recorded local departure hour (arrival hour if only arrival is available). Multiple records split side by side. There is no special Travel row. With no timestamp, a destination boundary provides a suggested day and an explicitly marked 10–11 a.m. placeholder in the regular hourly grid; those display defaults are not saved as booking facts. Arrival, transfers and return journeys each retain add controls. The initial scroll shows 9 a.m. or the earliest recorded activity/transport hour among the visible days, whichever is earlier. The page strip and scrolling timeline are removed. Home remains in the aligned top bar.
 
 ## Data model and migration review
 
@@ -37,7 +37,7 @@ Creation renders a virtual next destination as soon as the previous name is type
 
 ## Validation
 
-- `pnpm check` passed: 72 API tests and 61 web tests, lint, typecheck, API build and web build. The real-PostgreSQL test is intentionally skipped in the default suite and passed separately with `pnpm test:postgres`.
+- `pnpm check` passed: 72 API tests and 63 web tests, lint, typecheck, API build and web build. The real-PostgreSQL test is intentionally skipped in the default suite and passed separately with `pnpm test:postgres`.
 - Dedicated PostgreSQL checks use a disposable container on port 55432, separate from both main and preview databases. `TEST_DATABASE_URL` must point to its `tripdock_test` database; `pnpm test:postgres` resets that test schema.
 - The same arrival/return and activity scheduling scenario runs against pg-mem and PostgreSQL, including multiple transports, invalid endpoints, foreign-trip stops, booked/completed activities, pool return and stale revisions.
 - The PostgreSQL upgrade test inserts a route into the previous schema, applies the migration and verifies that record survives. It also verifies database endpoint constraints and repeatable migration application.
