@@ -9,6 +9,7 @@
   "scripts": {
     "dev:voice": "node scripts/dev-voice.mjs",
     "dev:voice-preview": "node apps/web/tests/voice-preview/server.mjs",
+    "dev:packing": "node scripts/dev-packing.mjs",
     "dev:itinerary": "node scripts/dev-itinerary.mjs",
     "dev": "pnpm --parallel --filter @tripdock/api --filter @tripdock/web dev",
     "build": "pnpm -r --filter @tripdock/api --filter @tripdock/web build",

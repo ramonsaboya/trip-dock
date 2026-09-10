@@ -1,4 +1,5 @@
 import { sql } from 'drizzle-orm';
+export * from './packing-schema.js';
 import {
   check,
   date,

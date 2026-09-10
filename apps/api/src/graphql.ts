@@ -1,4 +1,6 @@
 import { createSchema, createYoga } from 'graphql-yoga';
+import { packingTypeDefs } from './packing-graphql.js';
+import { packingResolvers } from './packing-data.js';
 import { GraphQLError } from 'graphql';
 import { and, eq, inArray, max, sql } from 'drizzle-orm';
 import { z, ZodError } from 'zod';
@@ -1015,11 +1017,14 @@ export type CreateApiOptions = {
   aiGateway: AiGateway;
   webOrigin: string;
   graphiql?: boolean;
+  packingProfileId?: string;
 };
 
-export function createApi({ db, aiGateway, webOrigin, graphiql = false }: CreateApiOptions) {
+export function createApi({ db, aiGateway, webOrigin, graphiql = false, packingProfileId }: CreateApiOptions) {
+  const base = buildResolvers(db, aiGateway);
+  const packing = packingResolvers(db, packingProfileId);
   return createYoga({
-    schema: createSchema({ typeDefs, resolvers: buildResolvers(db, aiGateway) }),
+    schema: createSchema({ typeDefs: [typeDefs, packingTypeDefs], resolvers: { ...base, Query: { ...base.Query, ...packing.Query }, Mutation: { ...base.Mutation, ...packing.Mutation } } }),
     graphqlEndpoint: '/graphql',
     cors: {
       origin: webOrigin,
