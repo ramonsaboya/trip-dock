@@ -2116,3 +2116,28 @@ textarea {
 .journey-placeholder { min-height: 110px; margin: 3px 0; }
 .journey-placeholder strong { display: block; margin: 9px 0 4px; font-size: 1rem; }
 @media (max-width: 800px) { .trip-calendar-workspace { grid-template-columns: 1fr; } }
+
+/* Quiet navigation and destination paper patterns. */
+.calendar-surface { min-width: 0; display: grid; gap: 6px; }
+.calendar-scroll-rail { overflow-x: scroll; overflow-y: hidden; scrollbar-width: thin; scrollbar-color: #96a68c #e9eee4; border-radius: 20px; min-width: 0; }
+.calendar-scroll-rail::-webkit-scrollbar { height: 9px; }
+.calendar-scroll-rail::-webkit-scrollbar-track { background: #e9eee4; border-radius: 20px; }
+.calendar-scroll-rail::-webkit-scrollbar-thumb { background: #96a68c; border: 2px solid #e9eee4; border-radius: 20px; }
+.calendar-scroll-rail::-webkit-scrollbar-thumb:hover { background: #62765b; }
+.trip-calendar-scroll, .trip-calendar-pool, .calendar-stay-items { scrollbar-width: none; }
+.trip-calendar-scroll::-webkit-scrollbar, .trip-calendar-pool::-webkit-scrollbar, .calendar-stay-items::-webkit-scrollbar { display: none; }
+.trip-calendar-scroll { cursor: grab; }
+.trip-calendar-scroll.is-panning { cursor: grabbing; user-select: none; }
+.calendar-scroll-rail:focus-visible, .trip-calendar-scroll:focus-visible { outline: 2px solid #718665; outline-offset: 2px; }
+.destination-band th { text-align: center; }
+.calendar-stay-row td { text-align: center; vertical-align: middle; }
+.calendar-stay-row .calendar-stay { margin-left: auto; margin-right: auto; }
+.calendar-stay-row .calendar-stay > button:first-child { text-align: center; }
+.calendar-add-stay { color: #51634c; }
+.trip-calendar-table .destination-tint-1 { background-image: repeating-linear-gradient(55deg, transparent 0 5px, var(--day-grain) 5px 6px); }
+.trip-calendar-table .destination-tint-2 { background-image: radial-gradient(circle, #305c8115 1px, transparent 1.5px); background-size: 10px 10px; }
+.trip-calendar-table .destination-tint-3 { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='22' height='22' viewBox='0 0 22 22'%3E%3Cpath d='M11 6L12 10L16 11L12 12L11 16L10 12L6 11L10 10Z' fill='%23684384' fill-opacity='.07'/%3E%3C/svg%3E"); }
+.trip-calendar-table .destination-tint-4 { background-image: linear-gradient(#80682609 1px, transparent 1px), linear-gradient(90deg, #80682609 1px, transparent 1px); background-size: 12px 12px; }
+.trip-calendar-table .destination-tint--1 { background-color: #fafaf8; background-image: none; }
+
+.calendar-scroll-rail { margin-inline: 1px; }

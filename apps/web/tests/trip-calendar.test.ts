@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { calendarColumns, calendarStartHour, calendarStayBands, stayCoversDay, transportPlacement, tripRoutes } from '../lib/trip-calendar.ts';
+import { calendarColumns, calendarHourDestination, calendarStartHour, calendarStayBands, stayCoversDay, transportPlacement, tripRoutes } from '../lib/trip-calendar.ts';
 import { type Stay, type TransportLeg, type Trip, type TripStop } from '../lib/graphql-client.ts';
 
 const stops: TripStop[] = [
@@ -65,4 +65,30 @@ test('stay cells merge across unchanged nights and split when the accommodation 
   assert.deepEqual(bands.map((band) => band.stays.map((item) => item.id)), [['hotel'], ['second'], []]);
   const withExtra = { ...hotelTrip, stays: [...hotelTrip.stays, { ...stay, id: 'alternative', checkIn: '2027-06-02T13:00:00Z', checkOut: '2027-06-03T09:00:00Z' }] };
   assert.deepEqual(calendarStayBands(withExtra, calendarColumns(withExtra)).map((band) => band.span), [1, 1, 2, 1]);
+});
+
+
+test('transfer-day paper changes city around a neutral placeholder hour', () => {
+  assert.equal(calendarHourDestination(trip, '2027-06-03', '09:00')?.id, 'rome');
+  assert.equal(calendarHourDestination(trip, '2027-06-03', '10:00'), undefined);
+  assert.equal(calendarHourDestination(trip, '2027-06-03', '11:00')?.id, 'florence');
+  assert.equal(calendarHourDestination(trip, '2027-06-01', '09:00'), undefined);
+  assert.equal(calendarHourDestination(trip, '2027-06-01', '11:00')?.id, 'rome');
+  assert.equal(calendarHourDestination(trip, '2027-06-05', '09:00')?.id, 'florence');
+  assert.equal(calendarHourDestination(trip, '2027-06-05', '11:00'), undefined);
+  assert.equal(calendarHourDestination(trip, '2027-06-02', '10:00')?.id, 'rome');
+});
+
+test('recorded transport times replace the placeholder transition in local time', () => {
+  const booked = { ...trip, transportLegs: [{ ...leg, departureTime: '2027-06-03T12:00:00Z', arrivalTime: '2027-06-03T14:00:00Z' }] };
+  assert.equal(calendarHourDestination(booked, '2027-06-03', '10:00')?.id, 'rome');
+  assert.equal(calendarHourDestination(booked, '2027-06-03', '14:00'), undefined);
+  assert.equal(calendarHourDestination(booked, '2027-06-03', '15:00'), undefined);
+  assert.equal(calendarHourDestination(booked, '2027-06-03', '16:00')?.id, 'florence');
+});
+
+test('empty stay sections align to destination boundaries without a shared header', () => {
+  const bands = calendarStayBands(trip, calendarColumns(trip));
+  assert.deepEqual(bands.map((band) => band.span), [2, 3]);
+  assert.deepEqual(bands.map((band) => band.destinations.map((stop) => stop.id)), [['rome'], ['florence']]);
 });

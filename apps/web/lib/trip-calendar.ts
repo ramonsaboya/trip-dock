@@ -54,12 +54,39 @@ export function calendarStayBands(trip: Trip, columns: ReturnType<typeof calenda
   const bands: Array<{ key: string; span: number; stays: Stay[]; destinations: TripStop[] }> = [];
   for (const column of columns) {
     const stays = trip.stays.filter((stay) => stayCoversDay(stay, column.day, trip.stops));
-    const key = stays.length ? stays.map((stay) => stay.id).sort().join('|') : 'empty-' + column.destinations.map((stop) => stop.id).join('|');
+    const section = column.destinations.at(-1);
+    const key = (section?.id ?? 'open') + ':' + (stays.length ? stays.map((stay) => stay.id).sort().join('|') : 'empty');
     const previous = bands.at(-1);
     if (previous?.key === key) {
       previous.span += 1;
-      for (const stop of column.destinations) if (!previous.destinations.some((item) => item.id === stop.id)) previous.destinations.push(stop);
-    } else bands.push({ key, span: 1, stays, destinations: [...column.destinations] });
+    } else bands.push({ key, span: 1, stays, destinations: section ? [section] : [] });
   }
   return bands;
+}
+
+// Color follows the journey down the day's hours, never diagonally across a day.
+// This is presentation only: placeholders do not create booking timestamps.
+export function calendarHourDestination(trip: Trip, day: string, hour: string): TripStop | undefined {
+  const stops = sortStopsByDate(trip.stops);
+  const present = stops.filter((stop) => stop.arrivalDate && stop.departureDate && day >= stop.arrivalDate && day <= stop.departureDate);
+  const transitions = tripRoutes(trip).flatMap((route) => {
+    const legs = trip.transportLegs.filter((leg) => leg.fromStopId === route.fromStopId && leg.toStopId === route.toStopId);
+    if (!legs.length) return route.day === day ? [{ start: 10, end: 11, from: route.fromStopId, to: route.toStopId }] : [];
+    return legs.flatMap((leg) => {
+      const place = transportPlacement(leg, stops);
+      if (place.day !== day) return [];
+      const start = Number(place.hour.slice(0, 2));
+      const arrival = isoToDateTimeLocal(leg.arrivalTime, leg.timezone);
+      const end = arrival && arrival.slice(0, 10) === day
+        ? Math.max(start + 1, Number(arrival.slice(11, 13)) + (arrival.slice(14, 16) === '00' ? 0 : 1))
+        : arrival && arrival.slice(0, 10) > day ? 24 : start + 1;
+      return [{ start, end, from: route.fromStopId, to: route.toStopId }];
+    });
+  }).sort((a, b) => a.start - b.start);
+  if (!transitions.length) return present.at(-1);
+  const time = Number(hour.slice(0, 2));
+  if (transitions.some((transition) => time >= transition.start && time < transition.end)) return undefined;
+  const preceding = transitions.filter((transition) => transition.end <= time).at(-1);
+  const id = preceding ? preceding.to : transitions[0]!.from;
+  return stops.find((stop) => stop.id === id);
 }
