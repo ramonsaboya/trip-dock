@@ -94,7 +94,8 @@ export function TripCalendar({ trip, onChanged, onActivity, onStay, onTransport,
     const headings = header.current;
     if (!board || !headings) return;
     const update = () => {
-      const width = Math.max(0, 62 - board.scrollLeft);
+      const firstDestination = headings.rows[0]?.cells[1];
+      const width = firstDestination ? Math.max(0, firstDestination.getBoundingClientRect().left - board.getBoundingClientRect().left - 1) : 0;
       const height = headings.rows[2] ? headings.rows[2].getBoundingClientRect().top - board.getBoundingClientRect().top : 0;
       board.style.setProperty('--notch-width', width + 'px');
       board.style.setProperty('--notch-height', height + 'px');
