@@ -8,6 +8,7 @@ import { readFile } from 'node:fs/promises';
 import { createApi } from '../src/graphql.js';
 import { UnconfiguredAiGateway } from '../src/ai.js';
 import { exerciseItinerary } from './itinerary-scenarios.js';
+import { exercisePacking } from './packing-scenarios.js';
 
 import { createDatabase } from '../src/db/client.js';
 
@@ -40,6 +41,7 @@ test('generated migrations apply to an explicitly configured real PostgreSQL dat
       "select table_name from information_schema.tables where table_schema = 'public' and table_name = 'trips'",
     );
     assert.equal(rows.rowCount, 1);
+    await exercisePacking(database.db, true);
     await exerciseItinerary(createApi({ db: database.db, aiGateway: new UnconfiguredAiGateway(), webOrigin: 'http://localhost:3000', graphiql: false }));
 
     // Rebuild the previous schema with an existing route, then upgrade in place.
@@ -57,6 +59,8 @@ test('generated migrations apply to an explicitly configured real PostgreSQL dat
     const preservedActivity = (await database.pool.query('select title, duration_minutes from activities where id = $1', [oldActivity])).rows[0];
     assert.equal(preservedActivity.title, 'Existing activity');
     assert.equal(preservedActivity.duration_minutes, 60);
+    await database.pool.query(await readFile(new URL('../drizzle/0004_late_jack_flag.sql', import.meta.url), 'utf8'));
+    assert.equal((await database.pool.query('select title from activities where id = $1', [oldActivity])).rows[0].title, 'Existing activity');
     await assert.rejects(database.pool.query('update activities set duration_minutes = 0 where id = $1', [oldActivity]), /activities_duration_check/);
     const preserved = (await database.pool.query('select * from transport_legs where id = $1', [oldLeg])).rows[0];
     assert.equal(preserved.title, 'Existing train');
