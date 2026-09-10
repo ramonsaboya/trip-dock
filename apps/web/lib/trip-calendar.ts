@@ -1,4 +1,4 @@
-import { dateTimeLocalToIso, isoToDateTimeLocal, sortStopsByDate, type Stay, type TransportLeg, type Trip, type TripStop } from './graphql-client.ts';
+import { dateTimeLocalToIso, isoToDateTimeLocal, sortStopsByDate, type Activity, type Stay, type TransportLeg, type Trip, type TripStop } from './graphql-client.ts';
 import { activityAssignment, destinationDays } from './activity-planning.ts';
 
 export function calendarColumns(trip: Trip) {
@@ -72,40 +72,103 @@ export function calendarStayBands(trip: Trip, columns: ReturnType<typeof calenda
 
 // Hourly destination paper follows local transport times.
 // This is presentation only: placeholders do not create booking timestamps.
-function dayTransitions(trip: Trip, day: string) {
-  const stops = sortStopsByDate(trip.stops);
-  const transitions = tripRoutes(trip).flatMap((route) => {
-    const legs = trip.transportLegs.filter((leg) => leg.fromStopId === route.fromStopId && leg.toStopId === route.toStopId);
-    if (!legs.length) return route.day === day ? [{ start: 10, end: 12, from: route.fromStopId, to: route.toStopId }] : [];
-    return legs.flatMap((leg) => {
+type Transition = { start: number; end: number; from: string | null; to: string | null };
+function transitionsByDay(trip: Trip, stops: TripStop[]) {
+  const result = new Map<string, Transition[]>();
+  const legsByRoute = indexRouteLegs(trip.transportLegs);
+  for (const route of tripRoutes(trip)) {
+    const legs = legsByRoute.get(routeKey(route)) ?? [];
+    if (!legs.length && route.day) append(result, route.day, { start: 10, end: 12, from: route.fromStopId, to: route.toStopId });
+    for (const leg of legs) {
       const place = transportPlacement(leg, stops);
-      if (place.day !== day) return [];
+      if (!place.day) continue;
       const start = timeMinutes(transportLocalTime(leg)) / 60;
       const arrival = isoToDateTimeLocal(leg.arrivalTime, leg.timezone);
-      const end = arrival && arrival.slice(0, 10) === day
+      const end = arrival && arrival.slice(0, 10) === place.day
         ? Math.max(start + .5, timeMinutes(arrival.slice(11, 16)) / 60)
-        : arrival && arrival.slice(0, 10) > day ? 24 : start + (place.suggested ? 2 : 1);
-      return [{ start, end, from: route.fromStopId, to: route.toStopId }];
-    });
-  }).sort((a, b) => a.start - b.start);
-  return transitions;
+        : arrival && arrival.slice(0, 10) > place.day ? 24 : start + (place.suggested ? 2 : 1);
+      append(result, place.day, { start, end, from: route.fromStopId, to: route.toStopId });
+    }
+  }
+  for (const transitions of result.values()) transitions.sort((a, b) => a.start - b.start);
+  return result;
+}
+
+export function routeKey(route: { fromStopId: string | null; toStopId: string | null }) {
+  return JSON.stringify([route.fromStopId, route.toStopId]);
+}
+
+function indexRouteLegs(legs: TransportLeg[]) {
+  const result = new Map<string, TransportLeg[]>();
+  for (const leg of legs) append(result, routeKey(leg), leg);
+  return result;
+}
+
+function append<T>(map: Map<string, T[]>, key: string, value: T) {
+  const bucket = map.get(key);
+  if (bucket) bucket.push(value); else map.set(key, [value]);
+}
+
+// Prepare once per data revision. Hour-cell rendering only performs map lookups.
+export function calendarEventIndex(trip: Trip) {
+  const stops = sortStopsByDate(trip.stops);
+  const days = new Set(calendarColumns(trip).map(({ day }) => day));
+  const activities = new Map<string, Activity[]>();
+  const transport = new Map<string, TransportLeg[]>();
+  const placeholders = new Map<string, ReturnType<typeof tripRoutes>>();
+  const assignments = new Map(trip.activities.map((activity) => [activity.id, activityAssignment(activity)]));
+  const unplacedActivities: Activity[] = [];
+  const unplacedTransport: TransportLeg[] = [];
+  for (const activity of trip.activities) {
+    const place = assignments.get(activity.id);
+    if (!place || !days.has(place.day)) unplacedActivities.push(activity);
+    else append(activities, place.day + '-' + place.hour, activity);
+  }
+  for (const bucket of activities.values()) bucket.sort((a, b) => (a.scheduledAt ?? '').localeCompare(b.scheduledAt ?? '') || a.position - b.position);
+  for (const leg of trip.transportLegs) {
+    const place = transportPlacement(leg, stops);
+    if (!place.day || !days.has(place.day)) unplacedTransport.push(leg);
+    else append(transport, place.day + '-' + place.hour, leg);
+  }
+  const legs = indexRouteLegs(trip.transportLegs);
+  for (const route of tripRoutes(trip)) {
+    if (route.day && !legs.has(routeKey(route))) append(placeholders, route.day, route);
+  }
+  return { activities, transport, placeholders, assignments, unplacedActivities, unplacedTransport };
+}
+
+// Each day's route/timezone calculations are shared by all 48 half-hour samples.
+export function calendarPaperResolver(trip: Trip) {
+  const stops = sortStopsByDate(trip.stops);
+  const transitionsByDate = transitionsByDay(trip, stops);
+  const days = new Map<string, ReturnType<typeof prepare>>();
+  function prepare(day: string) {
+    const transitions = transitionsByDate.get(day) ?? [];
+    const present = stops.filter((stop) => stop.arrivalDate && stop.departureDate && day >= stop.arrivalDate && day <= stop.departureDate);
+    return {
+      transition(time: number) { return transitions.find((item) => item.from && item.to && time >= item.start && time < item.end); },
+      destination(time: number): TripStop | undefined {
+        if (!transitions.length) return present.at(-1);
+        const active = transitions.find((item) => time >= item.start && time < item.end);
+        const preceding = transitions.filter((item) => item.end <= time).at(-1);
+        const id = active ? active.from ?? active.to : preceding ? preceding.to ?? preceding.from : transitions[0]!.from ?? transitions[0]!.to;
+        return stops.find((stop) => stop.id === id);
+      },
+    };
+  }
+  return (day: string) => {
+    let prepared = days.get(day);
+    if (!prepared) { prepared = prepare(day); days.set(day, prepared); }
+    return prepared;
+  };
 }
 
 export function calendarTransition(trip: Trip, day: string, hour: string) {
-  const time = timeMinutes(hour) / 60;
-  return dayTransitions(trip, day).find((item) => item.from && item.to && time >= item.start && time < item.end);
+  return calendarPaperResolver(trip)(day).transition(timeMinutes(hour) / 60);
 }
 
 export function calendarHourDestination(trip: Trip, day: string, hour: string): TripStop | undefined {
-  const stops = sortStopsByDate(trip.stops);
-  const present = stops.filter((stop) => stop.arrivalDate && stop.departureDate && day >= stop.arrivalDate && day <= stop.departureDate);
-  const transitions = dayTransitions(trip, day);
-  if (!transitions.length) return present.at(-1);
-  const time = timeMinutes(hour) / 60;
-  const active = transitions.find((item) => time >= item.start && time < item.end);
-  const preceding = transitions.filter((item) => item.end <= time).at(-1);
-  const id = active ? active.from ?? active.to : preceding ? preceding.to ?? preceding.from : transitions[0]!.from ?? transitions[0]!.to;
-  return stops.find((stop) => stop.id === id);
+  return calendarPaperResolver(trip)(day).destination(timeMinutes(hour) / 60);
 }
 
 export function transportMoveInput(leg: TransportLeg, day: string, time: string, timezone: string) {
