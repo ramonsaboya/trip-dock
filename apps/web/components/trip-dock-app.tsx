@@ -1,4 +1,5 @@
 'use client';
+import { ThemeToggle } from './theme-toggle';
 import { PackingWorkspace } from './packing-workspace';
 import { navigateHome, navigateTrip, useTripNavigation } from '../lib/packing-navigation';
 
@@ -104,14 +105,21 @@ function deviceTimezone(): string | null {
 
 function Logo() {
   return (
-    // eslint-disable-next-line @next/next/no-img-element
+    <>
+    {/* eslint-disable-next-line @next/next/no-img-element */}
     <img
-      className="brand-logo"
+      className="brand-logo brand-logo-light"
       src="/brand/tripdock-logo.png"
       width="1863"
       height="844"
       alt="TripDock"
     />
+    <span
+      className="brand-logo brand-logo-dark"
+      role="img"
+      aria-label="TripDock"
+    />
+    </>
   );
 }
 
@@ -1739,6 +1747,9 @@ export function TripDockApp() {
       <a className="skip-link" href="#main-content" onClick={event => { event.preventDefault(); document.getElementById('main-content')?.focus(); }}>Skip to main content</a>
       <header className="site-header"><div className={`header-inner ${selectedTrip ? 'header-inner-workbench' : ''}`}>
         <button className="logo-button" type="button" onClick={navigateHome} aria-label="TripDock home"><Logo /></button>
+        {navigation.tripId ? <button className="header-home" type="button" onClick={navigateHome} aria-label="Home" title="Home">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1V10Z" /></svg>
+        </button> : null}
         {selectedTrip ? <div className="app-section-tabs" role="tablist" aria-label="Trip views" onKeyDown={event => {
           if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
           event.preventDefault();
@@ -1749,7 +1760,7 @@ export function TripDockApp() {
           <button id="schedule-tab" role="tab" aria-selected={navigation.view === 'schedule'} aria-controls="schedule-panel" tabIndex={navigation.view === 'schedule' ? 0 : -1} onClick={() => navigateTrip(selectedTrip.id, 'schedule')}>Schedule</button>
           <button id="packing-tab" role="tab" aria-selected={navigation.view === 'packing'} aria-controls="packing-panel" tabIndex={navigation.view === 'packing' ? 0 : -1} onClick={() => navigateTrip(selectedTrip.id, 'packing')}>Packing</button>
         </div> : null}
-        <button className="button-text header-home" type="button" aria-current={!navigation.tripId ? 'page' : undefined} onClick={navigateHome}>Home</button>
+        <ThemeToggle />
       </div></header>
       {state.kind === 'loading' ? <main id="main-content" className="state-page" aria-busy="true"><Logo /><div className="loader" aria-hidden="true" /><h1>Opening your trips</h1><p>Getting your plans ready…</p></main> : null}
       {state.kind === 'error' ? <main id="main-content" className="state-page error-state"><Logo /><h1>TripDock could not open your data</h1><p role="alert">{state.message}</p><button className="button-primary" type="button" onClick={retry}>Retry connection</button></main> : null}
