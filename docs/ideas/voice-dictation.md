@@ -1,6 +1,6 @@
 # Voice dictation for the AI composer
 
-Status: future idea, captured 10 September 2026.
+Status: implemented on the voice-dictation feature branch, 10 September 2026; awaiting review. See [implementation, browser support, and verification](../voice-dictation.md).
 
 ## Idea
 
@@ -14,7 +14,7 @@ Allow people to dictate into the AI chat or composer instead of typing. The inte
 - Leave the transcribed text editable before submission.
 - Keep ordinary text entry available alongside dictation.
 
-## Questions for later planning
+## Original planning questions
 
 - Which browsers, devices, and languages should be supported first?
 - How should interim transcription corrections behave so the text remains easy to read?

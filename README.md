@@ -10,6 +10,7 @@ Canonical trip data lives only in PostgreSQL. The browser contains no trip fixtu
 - Add, edit, remove, and reorder destinations.
 - Add, edit, and remove transport legs, stays, and activities.
 - Generate an unpersisted trip draft from natural language, edit it, and explicitly create it.
+- Dictate into the initial AI prompt or follow-up in supported browsers, review the text, and explicitly send it.
 - Reject stale manual edits with trip revision checks.
 - Start from a genuinely empty database with polished loading, error, and empty UI states.
 - Use the supplied TripDock logo throughout the header, favicon, Apple icon, PWA icons, manifest, and social preview.
@@ -77,6 +78,7 @@ Normal tests never call OpenAI. Their `FixtureAiGateway` is injected only by tes
 
 ```text
 pnpm dev             Run the API and web app in watch mode
+pnpm dev:voice-preview  Run an isolated, simulated dictation UI preview on port 3201
 pnpm build           Build both applications
 pnpm check           Run deterministic tests, lint, typecheck, and builds
 pnpm db:up           Start local PostgreSQL
@@ -120,7 +122,8 @@ The deterministic brand generator is `scripts/generate-brand-assets.py`. It requ
 ## Current limitations
 
 - This is intentionally local-only: no deployment, authentication, authorization, collaboration, or multi-user concurrency beyond optimistic revision protection.
-- Voice, WhatsApp, booking providers, uploads, background workers, notifications, and AI changes to existing trips are out of scope.
+- Voice dictation depends on browser speech recognition and its service availability; spoken AI responses remain out of scope. See [dictation behavior, browser support, and verification](docs/voice-dictation.md).
+- WhatsApp, booking providers, uploads, background workers, notifications, and AI changes to existing trips are out of scope.
 - Live model compatibility uses `pnpm test:ai-live`; trip-creation quality uses `pnpm test:ai-eval`. Deterministic tests do not spend API credits.
 - Production hosting and infrastructure providers remain undecided.
 

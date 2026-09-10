@@ -216,6 +216,14 @@ button:disabled {
   justify-self: start;
 }
 
+.dictation-compose { display: grid; gap: 10px; min-width: 0; }
+.dictation-compose textarea { width: 100%; }
+.dictation-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.dictation-toggle { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; flex-shrink: 0; }
+.dictation-toggle[aria-pressed="true"] { color: var(--danger); background: var(--danger-soft); border-color: var(--danger); }
+.dictation-status { flex: 1 1 160px; color: var(--brand-dark); font-size: 14px; line-height: 1.5; }
+.dictation-help { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
+
 .section-kicker,
 .trip-eyebrow,
 .entity-label {
