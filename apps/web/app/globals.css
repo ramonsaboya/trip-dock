@@ -2273,3 +2273,6 @@ html:has(.trip-workbench), body:has(.trip-workbench) { overflow: hidden; height:
 /* Continue the standard outer border around the recessed header corner. */
 .trip-calendar-table .destination-band > th:nth-child(2),
 .trip-calendar-table .calendar-stay-row > td:nth-child(2) { border-left: 0; box-shadow: -1px 0 0 #d4ddcf; }
+
+/* Card cells use layers 1–2; sticky times stay above them, below the date header (4). */
+.trip-calendar-table tbody tr > th:first-child { z-index: 3; }
