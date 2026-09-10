@@ -53,25 +53,30 @@ export function calendarStartHour(trip: Trip, days: string[]) {
 export function calendarStayBands(trip: Trip, columns: ReturnType<typeof calendarColumns>) {
   const bands: Array<{ key: string; span: number; stays: Stay[]; destinations: TripStop[] }> = [];
   for (const column of columns) {
-    const stays = trip.stays.filter((stay) => stayCoversDay(stay, column.day, trip.stops));
-    const section = column.destinations.at(-1);
-    const key = (section?.id ?? 'open') + ':' + (stays.length ? stays.map((stay) => stay.id).sort().join('|') : 'empty');
-    const previous = bands.at(-1);
-    if (previous?.key === key) {
-      previous.span += 1;
-    } else bands.push({ key, span: 1, stays, destinations: section ? [section] : [] });
+    const sections = column.destinations.length > 1 ? [column.destinations[0], column.destinations.at(-1)] : [column.destinations[0]];
+    sections.forEach((section, index) => {
+      const stays = trip.stays.filter((stay) => {
+        if (stay.stopId !== section?.id) return false;
+        const checkout = isoToDateTimeLocal(stay.checkOut, stay.timezone)?.slice(0, 10) ?? section?.departureDate;
+        return stayCoversDay(stay, column.day, trip.stops) || (sections.length === 2 && index === 0 && checkout === column.day);
+      });
+      const key = (section?.id ?? 'open') + ':' + (stays.length ? stays.map((stay) => stay.id).sort().join('|') : 'empty');
+      const span = 2 / sections.length;
+      const previous = bands.at(-1);
+      if (previous?.key === key) previous.span += span;
+      else bands.push({ key, span, stays, destinations: section ? [section] : [] });
+    });
   }
   return bands;
 }
 
-// Color follows the journey down the day's hours, never diagonally across a day.
+// Hourly destination paper follows local transport times.
 // This is presentation only: placeholders do not create booking timestamps.
-export function calendarHourDestination(trip: Trip, day: string, hour: string): TripStop | undefined {
+function dayTransitions(trip: Trip, day: string) {
   const stops = sortStopsByDate(trip.stops);
-  const present = stops.filter((stop) => stop.arrivalDate && stop.departureDate && day >= stop.arrivalDate && day <= stop.departureDate);
   const transitions = tripRoutes(trip).flatMap((route) => {
     const legs = trip.transportLegs.filter((leg) => leg.fromStopId === route.fromStopId && leg.toStopId === route.toStopId);
-    if (!legs.length) return route.day === day ? [{ start: 10, end: 11, from: route.fromStopId, to: route.toStopId }] : [];
+    if (!legs.length) return route.day === day ? [{ start: 10, end: 12, from: route.fromStopId, to: route.toStopId }] : [];
     return legs.flatMap((leg) => {
       const place = transportPlacement(leg, stops);
       if (place.day !== day) return [];
@@ -79,14 +84,26 @@ export function calendarHourDestination(trip: Trip, day: string, hour: string): 
       const arrival = isoToDateTimeLocal(leg.arrivalTime, leg.timezone);
       const end = arrival && arrival.slice(0, 10) === day
         ? Math.max(start + 1, Number(arrival.slice(11, 13)) + (arrival.slice(14, 16) === '00' ? 0 : 1))
-        : arrival && arrival.slice(0, 10) > day ? 24 : start + 1;
+        : arrival && arrival.slice(0, 10) > day ? 24 : start + (place.suggested ? 2 : 1);
       return [{ start, end, from: route.fromStopId, to: route.toStopId }];
     });
   }).sort((a, b) => a.start - b.start);
+  return transitions;
+}
+
+export function calendarTransition(trip: Trip, day: string, hour: string) {
+  const time = Number(hour.slice(0, 2));
+  return dayTransitions(trip, day).find((item) => item.from && item.to && time >= item.start && time < item.end);
+}
+
+export function calendarHourDestination(trip: Trip, day: string, hour: string): TripStop | undefined {
+  const stops = sortStopsByDate(trip.stops);
+  const present = stops.filter((stop) => stop.arrivalDate && stop.departureDate && day >= stop.arrivalDate && day <= stop.departureDate);
+  const transitions = dayTransitions(trip, day);
   if (!transitions.length) return present.at(-1);
   const time = Number(hour.slice(0, 2));
-  if (transitions.some((transition) => time >= transition.start && time < transition.end)) return undefined;
-  const preceding = transitions.filter((transition) => transition.end <= time).at(-1);
-  const id = preceding ? preceding.to : transitions[0]!.from;
+  const active = transitions.find((item) => time >= item.start && time < item.end);
+  const preceding = transitions.filter((item) => item.end <= time).at(-1);
+  const id = active ? active.from ?? active.to : preceding ? preceding.to ?? preceding.from : transitions[0]!.from ?? transitions[0]!.to;
   return stops.find((stop) => stop.id === id);
 }
