@@ -126,6 +126,8 @@ The deterministic brand generator is `scripts/generate-brand-assets.py`. It requ
 
 The detailed slice contract is recorded in [docs/prototype-v0.md](docs/prototype-v0.md). The local-first/OpenAI boundary is recorded in [ADR 0001](docs/decisions/0001-local-first-development-with-live-openai.md).
 
+Future product ideas are collected in [docs/ideas](docs/ideas/README.md).
+
 ## Repository policy
 
 - Keep secrets out of Git; commit only sanitized examples.
