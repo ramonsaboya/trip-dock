@@ -78,6 +78,7 @@ Normal tests never call OpenAI. Their `FixtureAiGateway` is injected only by tes
 
 ```text
 pnpm dev             Run the API and web app in watch mode
+pnpm dev:voice       Run the real app for Chrome microphone testing on port 3202
 pnpm dev:voice-preview  Run an isolated, simulated dictation UI preview on port 3201
 pnpm build           Build both applications
 pnpm check           Run deterministic tests, lint, typecheck, and builds

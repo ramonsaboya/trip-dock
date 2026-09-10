@@ -37,7 +37,23 @@ Documentation checked on 10 September 2026:
 
 Sources: [MDN compatibility data](https://github.com/mdn/browser-compat-data/blob/main/api/SpeechRecognition.json), [WebKit's Safari speech-recognition announcement](https://webkit.org/blog/11648/new-webkit-features-in-safari-14-1/). These are upstream availability statements, not a claim of device testing.
 
-## Isolated verification preview
+## Run the real app in Chrome
+
+From the voice feature worktree, run:
+
+```powershell
+pnpm dev:voice
+```
+
+Open **http://localhost:3202 in Chrome**. This launches the normal web app and API, starts Docker if necessary, and migrates a dedicated `tripdock_voice` PostgreSQL database. It uses web port 3202, API port 4202, database port 55436, and the separate `tripdock-voice_voice_data` Docker volume. Existing app servers and databases are not reused or modified. If either app port is occupied, the launcher stops with an explanation.
+
+Click **Speak**, allow Chrome microphone access, speak, and click **Stop dictation**. Review/edit the transcript and click **Build a trip draft**. You can then dictate follow-up changes, review the draft, and explicitly create a real persisted trip. There is no simulated speech or draft data in this launch. An empty trip list is expected on its first run.
+
+Dictation uses Chrome's speech service and needs no OpenAI key. AI draft generation uses `OPENAI_API_KEY` and `OPENAI_MODEL` from this worktree's ignored root `.env` (or your shell environment). Configure those server-only values before launching if they are absent. Do not put keys in browser code or commit `.env`. A local configuration was prepared on this machine using the existing itinerary worktree's TripDock AI settings; those values are not included in Git. AI draft requests use the configured provider and can incur its normal charges.
+
+Keep the terminal open while testing. Ctrl+C stops the launched app servers, while your trips remain in the dedicated database. To stop just that database afterward, use `docker compose -f compose.voice.yaml stop`; this retains its data. Run `pnpm dev:voice` again to resume.
+
+## Isolated simulated verification preview
 
 From this feature worktree, install the locked dependencies and run:
 
