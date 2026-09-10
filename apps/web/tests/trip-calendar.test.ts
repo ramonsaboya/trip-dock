@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { calendarHalfHours, dragStartMinute, resizeStart, calendarColumns, calendarHourDestination, calendarTransition, calendarStartHour, calendarStayBands, stayCoversDay, transportPlacement, transportMoveInput, tripRoutes } from '../lib/trip-calendar.ts';
+import { calendarEventIndex, calendarPaperResolver, calendarHalfHours, dragStartMinute, resizeStart, calendarColumns, calendarHourDestination, calendarTransition, calendarStartHour, calendarStayBands, stayCoversDay, transportPlacement, transportMoveInput, tripRoutes } from '../lib/trip-calendar.ts';
 import { type Stay, type TransportLeg, type Trip, type TripStop } from '../lib/graphql-client.ts';
 
 const stops: TripStop[] = [
@@ -132,4 +132,27 @@ test('transport paper changes at the exact half-hour arrival boundary', () => {
   assert.ok(calendarTransition(scheduled, '2027-06-03', '12:00'));
   assert.equal(calendarTransition(scheduled, '2027-06-03', '12:30'), undefined);
   assert.equal(calendarHourDestination(scheduled, '2027-06-03', '12:30')?.id, 'florence');
+});
+
+
+test('event index keeps local half-hours, sorted activities, missing-route placeholders and unplaced items', () => {
+  const activity = { id: 'later', tripId: 'trip', stopId: 'rome', position: 0, title: 'Walk', status: 'IDEA' as const, scheduledAt: '2027-06-01T07:30:00Z', timezone: 'Europe/Rome' };
+  const index = calendarEventIndex({ ...trip, activities: [activity, { ...activity, id: 'earlier', scheduledAt: '2027-06-01T07:00:00Z' }, { ...activity, id: 'pool', scheduledAt: null }], transportLegs: [leg, { ...leg, id: 'outside', departureTime: '2027-07-01T10:00:00Z' }] });
+  assert.deepEqual(index.activities.get('2027-06-01-09:00')?.map(({ id }) => id), ['earlier', 'later']);
+  assert.equal(index.assignments.get('later')?.time, '09:30');
+  assert.deepEqual(index.unplacedActivities.map(({ id }) => id), ['pool']);
+  assert.deepEqual(index.transport.get('2027-06-03-10:00')?.map(({ id }) => id), ['train']);
+  assert.deepEqual(index.unplacedTransport.map(({ id }) => id), ['outside']);
+  assert.equal(index.placeholders.has('2027-06-03'), false);
+  assert.equal(index.placeholders.get('2027-06-01')?.[0]?.label, 'Getting there');
+});
+
+test('prepared paper shares a day model and preserves overnight and fractional transport boundaries', () => {
+  const resolve = calendarPaperResolver({ ...trip, transportLegs: [{ ...leg, departureTime: '2027-06-03T20:30:00Z', arrivalTime: '2027-06-04T00:00:00Z' }] });
+  const day = resolve('2027-06-03');
+  assert.equal(resolve('2027-06-03'), day);
+  assert.equal(day.transition(22), undefined);
+  assert.deepEqual(day.transition(22.5), { start: 22.5, end: 24, from: 'rome', to: 'florence' });
+  assert.equal(day.destination(23.5)?.id, 'rome');
+  assert.equal(resolve('2027-06-04').destination(0)?.id, 'florence');
 });
