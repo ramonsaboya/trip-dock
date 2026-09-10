@@ -1,4 +1,5 @@
 @import 'tailwindcss';
+@import './packing.css';
 
 :root {
   --ink: #1d2528;

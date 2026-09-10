@@ -29,6 +29,13 @@
       "when": 1789000770201,
       "tag": "0003_rich_banshee",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1789003880967,
+      "tag": "0004_late_jack_flag",
+      "breakpoints": true
     }
   ]
 }

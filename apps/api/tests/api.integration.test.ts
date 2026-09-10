@@ -14,6 +14,7 @@ import type { AppDatabase } from '../src/db/client.js';
 import * as schema from '../src/db/schema.js';
 import { createApi } from '../src/graphql.js';
 import { exerciseItinerary } from './itinerary-scenarios.js';
+import { exercisePacking } from './packing-scenarios.js';
 
 // pg-mem's timestamp adapter uses the process timezone; keep the test adapter deterministic.
 process.env.TZ = 'UTC';
@@ -21,6 +22,7 @@ process.env.TZ = 'UTC';
 type Yoga = ReturnType<typeof createApi>;
 
 type Harness = {
+  db: AppDatabase;
   pool: Pool;
   yoga: Yoga;
   withGateway(gateway: AiGateway): Yoga;
@@ -88,7 +90,7 @@ async function createHarness(gateway: AiGateway = new UnconfiguredAiGateway()): 
   const migrationFiles = (await readdir(migrationDirectory))
     .filter((name) => /^\d+_.+\.sql$/.test(name))
     .sort();
-  assert.equal(migrationFiles.length, 4, 'Baseline and all data-preserving evolution migrations are applied.');
+  assert.equal(migrationFiles.length, 5, 'Baseline and all data-preserving evolution migrations are applied.');
   for (const migrationFile of migrationFiles) {
     const migration = await readFile(join(migrationDirectory, migrationFile), 'utf8');
     for (const statement of migration.split('--> statement-breakpoint')) {
@@ -98,7 +100,7 @@ async function createHarness(gateway: AiGateway = new UnconfiguredAiGateway()): 
   const db = drizzle(pool, { schema }) as AppDatabase;
   const withGateway = (aiGateway: AiGateway) =>
     createApi({ db, aiGateway, webOrigin: 'http://localhost:3000', graphiql: false });
-  return { pool, yoga: withGateway(gateway), withGateway };
+  return { db, pool, yoga: withGateway(gateway), withGateway };
 }
 
 async function gql<T>(
@@ -192,6 +194,14 @@ test('generated migration creates a genuine empty database with no fixtures', as
         'activities',
         'ai_proposal_operations',
         'ai_proposals',
+        'packing_categories',
+        'packing_day_tags',
+        'packing_entries',
+        'packing_items',
+        'packing_plans',
+        'packing_profiles',
+        'packing_tag_items',
+        'packing_tags',
         'stays',
         'transport_legs',
         'trip_stops',
@@ -861,4 +871,9 @@ test('single-destination arrival and return transport and activity assignment pe
   const harness = await createHarness();
   try { await exerciseItinerary(harness.yoga); }
   finally { await harness.pool.end(); }
+});
+
+test('packing persists personal libraries, day tags and reconciled lists with ownership checks', async () => {
+  const harness = await createHarness();
+  try { await exercisePacking(harness.db); } finally { await harness.pool.end(); }
 });
