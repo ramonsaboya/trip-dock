@@ -49,4 +49,6 @@ Creation renders a virtual next destination as soon as the previous name is type
 
 Interactive browser/visual QA has not been performed. Touch and keyboard users can click an activity to edit its schedule because native HTML drag-and-drop support varies. Existing-trip AI editing and booking integrations are outside this change.
 
-The grid uses taller half-hour rows with activity titles first. Hover crosshairs identify the date and time; panning clears selection. Drag previews cover the full duration and retain the grabbed offset within the card. Live transport paper follows exact half-hour card boundaries during resize. Destination and stay headers leave the time-gutter corner empty. Trip dates sit beside the title.
+The grid uses hourly rows with half-hour placement inside each row with activity titles first. Hover crosshairs identify the date and time; panning clears selection. Drag previews cover the full duration and retain the grabbed offset within the card. Live transport paper follows exact half-hour card boundaries during resize. Destination and stay headers leave the time-gutter corner empty. Trip dates sit beside the title.
+
+The upper-left header gutter is clipped out of the viewport with a rounded destination corner until horizontal scrolling reveals the header behind it. Hover highlighting updates only the affected DOM classes; cached paper calculations no longer run for every pointer move. Pointer time uses one body measurement rather than scanning all rows.

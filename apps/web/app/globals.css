@@ -2246,3 +2246,17 @@ html:has(.trip-workbench), body:has(.trip-workbench) { overflow: hidden; height:
 .trip-workbench-title p { margin: 0; padding: 6px 11px; background: #eeefeb; border: 1px solid #dedfd9; border-radius: 999px; font-size: .8rem; white-space: nowrap; }
 
 .trip-calendar-hour > .journey-options, .calendar-activity-notes, .has-placeholder > .journey-options { top: 0; }
+
+/* Hourly rows, with half-hour placement inside them. */
+.trip-calendar-hour { height: 128px; }
+.calendar-hour-paper { position: absolute; inset: 0; z-index: -1; pointer-events: none; }
+.calendar-paper-half { display: block; position: relative; height: 50%; isolation: isolate; }
+.calendar-paper-half .calendar-transfer-paper { z-index: 0; }
+.trip-calendar-table .axis-hover { box-shadow: inset 0 0 0 999px #34425109; }
+.trip-calendar-table th.axis-hover { background-color: #e8ebed !important; }
+.trip-calendar-table thead tr > .calendar-blank-corner { background: transparent; border: 0; }
+.trip-calendar-scroll[data-notched] { clip-path: polygon(0 var(--notch-height), var(--notch-width) var(--notch-height), var(--notch-width) 12px, calc(var(--notch-width) + 2px) 6px, calc(var(--notch-width) + 6px) 2px, calc(var(--notch-width) + 12px) 0, 100% 0, 100% 100%, 0 100%); }
+
+.trip-calendar-hour.axis-hover::after { display: none; }
+.trip-calendar-table .trip-calendar-hour.drop-active { background-color: var(--day-paper); box-shadow: none; }
+.calendar-drop-preview { position: absolute; left: 0; right: 0; z-index: 3; pointer-events: none; background: #718ca233; box-shadow: inset 0 0 0 1px #9caab5; }
