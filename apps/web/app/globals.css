@@ -2260,3 +2260,11 @@ html:has(.trip-workbench), body:has(.trip-workbench) { overflow: hidden; height:
 .trip-calendar-hour.axis-hover::after { display: none; }
 .trip-calendar-table .trip-calendar-hour.drop-active { background-color: var(--day-paper); box-shadow: none; }
 .calendar-drop-preview { position: absolute; left: 0; right: 0; z-index: 3; pointer-events: none; background: #718ca233; box-shadow: inset 0 0 0 1px #9caab5; }
+
+/* Quiet crosshair borders; the paper itself keeps its original color. */
+.trip-calendar-table td.axis-column { box-shadow: inset 1px 0 #98a2ab80, inset -1px 0 #98a2ab80; }
+.trip-calendar-table td.axis-row { box-shadow: inset 0 1px #98a2ab80, inset 0 -1px #98a2ab80; }
+.trip-calendar-table td.axis-column.axis-row { box-shadow: inset 0 0 0 1px #98a2ab; }
+.trip-calendar-table thead { background: var(--canvas); }
+.trip-calendar-table thead tr > .calendar-blank-corner { background: var(--canvas); }
+.trip-calendar-table .calendar-date-row > th:first-child { border-top: 1px solid #a7afa7; border-left: 1px solid #a7afa7; border-top-left-radius: 12px; background-clip: padding-box; }
