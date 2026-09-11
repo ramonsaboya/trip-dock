@@ -1,10 +1,11 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
-import { formatDateRange, type Trip } from '../lib/graphql-client';
-import { packingApi, packingDates, packingProgress, type PackingLibrary, type PackingPlan, type PlanEdit } from '../lib/packing-client';
-import { PackingLibraryView } from './packing-library';
+import { packingApi, packingDates, packingProgress, type PackingLibrary, type PackingPlan, type PlanEdit } from '../../lib/packing-client';
+import { formatDateRange } from '../../lib/trips/dates';
+import { type Trip } from '../../lib/trips/types';
 import { PackingChecklist } from './packing-checklist';
 import { PackingDays } from './packing-days';
+import { PackingLibraryView } from './packing-library';
 
 export function PackingWorkspace({ trip }: { trip: Trip }) {
   const selectedTripId = trip.id;

@@ -1,0 +1,612 @@
+{
+  "identicalDeclarations": 119,
+  "changedDeclarations": [
+    {
+      "name": "CreateTripForm",
+      "before": "apps/web/components/trip-dock-app.tsx",
+      "after": "apps/web/features/trips/creation/create-trip-form.tsx"
+    },
+    {
+      "name": "TripDockApp",
+      "before": "apps/web/components/trip-dock-app.tsx",
+      "after": "apps/web/components/trip-dock-app.tsx"
+    }
+  ],
+  "identical": [
+    {
+      "name": "LoadState",
+      "before": "apps/web/components/trip-dock-app.tsx",
+      "after": "apps/web/features/trips/trip-state.ts"
+    },
+    {
+      "name": "Notice",
+      "before": "apps/web/components/trip-dock-app.tsx",
+      "after": "apps/web/features/trips/trip-state.ts"
+    },
+    {
+      "name": "blankStop",
+      "before": "apps/web/components/trip-dock-app.tsx",
+      "after": "apps/web/features/trips/trip-defaults.ts"
+    },
+    {
+      "name": "blankTrip",
+      "before": "apps/web/components/trip-dock-app.tsx",
+      "after": "apps/web/features/trips/trip-defaults.ts"
+    },
+    {
+      "name": "errorMessage",
+      "before": "apps/web/components/trip-dock-app.tsx",
+      "after": "apps/web/lib/error-message.ts"
+    },
+    {
+      "name": "deviceTimezone",
+      "before": "apps/web/components/trip-dock-app.tsx",
+      "after": "apps/web/lib/device-timezone.ts"
+    },
+    {
+      "name": "Logo",
+      "before": "apps/web/components/trip-dock-app.tsx",
+      "after": "apps/web/components/ui/logo.tsx"
+    },
+    {
+      "name": "Dialog",
+      "before": "apps/web/components/trip-dock-app.tsx",
+      "after": "apps/web/components/ui/dialog.tsx"
+    },
+    {
+      "name": "fieldStatusPresentation",
+      "before": "apps/web/components/trip-dock-app.tsx",
+      "after": "apps/web/components/ui/field.tsx"
+    },
+    {
+      "name": "Field",
+      "before": "apps/web/components/trip-dock-app.tsx",
+      "after": "apps/web/components/ui/field.tsx"
+    },
+    {
+      "name": "calendarDateKey",
+      "before": "apps/web/components/trip-dock-app.tsx",
+      "after": "apps/web/components/ui/calendar-date.ts"
+    },
+    {
+      "name": "parseCalendarDate",
+      "before": "apps/web/components/trip-dock-app.tsx",
+      "after": "apps/web/components/ui/calendar-date.ts"
+    },
+    {
+      "name": "startOfCalendarMonth",
+      "before": "apps/web/components/trip-dock-app.tsx",
+      "after": "apps/web/components/ui/calendar-date.ts"
+    },
+    {
+      "name": "addCalendarMonths",
+      "before": "apps/web/components/trip-dock-app.tsx",
+      "after": "apps/web/components/ui/calendar-date.ts"
+    },
+    {
+      "name": "addCalendarDays",
+      "before": "apps/web/components/trip-dock-app.tsx",
+      "after": "apps/web/components/ui/calendar-date.ts"
+    },
+    {
+      "name": "moveCalendarMonth",
+      "before": "apps/web/components/trip-dock-app.tsx",
+      "after": "apps/web/components/ui/calendar-date.ts"
+    },
+    {
+      "name": "currentCalendarDate",
+      "before": "apps/web/components/trip-dock-app.tsx",
+      "after": "apps/web/components/ui/calendar-date.ts"
+    },
+    {
+      "name": "initialPickerMonth",
+      "before": "apps/web/components/trip-dock-app.tsx",
+      "after": "apps/web/components/ui/calendar-date.ts"
+    },
+    {
+      "name": "pickerDisplayValue",
+      "before": "apps/web/components/trip-dock-app.tsx",
+      "after": "apps/web/components/ui/calendar-date.ts"
+    },
+    {
+      "name": "DatePickerInputProps",
+      "before": "apps/web/components/trip-dock-app.tsx",
+      "after": "apps/web/components/ui/date-picker-input.tsx"
+    },
+    {
+      "name": "DatePickerInput",
+      "before": "apps/web/components/trip-dock-app.tsx",
+      "after": "apps/web/components/ui/date-picker-input.tsx"
+    },
+    {
+      "name": "TripFields",
+      "before": "apps/web/components/trip-dock-app.tsx",
+      "after": "apps/web/features/trips/trip-fields.tsx"
+    },
+    {
+      "name": "nightCount",
+      "before": "apps/web/components/trip-dock-app.tsx",
+      "after": "apps/web/features/trips/creation/draft-review-summary.tsx"
+    },
+    {
+      "name": "dateRangeLabel",
+      "before": "apps/web/components/trip-dock-app.tsx",
+      "after": "apps/web/features/trips/creation/draft-review-summary.tsx"
+    },
+    {
+      "name": "DraftReviewSummary",
+      "before": "apps/web/components/trip-dock-app.tsx",
+      "after": "apps/web/features/trips/creation/draft-review-summary.tsx"
+    },
+    {
+      "name": "HomeDraftComposer",
+      "before": "apps/web/components/trip-dock-app.tsx",
+      "after": "apps/web/features/trips/creation/home-draft-composer.tsx"
+    },
+    {
+      "name": "TripEditor",
+      "before": "apps/web/components/trip-dock-app.tsx",
+      "after": "apps/web/features/trips/editors/trip-editor.tsx"
+    },
+    {
+      "name": "EntityEditor",
+      "before": "apps/web/components/trip-dock-app.tsx",
+      "after": "apps/web/features/trips/trip-detail.tsx"
+    },
+    {
+      "name": "StopEditor",
+      "before": "apps/web/components/trip-dock-app.tsx",
+      "after": "apps/web/features/trips/editors/stop-editor.tsx"
+    },
+    {
+      "name": "transportTitle",
+      "before": "apps/web/components/trip-dock-app.tsx",
+      "after": "apps/web/features/trips/editors/transport-editor.tsx"
+    },
+    {
+      "name": "TransportEditor",
+      "before": "apps/web/components/trip-dock-app.tsx",
+      "after": "apps/web/features/trips/editors/transport-editor.tsx"
+    },
+    {
+      "name": "StayEditor",
+      "before": "apps/web/components/trip-dock-app.tsx",
+      "after": "apps/web/features/trips/editors/stay-editor.tsx"
+    },
+    {
+      "name": "ActivityEditor",
+      "before": "apps/web/components/trip-dock-app.tsx",
+      "after": "apps/web/features/trips/editors/activity-editor.tsx"
+    },
+    {
+      "name": "TripDetail",
+      "before": "apps/web/components/trip-dock-app.tsx",
+      "after": "apps/web/features/trips/trip-detail.tsx"
+    },
+    {
+      "name": "TripsOverview",
+      "before": "apps/web/components/trip-dock-app.tsx",
+      "after": "apps/web/features/trips/trips-overview.tsx"
+    },
+    {
+      "name": "statuses",
+      "before": "apps/web/components/trip-calendar.tsx",
+      "after": "apps/web/features/calendar/trip-calendar.tsx"
+    },
+    {
+      "name": "dragType",
+      "before": "apps/web/components/trip-calendar.tsx",
+      "after": "apps/web/features/calendar/trip-calendar.tsx"
+    },
+    {
+      "name": "transportDragType",
+      "before": "apps/web/components/trip-calendar.tsx",
+      "after": "apps/web/features/calendar/trip-calendar.tsx"
+    },
+    {
+      "name": "dateLabel",
+      "before": "apps/web/components/trip-calendar.tsx",
+      "after": "apps/web/features/calendar/trip-calendar.tsx"
+    },
+    {
+      "name": "TripCalendar",
+      "before": "apps/web/components/trip-calendar.tsx",
+      "after": "apps/web/features/calendar/trip-calendar.tsx"
+    },
+    {
+      "name": "DurationHandle",
+      "before": "apps/web/components/trip-calendar.tsx",
+      "after": "apps/web/features/calendar/duration-handle.tsx"
+    },
+    {
+      "name": "CalendarCell",
+      "before": "apps/web/components/trip-calendar.tsx",
+      "after": "apps/web/features/calendar/calendar-cell.tsx"
+    },
+    {
+      "name": "CalendarPool",
+      "before": "apps/web/components/trip-calendar.tsx",
+      "after": "apps/web/features/calendar/calendar-pool.tsx"
+    },
+    {
+      "name": "HourPaper",
+      "before": "apps/web/components/trip-calendar.tsx",
+      "after": "apps/web/features/calendar/hour-paper.tsx"
+    },
+    {
+      "name": "LibraryEditor",
+      "before": "apps/web/components/packing-library.tsx",
+      "after": "apps/web/features/packing/library-types.ts"
+    },
+    {
+      "name": "LibraryFormProps",
+      "before": "apps/web/components/packing-library.tsx",
+      "after": "apps/web/features/packing/library-types.ts"
+    },
+    {
+      "name": "LibraryForm",
+      "before": "apps/web/components/packing-library.tsx",
+      "after": "apps/web/features/packing/library-form.tsx"
+    },
+    {
+      "name": "LibraryViewProps",
+      "before": "apps/web/components/packing-library.tsx",
+      "after": "apps/web/features/packing/library-types.ts"
+    },
+    {
+      "name": "PackingLibraryView",
+      "before": "apps/web/components/packing-library.tsx",
+      "after": "apps/web/features/packing/packing-library.tsx"
+    },
+    {
+      "name": "EditPacking",
+      "before": "apps/web/components/packing-checklist.tsx",
+      "after": "apps/web/features/packing/packing-types.ts"
+    },
+    {
+      "name": "CountInput",
+      "before": "apps/web/components/packing-checklist.tsx",
+      "after": "apps/web/features/packing/count-input.tsx"
+    },
+    {
+      "name": "EntryRow",
+      "before": "apps/web/components/packing-checklist.tsx",
+      "after": "apps/web/features/packing/entry-row.tsx"
+    },
+    {
+      "name": "PackingChecklist",
+      "before": "apps/web/components/packing-checklist.tsx",
+      "after": "apps/web/features/packing/packing-checklist.tsx"
+    },
+    {
+      "name": "PackingDays",
+      "before": "apps/web/components/packing-days.tsx",
+      "after": "apps/web/features/packing/packing-days.tsx"
+    },
+    {
+      "name": "PackingWorkspace",
+      "before": "apps/web/components/packing-workspace.tsx",
+      "after": "apps/web/features/packing/packing-workspace.tsx"
+    },
+    {
+      "name": "Props",
+      "before": "apps/web/components/dictation-textarea.tsx",
+      "after": "apps/web/components/dictation-textarea.tsx"
+    },
+    {
+      "name": "subscribeToSupport",
+      "before": "apps/web/components/dictation-textarea.tsx",
+      "after": "apps/web/components/dictation-textarea.tsx"
+    },
+    {
+      "name": "clientSupport",
+      "before": "apps/web/components/dictation-textarea.tsx",
+      "after": "apps/web/components/dictation-textarea.tsx"
+    },
+    {
+      "name": "serverSupport",
+      "before": "apps/web/components/dictation-textarea.tsx",
+      "after": "apps/web/components/dictation-textarea.tsx"
+    },
+    {
+      "name": "VoiceAttribution",
+      "before": "apps/web/components/dictation-textarea.tsx",
+      "after": "apps/web/components/voice-attribution.tsx"
+    },
+    {
+      "name": "DictationTextarea",
+      "before": "apps/web/components/dictation-textarea.tsx",
+      "after": "apps/web/components/dictation-textarea.tsx"
+    },
+    {
+      "name": "TripStop",
+      "before": "apps/web/lib/graphql-client.ts",
+      "after": "apps/web/lib/trips/types.ts"
+    },
+    {
+      "name": "TransportLeg",
+      "before": "apps/web/lib/graphql-client.ts",
+      "after": "apps/web/lib/trips/types.ts"
+    },
+    {
+      "name": "Stay",
+      "before": "apps/web/lib/graphql-client.ts",
+      "after": "apps/web/lib/trips/types.ts"
+    },
+    {
+      "name": "Activity",
+      "before": "apps/web/lib/graphql-client.ts",
+      "after": "apps/web/lib/trips/types.ts"
+    },
+    {
+      "name": "Trip",
+      "before": "apps/web/lib/graphql-client.ts",
+      "after": "apps/web/lib/trips/types.ts"
+    },
+    {
+      "name": "TripDraftStop",
+      "before": "apps/web/lib/graphql-client.ts",
+      "after": "apps/web/lib/trips/types.ts"
+    },
+    {
+      "name": "TripDraftFieldStatus",
+      "before": "apps/web/lib/graphql-client.ts",
+      "after": "apps/web/lib/trips/types.ts"
+    },
+    {
+      "name": "TripDraftFieldState",
+      "before": "apps/web/lib/graphql-client.ts",
+      "after": "apps/web/lib/trips/types.ts"
+    },
+    {
+      "name": "TripClarificationUpdate",
+      "before": "apps/web/lib/graphql-client.ts",
+      "after": "apps/web/lib/trips/types.ts"
+    },
+    {
+      "name": "TripClarificationOption",
+      "before": "apps/web/lib/graphql-client.ts",
+      "after": "apps/web/lib/trips/types.ts"
+    },
+    {
+      "name": "TripClarificationQuestion",
+      "before": "apps/web/lib/graphql-client.ts",
+      "after": "apps/web/lib/trips/types.ts"
+    },
+    {
+      "name": "TripDraft",
+      "before": "apps/web/lib/graphql-client.ts",
+      "after": "apps/web/lib/trips/types.ts"
+    },
+    {
+      "name": "GenerateTripDraftInput",
+      "before": "apps/web/lib/graphql-client.ts",
+      "after": "apps/web/lib/trips/types.ts"
+    },
+    {
+      "name": "TripInput",
+      "before": "apps/web/lib/graphql-client.ts",
+      "after": "apps/web/lib/trips/types.ts"
+    },
+    {
+      "name": "GraphQLResponse",
+      "before": "apps/web/lib/graphql-client.ts",
+      "after": "apps/web/lib/graphql/request.ts"
+    },
+    {
+      "name": "TripDockGraphQLError",
+      "before": "apps/web/lib/graphql-client.ts",
+      "after": "apps/web/lib/graphql/request.ts"
+    },
+    {
+      "name": "graphqlRequest",
+      "before": "apps/web/lib/graphql-client.ts",
+      "after": "apps/web/lib/graphql/request.ts"
+    },
+    {
+      "name": "TRIP_FIELDS",
+      "before": "apps/web/lib/graphql-client.ts",
+      "after": "apps/web/lib/trips/operations.ts"
+    },
+    {
+      "name": "operations",
+      "before": "apps/web/lib/graphql-client.ts",
+      "after": "apps/web/lib/trips/operations.ts"
+    },
+    {
+      "name": "formatDateRange",
+      "before": "apps/web/lib/graphql-client.ts",
+      "after": "apps/web/lib/trips/dates.ts"
+    },
+    {
+      "name": "formatDateTime",
+      "before": "apps/web/lib/graphql-client.ts",
+      "after": "apps/web/lib/trips/dates.ts"
+    },
+    {
+      "name": "zonedParts",
+      "before": "apps/web/lib/graphql-client.ts",
+      "after": "apps/web/lib/trips/dates.ts"
+    },
+    {
+      "name": "isoToDateTimeLocal",
+      "before": "apps/web/lib/graphql-client.ts",
+      "after": "apps/web/lib/trips/dates.ts"
+    },
+    {
+      "name": "dateTimeLocalToIso",
+      "before": "apps/web/lib/graphql-client.ts",
+      "after": "apps/web/lib/trips/dates.ts"
+    },
+    {
+      "name": "dateTimeLocalToIsoPreserving",
+      "before": "apps/web/lib/graphql-client.ts",
+      "after": "apps/web/lib/trips/dates.ts"
+    },
+    {
+      "name": "stayDateTimesForStop",
+      "before": "apps/web/lib/graphql-client.ts",
+      "after": "apps/web/lib/trips/dates.ts"
+    },
+    {
+      "name": "transportDateTimesForStops",
+      "before": "apps/web/lib/graphql-client.ts",
+      "after": "apps/web/lib/trips/dates.ts"
+    },
+    {
+      "name": "activityDateTimeForStop",
+      "before": "apps/web/lib/graphql-client.ts",
+      "after": "apps/web/lib/trips/dates.ts"
+    },
+    {
+      "name": "draftToTripInput",
+      "before": "apps/web/lib/graphql-client.ts",
+      "after": "apps/web/lib/trips/drafts.ts"
+    },
+    {
+      "name": "tripStopsForCreation",
+      "before": "apps/web/lib/graphql-client.ts",
+      "after": "apps/web/lib/trips/drafts.ts"
+    },
+    {
+      "name": "tripDraftFieldStateMap",
+      "before": "apps/web/lib/graphql-client.ts",
+      "after": "apps/web/lib/trips/drafts.ts"
+    },
+    {
+      "name": "confirmedTripDraftFieldState",
+      "before": "apps/web/lib/graphql-client.ts",
+      "after": "apps/web/lib/trips/drafts.ts"
+    },
+    {
+      "name": "isRealIsoDate",
+      "before": "apps/web/lib/graphql-client.ts",
+      "after": "apps/web/lib/trips/drafts.ts"
+    },
+    {
+      "name": "isValidTripDateRange",
+      "before": "apps/web/lib/graphql-client.ts",
+      "after": "apps/web/lib/trips/drafts.ts"
+    },
+    {
+      "name": "clarificationPathsConfirmedByEdit",
+      "before": "apps/web/lib/graphql-client.ts",
+      "after": "apps/web/lib/trips/drafts.ts"
+    },
+    {
+      "name": "isTripMinimumViable",
+      "before": "apps/web/lib/graphql-client.ts",
+      "after": "apps/web/lib/trips/drafts.ts"
+    },
+    {
+      "name": "remapTripDraftPathAfterStopRemoval",
+      "before": "apps/web/lib/graphql-client.ts",
+      "after": "apps/web/lib/trips/draft-alignment.ts"
+    },
+    {
+      "name": "remapDirtyTripDraftPaths",
+      "before": "apps/web/lib/graphql-client.ts",
+      "after": "apps/web/lib/trips/draft-alignment.ts"
+    },
+    {
+      "name": "applyClarificationUpdates",
+      "before": "apps/web/lib/graphql-client.ts",
+      "after": "apps/web/lib/trips/drafts.ts"
+    },
+    {
+      "name": "remapIncomingStopPath",
+      "before": "apps/web/lib/graphql-client.ts",
+      "after": "apps/web/lib/trips/draft-alignment.ts"
+    },
+    {
+      "name": "explicitlyRemovesStop",
+      "before": "apps/web/lib/graphql-client.ts",
+      "after": "apps/web/lib/trips/draft-alignment.ts"
+    },
+    {
+      "name": "alignIncomingTripDraftStops",
+      "before": "apps/web/lib/graphql-client.ts",
+      "after": "apps/web/lib/trips/draft-alignment.ts"
+    },
+    {
+      "name": "remapCurrentTripDraftPathToIncoming",
+      "before": "apps/web/lib/graphql-client.ts",
+      "after": "apps/web/lib/trips/draft-alignment.ts"
+    },
+    {
+      "name": "mergeTripDraft",
+      "before": "apps/web/lib/graphql-client.ts",
+      "after": "apps/web/lib/trips/drafts.ts"
+    },
+    {
+      "name": "normalizedText",
+      "before": "apps/web/lib/graphql-client.ts",
+      "after": "apps/web/lib/trips/drafts.ts"
+    },
+    {
+      "name": "followUpPathCue",
+      "before": "apps/web/lib/graphql-client.ts",
+      "after": "apps/web/lib/trips/drafts.ts"
+    },
+    {
+      "name": "explicitTripDraftPathsFromFollowUp",
+      "before": "apps/web/lib/graphql-client.ts",
+      "after": "apps/web/lib/trips/drafts.ts"
+    },
+    {
+      "name": "protectedPathsAfterFollowUp",
+      "before": "apps/web/lib/graphql-client.ts",
+      "after": "apps/web/lib/trips/drafts.ts"
+    },
+    {
+      "name": "mergeUnansweredClarificationQuestions",
+      "before": "apps/web/lib/graphql-client.ts",
+      "after": "apps/web/lib/trips/drafts.ts"
+    },
+    {
+      "name": "localIsoDate",
+      "before": "apps/web/lib/graphql-client.ts",
+      "after": "apps/web/lib/trips/dates.ts"
+    },
+    {
+      "name": "boundedExcerpt",
+      "before": "apps/web/lib/graphql-client.ts",
+      "after": "apps/web/lib/trips/drafts.ts"
+    },
+    {
+      "name": "buildTripFollowUpPrompt",
+      "before": "apps/web/lib/graphql-client.ts",
+      "after": "apps/web/lib/trips/drafts.ts"
+    },
+    {
+      "name": "updateTripBoundaryDate",
+      "before": "apps/web/lib/graphql-client.ts",
+      "after": "apps/web/lib/trips/stops.ts"
+    },
+    {
+      "name": "updateTripStopDate",
+      "before": "apps/web/lib/graphql-client.ts",
+      "after": "apps/web/lib/trips/stops.ts"
+    },
+    {
+      "name": "appendTripStop",
+      "before": "apps/web/lib/graphql-client.ts",
+      "after": "apps/web/lib/trips/stops.ts"
+    },
+    {
+      "name": "removeTripStop",
+      "before": "apps/web/lib/graphql-client.ts",
+      "after": "apps/web/lib/trips/stops.ts"
+    },
+    {
+      "name": "destinationAreaFromStops",
+      "before": "apps/web/lib/graphql-client.ts",
+      "after": "apps/web/lib/trips/stops.ts"
+    },
+    {
+      "name": "sortStopsByDate",
+      "before": "apps/web/lib/graphql-client.ts",
+      "after": "apps/web/lib/trips/stops.ts"
+    }
+  ]
+}

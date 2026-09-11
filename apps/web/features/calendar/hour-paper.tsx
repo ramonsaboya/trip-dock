@@ -1,0 +1,7 @@
+'use client';
+
+import { memo } from 'react';
+import { calendarTransition } from '../../lib/trip-calendar';
+import { type TripStop } from '../../lib/trips/types';
+
+export const HourPaper = memo(function HourPaper({ slices, stops }: { slices: { tint: number; transition: ReturnType<typeof calendarTransition>; time: number }[]; stops: TripStop[] }) { return <span className="calendar-hour-paper" aria-hidden="true">{slices.map(({ tint: sliceTint, transition, time }, index) => <span key={index} className={`calendar-paper-half destination-tint-${sliceTint}`}>{transition ? <span className="calendar-transfer-paper" aria-hidden="true">{[transition.from, transition.to].map((id, index) => { const color = stops.findIndex((stop) => stop.id === id) % 5; const progress = (time - transition.start) / (transition.end - transition.start); const top = Math.max(0, Math.min(100, (1 - progress) * 100)); const bottom = Math.max(0, Math.min(100, (1 - progress - .5 / (transition.end - transition.start)) * 100)); return <span key={index} className={`destination-tint-${color}`} style={index === 0 ? { clipPath: `polygon(0 0, ${top}% 0, ${bottom}% 100%, 0 100%)` } : undefined} />; })}<svg className="calendar-transfer-divider" viewBox="0 0 100 100" preserveAspectRatio="none"><line x1={(1 - (time - transition.start) / (transition.end - transition.start)) * 100} y1="0" x2={(1 - (time + .5 - transition.start) / (transition.end - transition.start)) * 100} y2="100" /></svg></span> : null}</span>)}</span>; });

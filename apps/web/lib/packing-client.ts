@@ -1,4 +1,4 @@
-import { graphqlRequest } from './graphql-client.ts';
+import { graphqlRequest } from './graphql/request.ts';
 export type PackingCategory = { id: string; name: string; archived: boolean };
 export type PackingItem = PackingCategory & { categoryId: string; mode: 'CHECKBOX' | 'QUANTITY'; baseline: boolean; quantity: number; interval: number; basis: 'DAYS' | 'NIGHTS' };
 export type PackingTag = PackingCategory & { itemIds: string[] };

@@ -1,0 +1,33 @@
+{
+  "baseline": "f80de19f32b39b2b77b940a480fabf4d6cebcd62",
+  "environment": "Real UI and API; isolated PostgreSQL audit database",
+  "measurements": [
+    {
+      "width": 390,
+      "height": 844,
+      "pageScrollWidth": 390,
+      "calendarWidth": 182,
+      "poolWidth": 160
+    },
+    {
+      "width": 320,
+      "height": 740,
+      "pageScrollWidth": 320,
+      "calendarWidth": 112,
+      "poolWidth": 160
+    }
+  ],
+  "dialog": {
+    "journey": "Edit trip, then Escape",
+    "closed": true,
+    "focusTag": "BODY",
+    "expected": "Edit trip button"
+  },
+  "persistence": {
+    "trip": "Design audit · Lisbon",
+    "activity": "Walk along the waterfront",
+    "stay": "Audit guesthouse",
+    "transport": "Audit flight to Lisbon",
+    "packing": "City walking on 2026-09-20; Day bag checked after reload; 1/14 packed"
+  }
+}
