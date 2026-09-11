@@ -17,9 +17,9 @@ export function TripDockApp() {
 
   useEffect(() => {
     if (state.kind !== 'ready') return;
-    window.scrollTo({ top: 0, behavior: 'auto' });
+    window.scrollTo({ top: 0, behavior: 'instant' });
     const frame = window.requestAnimationFrame(() => {
-      document.getElementById('main-content')?.focus();
+      document.getElementById('main-content')?.focus({ preventScroll: true });
     });
     return () => window.cancelAnimationFrame(frame);
   }, [navigation.tripId, state.kind]);

@@ -77,6 +77,7 @@ test('manual create, retained edits, accepted revision, reload and modal keyboar
   await expect(page.getByRole('dialog', { name: 'Edit trip essentials' })).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Edit trip', exact: true })).toBeFocused();
   expect(api.mutations).toEqual(['create', 'update']);
 });
 
@@ -133,3 +134,48 @@ test('essential clarification answers stay reviewable before the create mutation
   expect(api.trips[0]?.endDate).toBe('2028-04-06');
   expect(api.mutations).toEqual(['draft', 'create']);
 });
+
+for (const width of [320, 390, 768]) {
+  test(`manual entry and calendar controls remain usable at ${width}px`, async ({ page }, testInfo) => {
+    const api = await isolatedApi(page);
+    await page.setViewportSize({ width, height: 844 });
+    await page.clock.setFixedTime(new Date('2028-04-02T12:00:00Z'));
+    await page.goto('/');
+    await expect(page.getByRole('button', { name: '+ New trip', exact: true })).toBeInViewport();
+    await expect(page.getByRole('main')).toBeFocused();
+    const heading = await page.getByRole('heading', { name: 'Your trips', exact: true }).boundingBox();
+    const header = await page.getByRole('banner').boundingBox();
+    expect(heading!.y).toBeGreaterThanOrEqual(header!.y + header!.height);
+    await page.screenshot({ path: testInfo.outputPath('mobile-home.png'), animations: 'disabled' });
+    // Also cover opening from the lower entry after the page has scrolled.
+    await page.getByRole('button', { name: width === 390 ? 'Create your first trip' : '+ New trip', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Create a trip', exact: true })).toBeInViewport();
+    await page.getByRole('textbox', { name: 'Trip name', exact: true }).fill('Mobile trip');
+    await page.getByRole('textbox', { name: 'City', exact: true }).first().fill('Porto');
+    await page.getByRole('textbox', { name: 'City', exact: true }).first().press('Tab');
+    await chooseDate(page, 'Start date', '2');
+    await chooseDate(page, 'End date', '6');
+    await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await page.getByRole('button', { name: 'Continue your trip', exact: true }).first().click();
+    await expect(page.getByRole('textbox', { name: 'Trip name', exact: true })).toHaveValue('Mobile trip');
+    await page.getByRole('button', { name: 'Create trip', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Mobile trip', exact: true })).toBeVisible();
+    const calendar = page.getByRole('region', { name: 'Itinerary by date', exact: true });
+    const geometry = await calendar.evaluate(element => ({
+      calendar: element.getBoundingClientRect().width,
+      page: document.documentElement.clientWidth,
+      scrollWidth: document.documentElement.scrollWidth,
+    }));
+    expect(geometry.calendar).toBeGreaterThanOrEqual(geometry.page - 34);
+    expect(geometry.scrollWidth).toBe(geometry.page);
+    await expect(page.getByRole('button', { name: '01 Porto', exact: true })).toBeInViewport();
+    await expect(page.getByRole('button', { name: '+ Stay', exact: true })).toBeInViewport();
+    const addActivity = page.getByRole('button', { name: '+ Activity', exact: true });
+    await addActivity.press('Enter');
+    await expect(page.getByRole('dialog', { name: 'Add activity', exact: true })).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(addActivity).toBeFocused();
+    await page.screenshot({ path: testInfo.outputPath('mobile-schedule.png'), animations: 'disabled' });
+    expect(api.mutations).toEqual(['create']);
+  });
+}

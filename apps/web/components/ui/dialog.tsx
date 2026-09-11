@@ -18,9 +18,12 @@ export function Dialog({
 
   useEffect(() => {
     const dialog = ref.current;
+    const invoker = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     if (dialog && !dialog.open) dialog.showModal();
     return () => {
       if (dialog?.open) dialog.close();
+      // React can remove the dialog before native close restores its invoker.
+      if (invoker?.isConnected) invoker.focus({ preventScroll: true });
     };
   }, []);
 

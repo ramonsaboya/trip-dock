@@ -204,7 +204,7 @@ button:disabled {
 
 .home-compose label {
   color: var(--brand-dark);
-  font-size: 12px;
+  font-size: .875rem;
   font-weight: 780;
 }
 
@@ -1007,12 +1007,13 @@ p {
 .field > .field-label,
 .stops-editor legend {
   color: #34413f;
-  font-size: 12px;
+  font-size: .875rem;
   font-weight: 760;
 }
 
 .field-label {
   display: flex;
+  flex-wrap: wrap;
   min-height: 23px;
   align-items: center;
   justify-content: space-between;
@@ -2138,7 +2139,10 @@ textarea {
 .calendar-stay-items { max-height: 96px; overflow-y: auto; }
 .travel-planning-row .journey-options { max-height: 210px; overflow-y: auto; }
 /* Keep the calendar flush left, with ideas alongside on the right. */
-.trip-calendar-workspace { grid-template-columns: minmax(0, 1fr) 220px; }
+.trip-calendar-workspace { grid-template-columns: minmax(0, 1fr) 220px; grid-template-areas: 'calendar pool'; }
+.calendar-surface { grid-area: calendar; }
+.trip-calendar-pool { grid-area: pool; }
+.pool-empty { color: var(--muted); font-size: .875rem; line-height: 1.5; }
 .destination-tint--2 { --day-paper: #f5f4ef; --day-ink: #4d5e50; --day-grain: #53614f08; }
 .shared-place-divider { display: inline-block; margin: 0 6px; color: #687464; }
 .calendar-stay-row td { background: #fff; border-bottom: 1px solid #ccd5c8; padding: 9px 12px; }
@@ -2179,7 +2183,7 @@ html:has(.trip-workbench), body:has(.trip-workbench) { overflow: hidden; height:
 .unified-calendar-toolbar { flex-shrink: 0; margin: 8px 0; }
 .trip-calendar-workspace { flex: 1; min-height: 0; align-items: stretch; }
 .calendar-surface { min-height: 0; display: flex; }
-.trip-calendar-scroll { flex: 1; min-width: 0; height: 100%; min-height: 0; max-height: none; }
+.trip-calendar-scroll { flex: 1; min-width: 0; height: 100%; min-height: 0; max-height: none; scroll-padding-top: calc(var(--calendar-pool-offset, 106px) + 60px); scroll-padding-left: 62px; }
 .trip-calendar-pool { margin-top: var(--calendar-pool-offset, 106px); height: calc(100% - var(--calendar-pool-offset, 106px)); min-height: 0; max-height: none; }
 .unified-trip-calendar > .planner-hint { font-size: .75rem; margin: 5px 0 0; }
 .trip-calendar-table col:not(:first-child) { width: 110px; }
@@ -2192,9 +2196,19 @@ html:has(.trip-workbench), body:has(.trip-workbench) { overflow: hidden; height:
 .journey-start { border-bottom-style: none; border-radius: 7px 7px 0 0; }
 .journey-end { border-top-style: none; border-radius: 0 0 7px 7px; }
 @media (max-width: 800px) {
-  .trip-calendar-workspace { grid-template-columns: minmax(0, 1fr) 160px; }
+  /* The calendar keeps a full readable day; the idea pool gets its own row. */
+  html:has(.trip-workbench), body:has(.trip-workbench) { overflow: auto; height: auto; }
+  .app-shell:has(.trip-workbench) { height: auto; min-height: 100dvh; overflow: visible; }
+  .trip-calendar-workspace { grid-template-columns: minmax(0, 1fr); grid-template-areas: 'pool' 'calendar'; }
+  .calendar-surface { height: max(420px, 65dvh); }
   .trip-calendar-table col:not(:first-child) { width: 95px; }
-  .trip-calendar-pool { padding: 9px; }
+  .trip-calendar-pool { margin-top: 0; height: auto; max-height: 240px; padding: 12px; }
+  .calendar-pool-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .calendar-pool-heading .pool-add-activity { width: auto; margin-top: 0; flex-shrink: 0; }
+  .trip-calendar-pool .planner-hint, .trip-calendar-pool .pool-return, .pool-empty { margin: 8px 0; }
+  .calendar-band-controls { position: sticky; left: 70px; width: max-content; max-width: min(100%, calc(var(--calendar-viewport-width, 100vw) - 90px)); text-align: left; white-space: normal; }
+  .calendar-band-controls button { overflow-wrap: anywhere; max-width: 100%; }
+  .destination-band .calendar-band-controls button { min-height: 32px; }
 }
 
 .trip-calendar-scroll:focus-visible { outline: 2px solid #718665; outline-offset: 2px; }
@@ -2319,12 +2333,14 @@ html:has(.trip-workbench), body:has(.trip-workbench) { overflow: hidden; height:
 .creation-slot {
   min-width: 0;
   border-radius: 26px;
-  scroll-margin-top: 24px;
+  scroll-margin-top: 84px;
 }
 .creation-ai-slot { background: var(--brand-soft); }
 .creation-manual-slot { background: var(--canvas-warm); }
 .creation-back { flex-shrink: 0; }
 .creation-page-action { min-height: 44px; display: flex; align-items: center; }
+.mobile-manual-start { display: none; }
+.creation-top-editor { scroll-margin-top: 84px; }
 .creation-content, .creation-content > div:not([hidden]) { height: 100%; }
 .creation-slot .home-compose,
 .creation-slot .empty-state { min-height: 540px; height: 100%; }
@@ -2349,7 +2365,11 @@ html:has(.trip-workbench), body:has(.trip-workbench) { overflow: hidden; height:
 @media (max-width: 900px) {
   .creation-layout { grid-template-columns: minmax(0, 1fr); }
   .creation-slot[inert] { height: 0; min-height: 0; }
-  .creation-slot .home-compose, .creation-slot .empty-state { min-height: 480px; }
+  .creation-slot .home-compose, .creation-slot .empty-state { min-height: 0; height: auto; }
+  .creation-slot .home-compose { gap: 24px; }
+  .creation-slot .empty-state { padding-block: 32px; }
+  .mobile-manual-start { display: inline-flex; }
+  .page-heading { gap: 16px; margin-bottom: 24px; }
   .inline-trip-form { padding: 24px 20px; }
 }
 @media (prefers-reduced-motion: reduce) {

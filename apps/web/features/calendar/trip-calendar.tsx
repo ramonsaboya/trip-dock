@@ -124,6 +124,7 @@ export function TripCalendar({ trip, onChanged, onActivity, onStay, onTransport,
       const pinned = columns.findIndex(({ day }) => day === (dragged.current?.day ?? focused));
       board.style.setProperty('--notch-width', width + 'px');
       board.style.setProperty('--notch-height', height + 'px');
+      board.style.setProperty('--calendar-viewport-width', board.clientWidth + 'px');
       board.closest<HTMLElement>('.trip-calendar-workspace')?.style.setProperty('--calendar-pool-offset', (height + 1) + 'px');
       board.toggleAttribute('data-notched', width > 0);
       setWindowRange((previous) => previous.start === range.start && previous.end === range.end && previous.pinned === pinned ? previous : { ...range, pinned });
@@ -299,12 +300,19 @@ export function TripCalendar({ trip, onChanged, onActivity, onStay, onTransport,
   }, [trip, paperPreview, stops, routes, columns]);
   return <section className="unified-trip-calendar" aria-label="Trip calendar" aria-busy={busy}>
     <div className="trip-calendar-workspace">
+      <CalendarPool feedback={feedback} onDragOver={(event) => dragOver(event, 'pool')} onDrop={(event) => void drop(event)}>
+        <div className="calendar-pool-heading"><h3>Activity idea pool</h3><button type="button" className="button-secondary pool-add-activity" onClick={() => onActivity()}>+ Activity</button></div>
+        <p className="planner-hint">Set dates in the activity editor, or drag onto the calendar.</p>
+        {unplacedActivities.map(activityNote)}
+        {unplacedActivities.length === 0 ? <p className="pool-empty">Keep ideas here until you’re ready to schedule them.</p> : null}
+        <p className="pool-return">To return an activity here, clear its scheduled time or drag it back.</p>
+      </CalendarPool>
       <div className="calendar-surface">
       <div className="trip-calendar-scroll" ref={viewport} onPointerDown={startPan} onPointerMove={movePan} onPointerUp={endPan} onPointerCancel={endPan} onLostPointerCapture={endPan} tabIndex={0} role="region" aria-label="Itinerary by date">
         <table className="trip-calendar-table"><colgroup><col style={{ width: 62 }} />{visible.flatMap((column) => [<col key={column.day + "-am"} />, <col key={column.day + "-pm"} />])}</colgroup>
           <thead ref={header}>
-            <tr className="destination-band"><th className="calendar-blank-corner" aria-hidden="true" />{bands.map((band, index) => <th key={`${band.key}-${index}`} colSpan={band.span} className={`destination-tint-${band.color}`} scope="colgroup">{band.destinations.length ? band.destinations.map((stop, stopIndex) => <span key={stop.id}>{stopIndex ? <span className="shared-place-divider"> / </span> : null}<button type="button" onClick={() => onDestination(stop)}><span>{String(stops.findIndex((item) => item.id === stop.id) + 1).padStart(2, '0')}</span> {stop.name}</button></span>) : 'Dates open'}</th>)}</tr>
-            <tr className="calendar-stay-row"><td className="calendar-blank-corner" aria-hidden="true" />{bands.map((band, index) => <td key={band.key + index} colSpan={band.span}><div className="calendar-stay-items">{trip.stays.filter((stay) => band.destinations.some((stop) => stop.id === stay.stopId)).map(stayButton)}</div>{band.destinations.map((stop) => <button key={stop.id} type="button" className="calendar-add-stay" onClick={() => onStay(undefined, stop.id)}>+ Stay</button>)}</td>)}</tr>
+            <tr className="destination-band"><th className="calendar-blank-corner" aria-hidden="true" />{bands.map((band, index) => <th key={`${band.key}-${index}`} colSpan={band.span} className={`destination-tint-${band.color}`} scope="colgroup"><div className="calendar-band-controls">{band.destinations.length ? band.destinations.map((stop, stopIndex) => <span key={stop.id}>{stopIndex ? <span className="shared-place-divider"> / </span> : null}<button type="button" onClick={() => onDestination(stop)}><span>{String(stops.findIndex((item) => item.id === stop.id) + 1).padStart(2, '0')}</span> {stop.name}</button></span>) : 'Dates open'}</div></th>)}</tr>
+            <tr className="calendar-stay-row"><td className="calendar-blank-corner" aria-hidden="true" />{bands.map((band, index) => <td key={band.key + index} colSpan={band.span}><div className="calendar-band-controls"><div className="calendar-stay-items">{trip.stays.filter((stay) => band.destinations.some((stop) => stop.id === stay.stopId)).map(stayButton)}</div>{band.destinations.map((stop) => <button key={stop.id} type="button" className="calendar-add-stay" onClick={() => onStay(undefined, stop.id)}>+ Stay</button>)}</div></td>)}</tr>
             <tr className="calendar-date-row"><th scope="row">Date</th>{visible.map((column) => <th scope="col" data-day={column.day} colSpan={2} key={column.day} className={`destination-tint-${column.color}`}>{labels.get(column.day)}</th>)}</tr>
 
           </thead>
@@ -319,10 +327,6 @@ export function TripCalendar({ trip, onChanged, onActivity, onStay, onTransport,
         </table>
       </div>
       </div>
-      <CalendarPool feedback={feedback} onDragOver={(event) => dragOver(event, 'pool')} onDrop={(event) => void drop(event)}>
-        <h3>Activity idea pool</h3><button type="button" className="button-secondary pool-add-activity" onClick={() => onActivity()}>+ Activity</button><p className="planner-hint">Drag onto a day and hour. Click a note to edit it.</p>
-        {unplacedActivities.map(activityNote)}<p className="pool-return">Drop here to unschedule</p>
-      </CalendarPool>
     </div>
     {unplacedTransport.length || unplacedStays.length ? <details className="calendar-unplaced"><summary>Unscheduled stays and transport</summary>{unplacedTransport.map(transportNote)}{unplacedStays.map(stayButton)}</details> : null}
     {error ? <p className="form-error" role="alert">{error}</p> : null}

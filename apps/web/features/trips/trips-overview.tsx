@@ -8,6 +8,13 @@ import { type Trip, type TripDraft } from '../../lib/trips/types';
 import { CreateTripForm } from './creation/create-trip-form';
 import { HomeDraftComposer } from './creation/home-draft-composer';
 
+function focusEditor(editor: HTMLElement | null | undefined) {
+  if (!editor) return;
+  editor.focus({ preventScroll: true });
+  // A lower-page entry can shrink above the old scroll position on mobile.
+  if (editor.getBoundingClientRect().top < 80) editor.scrollIntoView({ block: 'start', behavior: 'instant' });
+}
+
 export function TripsOverview({ trips, onCreated, onOpen }: { trips: Trip[]; onCreated: (trip: Trip) => void; onOpen: (id: string) => void }) {
   const [active, setActive] = useState<'ai' | 'manual' | null>(null);
   const [manualStarted, setManualStarted] = useState(false);
@@ -56,7 +63,7 @@ export function TripsOverview({ trips, onCreated, onOpen }: { trips: Trip[]; onC
         editor.style.removeProperty('visibility');
         moving.current = false;
         flushSync(() => setIsMoving(false));
-        if (opening) editor.focus({ preventScroll: true });
+        if (opening) focusEditor(editor);
         else trigger.current?.focus({ preventScroll: true });
       }
       return;
@@ -104,7 +111,7 @@ export function TripsOverview({ trips, onCreated, onOpen }: { trips: Trip[]; onC
       contents.forEach(content => content.style.removeProperty('width'));
       moving.current = false;
       flushSync(() => setIsMoving(false));
-      if (next) layout.querySelector<HTMLElement>('[data-active="true"]')?.focus({ preventScroll: true });
+      if (next) focusEditor(layout.querySelector<HTMLElement>('[data-active="true"]'));
       else trigger.current?.focus({ preventScroll: true });
     }
   }
@@ -125,7 +132,7 @@ export function TripsOverview({ trips, onCreated, onOpen }: { trips: Trip[]; onC
 
   return (
     <main id="main-content" className="page-wrap" tabIndex={-1}>
-      <section className="page-heading"><div><h1>Your trips</h1><p className="page-intro">Everything you’re planning, in one place.</p></div><div className="creation-page-action">{active ? <button className="button-text creation-back" type="button" onClick={close} disabled={isMoving}>← Back to trips</button> : trips.length ? <button className="button-primary" type="button" onClick={() => expand('manual')}>+ New trip</button> : null}</div></section>
+      <section className="page-heading"><div><h1>Your trips</h1><p className="page-intro">Everything you’re planning, in one place.</p></div><div className="creation-page-action">{active ? <button className="button-text creation-back" type="button" onClick={close} disabled={isMoving}>← Back to trips</button> : trips.length ? <button className="button-primary" type="button" onClick={() => expand('manual')}>+ New trip</button> : <button className="button-secondary mobile-manual-start" type="button" onClick={() => expand('manual')}>{manualStarted ? 'Continue your trip' : '+ New trip'}</button>}</div></section>
       <div className={`creation-stage ${trips.length ? 'has-trips' : ''} ${trips.length && active === 'manual' ? 'top-creation-open' : ''}`}>
       <div ref={workspace} inert={isMoving || (trips.length > 0 && active === 'manual')} className={`overview-layout creation-layout ${active && !(trips.length && active === 'manual') ? 'creation-active creation-' + active : ''}`}>
         <div className="creation-slot creation-ai-slot" data-active={active === 'ai'} inert={active === 'manual'} tabIndex={-1} aria-label="Create a trip with AI"><div className="creation-content">

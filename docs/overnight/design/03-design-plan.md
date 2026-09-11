@@ -27,7 +27,7 @@ A traveler should be able to start manually or describe a trip, finish missing e
 
 ## Integration and ownership
 
-Design documentation is committed before overlapping application edits. The completed frontend refactor will be merged into this isolated design branch, then inspected for new file locations and applicable AGENTS.md guidance. Backend changes remain a separate branch; the current GraphQL contracts stay intact. Final verification records which upstream commits are included and which commits belong to design.
+Design documentation was committed before overlapping application edits. The completed frontend refactor `b707850` was merged into this isolated design branch in `89459a8`; its new file locations and AGENTS.md guidance were inspected and followed. Backend changes remain a separate branch; the current GraphQL contracts stay intact. Final verification records the included upstream work and design changes.
 
 ## Decisions requiring morning attention
 

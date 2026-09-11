@@ -1,0 +1,17 @@
+$ node node_modules/@playwright/test/cli.js test
+[WebServer] (node:49044) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 7 tests using 1 worker
+
+(node:46344) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ok 1 tests\browser\trips.spec.ts:44:1 › manual create, retained edits, accepted revision, reload and modal keyboard exit (2.7s)
+  ok 2 tests\browser\trips.spec.ts:84:1 › AI draft stays unpersisted through manual review and follow-up (997ms)
+  ok 3 tests\browser\trips.spec.ts:104:1 › connection retry recovers without a fixture fallback (545ms)
+  ok 4 tests\browser\trips.spec.ts:114:1 › essential clarification answers stay reviewable before the create mutation (906ms)
+  ok 5 tests\browser\trips.spec.ts:139:3 › manual entry and calendar controls remain usable at 320px (1.4s)
+  ok 6 tests\browser\trips.spec.ts:139:3 › manual entry and calendar controls remain usable at 390px (1.4s)
+  ok 7 tests\browser\trips.spec.ts:139:3 › manual entry and calendar controls remain usable at 768px (1.5s)
+
+  7 passed (11.8s)
