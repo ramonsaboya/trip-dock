@@ -1,0 +1,658 @@
+{
+  "reference": "working tree",
+  "files": [
+    {
+      "file": "apps/web/app/globals.css",
+      "lines": 2375,
+      "bytes": 76062,
+      "components": [],
+      "stateHooks": 0,
+      "effects": 0,
+      "imports": 2
+    },
+    {
+      "file": "apps/web/app/layout.tsx",
+      "lines": 70,
+      "bytes": 2063,
+      "components": [
+        "RootLayout"
+      ],
+      "stateHooks": 0,
+      "effects": 0,
+      "imports": 4
+    },
+    {
+      "file": "apps/web/app/packing.css",
+      "lines": 164,
+      "bytes": 15371,
+      "components": [],
+      "stateHooks": 0,
+      "effects": 0,
+      "imports": 0
+    },
+    {
+      "file": "apps/web/app/page.tsx",
+      "lines": 5,
+      "bytes": 121,
+      "components": [
+        "Home"
+      ],
+      "stateHooks": 0,
+      "effects": 0,
+      "imports": 1
+    },
+    {
+      "file": "apps/web/app/theme.css",
+      "lines": 209,
+      "bytes": 12023,
+      "components": [],
+      "stateHooks": 0,
+      "effects": 0,
+      "imports": 0
+    },
+    {
+      "file": "apps/web/components/dictation-textarea.tsx",
+      "lines": 100,
+      "bytes": 4935,
+      "components": [
+        "DictationTextarea"
+      ],
+      "stateHooks": 1,
+      "effects": 3,
+      "imports": 3
+    },
+    {
+      "file": "apps/web/components/theme-toggle.tsx",
+      "lines": 53,
+      "bytes": 1979,
+      "components": [
+        "ThemeToggle"
+      ],
+      "stateHooks": 0,
+      "effects": 0,
+      "imports": 2
+    },
+    {
+      "file": "apps/web/components/trip-dock-app.tsx",
+      "lines": 70,
+      "bytes": 5552,
+      "components": [
+        "TripDockApp"
+      ],
+      "stateHooks": 1,
+      "effects": 2,
+      "imports": 9
+    },
+    {
+      "file": "apps/web/components/ui/calendar-date.ts",
+      "lines": 68,
+      "bytes": 2402,
+      "components": [],
+      "stateHooks": 0,
+      "effects": 0,
+      "imports": 0
+    },
+    {
+      "file": "apps/web/components/ui/date-picker-input.tsx",
+      "lines": 267,
+      "bytes": 11212,
+      "components": [
+        "DatePickerInput"
+      ],
+      "stateHooks": 3,
+      "effects": 2,
+      "imports": 2
+    },
+    {
+      "file": "apps/web/components/ui/dialog.tsx",
+      "lines": 53,
+      "bytes": 1192,
+      "components": [
+        "Dialog"
+      ],
+      "stateHooks": 0,
+      "effects": 1,
+      "imports": 1
+    },
+    {
+      "file": "apps/web/components/ui/field.tsx",
+      "lines": 75,
+      "bytes": 2753,
+      "components": [
+        "Field"
+      ],
+      "stateHooks": 0,
+      "effects": 0,
+      "imports": 2
+    },
+    {
+      "file": "apps/web/components/ui/logo.tsx",
+      "lines": 23,
+      "bytes": 403,
+      "components": [
+        "Logo"
+      ],
+      "stateHooks": 0,
+      "effects": 0,
+      "imports": 0
+    },
+    {
+      "file": "apps/web/components/voice-attribution.tsx",
+      "lines": 9,
+      "bytes": 296,
+      "components": [
+        "VoiceAttribution"
+      ],
+      "stateHooks": 0,
+      "effects": 0,
+      "imports": 0
+    },
+    {
+      "file": "apps/web/features/calendar/calendar-cell.tsx",
+      "lines": 15,
+      "bytes": 1142,
+      "components": [
+        "CalendarCell"
+      ],
+      "stateHooks": 0,
+      "effects": 0,
+      "imports": 2
+    },
+    {
+      "file": "apps/web/features/calendar/calendar-pool.tsx",
+      "lines": 11,
+      "bytes": 656,
+      "components": [
+        "CalendarPool"
+      ],
+      "stateHooks": 0,
+      "effects": 0,
+      "imports": 2
+    },
+    {
+      "file": "apps/web/features/calendar/duration-handle.tsx",
+      "lines": 22,
+      "bytes": 2962,
+      "components": [
+        "DurationHandle"
+      ],
+      "stateHooks": 1,
+      "effects": 1,
+      "imports": 2
+    },
+    {
+      "file": "apps/web/features/calendar/hour-paper.tsx",
+      "lines": 7,
+      "bytes": 1497,
+      "components": [
+        "HourPaper"
+      ],
+      "stateHooks": 0,
+      "effects": 0,
+      "imports": 3
+    },
+    {
+      "file": "apps/web/features/calendar/trip-calendar.tsx",
+      "lines": 330,
+      "bytes": 30866,
+      "components": [
+        "TripCalendar"
+      ],
+      "stateHooks": 6,
+      "effects": 3,
+      "imports": 14
+    },
+    {
+      "file": "apps/web/features/packing/count-input.tsx",
+      "lines": 16,
+      "bytes": 1005,
+      "components": [
+        "CountInput"
+      ],
+      "stateHooks": 1,
+      "effects": 0,
+      "imports": 1
+    },
+    {
+      "file": "apps/web/features/packing/entry-row.tsx",
+      "lines": 34,
+      "bytes": 3160,
+      "components": [
+        "EntryRow"
+      ],
+      "stateHooks": 1,
+      "effects": 0,
+      "imports": 4
+    },
+    {
+      "file": "apps/web/features/packing/library-form.tsx",
+      "lines": 75,
+      "bytes": 6263,
+      "components": [
+        "LibraryForm"
+      ],
+      "stateHooks": 14,
+      "effects": 0,
+      "imports": 3
+    },
+    {
+      "file": "apps/web/features/packing/library-types.ts",
+      "lines": 12,
+      "bytes": 629,
+      "components": [],
+      "stateHooks": 0,
+      "effects": 0,
+      "imports": 1
+    },
+    {
+      "file": "apps/web/features/packing/packing-checklist.tsx",
+      "lines": 54,
+      "bytes": 4525,
+      "components": [
+        "PackingChecklist"
+      ],
+      "stateHooks": 5,
+      "effects": 0,
+      "imports": 5
+    },
+    {
+      "file": "apps/web/features/packing/packing-days.tsx",
+      "lines": 94,
+      "bytes": 8015,
+      "components": [
+        "PackingDays"
+      ],
+      "stateHooks": 6,
+      "effects": 0,
+      "imports": 6
+    },
+    {
+      "file": "apps/web/features/packing/packing-library.tsx",
+      "lines": 43,
+      "bytes": 4453,
+      "components": [
+        "PackingLibraryView"
+      ],
+      "stateHooks": 5,
+      "effects": 0,
+      "imports": 4
+    },
+    {
+      "file": "apps/web/features/packing/packing-types.ts",
+      "lines": 3,
+      "bytes": 127,
+      "components": [],
+      "stateHooks": 0,
+      "effects": 0,
+      "imports": 1
+    },
+    {
+      "file": "apps/web/features/packing/packing-workspace.tsx",
+      "lines": 90,
+      "bytes": 6556,
+      "components": [
+        "PackingWorkspace"
+      ],
+      "stateHooks": 8,
+      "effects": 2,
+      "imports": 7
+    },
+    {
+      "file": "apps/web/features/trips/creation/create-trip-form.tsx",
+      "lines": 305,
+      "bytes": 15832,
+      "components": [
+        "CreateTripForm"
+      ],
+      "stateHooks": 13,
+      "effects": 0,
+      "imports": 15
+    },
+    {
+      "file": "apps/web/features/trips/creation/draft-review-summary.tsx",
+      "lines": 75,
+      "bytes": 3669,
+      "components": [
+        "DraftReviewSummary"
+      ],
+      "stateHooks": 0,
+      "effects": 0,
+      "imports": 2
+    },
+    {
+      "file": "apps/web/features/trips/creation/home-draft-composer.tsx",
+      "lines": 64,
+      "bytes": 3062,
+      "components": [
+        "HomeDraftComposer"
+      ],
+      "stateHooks": 5,
+      "effects": 0,
+      "imports": 9
+    },
+    {
+      "file": "apps/web/features/trips/creation/merge-follow-up.ts",
+      "lines": 110,
+      "bytes": 5180,
+      "components": [],
+      "stateHooks": 0,
+      "effects": 0,
+      "imports": 3
+    },
+    {
+      "file": "apps/web/features/trips/creation/question-stage.tsx",
+      "lines": 45,
+      "bytes": 4537,
+      "components": [
+        "QuestionStage"
+      ],
+      "stateHooks": 0,
+      "effects": 0,
+      "imports": 4
+    },
+    {
+      "file": "apps/web/features/trips/editors/activity-editor.tsx",
+      "lines": 78,
+      "bytes": 6044,
+      "components": [
+        "ActivityEditor"
+      ],
+      "stateHooks": 4,
+      "effects": 0,
+      "imports": 11
+    },
+    {
+      "file": "apps/web/features/trips/editors/stay-editor.tsx",
+      "lines": 92,
+      "bytes": 6805,
+      "components": [
+        "StayEditor"
+      ],
+      "stateHooks": 5,
+      "effects": 0,
+      "imports": 11
+    },
+    {
+      "file": "apps/web/features/trips/editors/stop-editor.tsx",
+      "lines": 53,
+      "bytes": 3877,
+      "components": [
+        "StopEditor"
+      ],
+      "stateHooks": 4,
+      "effects": 0,
+      "imports": 10
+    },
+    {
+      "file": "apps/web/features/trips/editors/transport-editor.tsx",
+      "lines": 122,
+      "bytes": 9924,
+      "components": [
+        "TransportEditor"
+      ],
+      "stateHooks": 5,
+      "effects": 0,
+      "imports": 11
+    },
+    {
+      "file": "apps/web/features/trips/editors/trip-editor.tsx",
+      "lines": 35,
+      "bytes": 2593,
+      "components": [
+        "TripEditor"
+      ],
+      "stateHooks": 3,
+      "effects": 0,
+      "imports": 8
+    },
+    {
+      "file": "apps/web/features/trips/trip-collection.ts",
+      "lines": 31,
+      "bytes": 1426,
+      "components": [],
+      "stateHooks": 0,
+      "effects": 0,
+      "imports": 5
+    },
+    {
+      "file": "apps/web/features/trips/trip-defaults.ts",
+      "lines": 19,
+      "bytes": 434,
+      "components": [],
+      "stateHooks": 0,
+      "effects": 0,
+      "imports": 1
+    },
+    {
+      "file": "apps/web/features/trips/trip-detail.tsx",
+      "lines": 69,
+      "bytes": 4974,
+      "components": [
+        "TripDetail"
+      ],
+      "stateHooks": 1,
+      "effects": 0,
+      "imports": 13
+    },
+    {
+      "file": "apps/web/features/trips/trip-fields.tsx",
+      "lines": 205,
+      "bytes": 10011,
+      "components": [
+        "TripFields"
+      ],
+      "stateHooks": 1,
+      "effects": 1,
+      "imports": 7
+    },
+    {
+      "file": "apps/web/features/trips/trip-state.ts",
+      "lines": 8,
+      "bytes": 257,
+      "components": [],
+      "stateHooks": 0,
+      "effects": 0,
+      "imports": 1
+    },
+    {
+      "file": "apps/web/features/trips/trips-overview.tsx",
+      "lines": 147,
+      "bytes": 9768,
+      "components": [
+        "TripsOverview"
+      ],
+      "stateHooks": 3,
+      "effects": 0,
+      "imports": 7
+    },
+    {
+      "file": "apps/web/features/trips/use-trip-collection.ts",
+      "lines": 24,
+      "bytes": 881,
+      "components": [],
+      "stateHooks": 2,
+      "effects": 1,
+      "imports": 4
+    },
+    {
+      "file": "apps/web/lib/activity-planning.ts",
+      "lines": 31,
+      "bytes": 1458,
+      "components": [],
+      "stateHooks": 0,
+      "effects": 0,
+      "imports": 2
+    },
+    {
+      "file": "apps/web/lib/calendar-interactions.ts",
+      "lines": 47,
+      "bytes": 2316,
+      "components": [],
+      "stateHooks": 0,
+      "effects": 0,
+      "imports": 0
+    },
+    {
+      "file": "apps/web/lib/calendar-window.ts",
+      "lines": 22,
+      "bytes": 1261,
+      "components": [],
+      "stateHooks": 0,
+      "effects": 0,
+      "imports": 0
+    },
+    {
+      "file": "apps/web/lib/device-timezone.ts",
+      "lines": 9,
+      "bytes": 164,
+      "components": [],
+      "stateHooks": 0,
+      "effects": 0,
+      "imports": 0
+    },
+    {
+      "file": "apps/web/lib/error-message.ts",
+      "lines": 5,
+      "bytes": 145,
+      "components": [],
+      "stateHooks": 0,
+      "effects": 0,
+      "imports": 0
+    },
+    {
+      "file": "apps/web/lib/graphql/request.ts",
+      "lines": 63,
+      "bytes": 1852,
+      "components": [],
+      "stateHooks": 0,
+      "effects": 0,
+      "imports": 0
+    },
+    {
+      "file": "apps/web/lib/graphql-client.ts",
+      "lines": 9,
+      "bytes": 388,
+      "components": [],
+      "stateHooks": 0,
+      "effects": 0,
+      "imports": 0
+    },
+    {
+      "file": "apps/web/lib/live-recognition.ts",
+      "lines": 176,
+      "bytes": 8184,
+      "components": [],
+      "stateHooks": 0,
+      "effects": 0,
+      "imports": 1
+    },
+    {
+      "file": "apps/web/lib/packing-client.ts",
+      "lines": 30,
+      "bytes": 3861,
+      "components": [],
+      "stateHooks": 0,
+      "effects": 0,
+      "imports": 1
+    },
+    {
+      "file": "apps/web/lib/packing-drag.ts",
+      "lines": 8,
+      "bytes": 400,
+      "components": [],
+      "stateHooks": 0,
+      "effects": 0,
+      "imports": 1
+    },
+    {
+      "file": "apps/web/lib/packing-navigation.ts",
+      "lines": 30,
+      "bytes": 1385,
+      "components": [],
+      "stateHooks": 0,
+      "effects": 0,
+      "imports": 1
+    },
+    {
+      "file": "apps/web/lib/theme.ts",
+      "lines": 14,
+      "bytes": 632,
+      "components": [],
+      "stateHooks": 0,
+      "effects": 0,
+      "imports": 0
+    },
+    {
+      "file": "apps/web/lib/trip-calendar.ts",
+      "lines": 192,
+      "bytes": 11014,
+      "components": [],
+      "stateHooks": 0,
+      "effects": 0,
+      "imports": 4
+    },
+    {
+      "file": "apps/web/lib/trips/dates.ts",
+      "lines": 140,
+      "bytes": 5495,
+      "components": [],
+      "stateHooks": 0,
+      "effects": 0,
+      "imports": 1
+    },
+    {
+      "file": "apps/web/lib/trips/draft-alignment.ts",
+      "lines": 265,
+      "bytes": 10977,
+      "components": [],
+      "stateHooks": 0,
+      "effects": 0,
+      "imports": 2
+    },
+    {
+      "file": "apps/web/lib/trips/drafts.ts",
+      "lines": 451,
+      "bytes": 18558,
+      "components": [],
+      "stateHooks": 0,
+      "effects": 0,
+      "imports": 3
+    },
+    {
+      "file": "apps/web/lib/trips/operations.ts",
+      "lines": 74,
+      "bytes": 4249,
+      "components": [],
+      "stateHooks": 0,
+      "effects": 0,
+      "imports": 0
+    },
+    {
+      "file": "apps/web/lib/trips/stops.ts",
+      "lines": 147,
+      "bytes": 4684,
+      "components": [],
+      "stateHooks": 0,
+      "effects": 0,
+      "imports": 1
+    },
+    {
+      "file": "apps/web/lib/trips/types.ts",
+      "lines": 145,
+      "bytes": 3039,
+      "components": [],
+      "stateHooks": 0,
+      "effects": 0,
+      "imports": 0
+    },
+    {
+      "file": "apps/web/lib/voice-dictation.ts",
+      "lines": 153,
+      "bytes": 6793,
+      "components": [],
+      "stateHooks": 0,
+      "effects": 0,
+      "imports": 0
+    }
+  ]
+}

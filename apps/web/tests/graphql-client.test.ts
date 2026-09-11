@@ -1,7 +1,6 @@
+import { productionSources } from './source-files.ts';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
 import test from 'node:test';
-import { fileURLToPath } from 'node:url';
 
 import {
   activityDateTimeForStop,
@@ -1453,11 +1452,7 @@ test('transport suggestions never invert the timing for overlapping or reverse r
 });
 
 test('production web code contains no fixture or browser-storage fallback', async () => {
-  const files = [
-    new URL('../lib/graphql-client.ts', import.meta.url),
-    new URL('../components/trip-dock-app.tsx', import.meta.url),
-  ];
-  const source = (await Promise.all(files.map((file) => readFile(fileURLToPath(file), 'utf8')))).join('\n');
+  const source = await productionSources();
   assert.doesNotMatch(
     source,
     /localStorage|sessionStorage|seedTrips|proposalChangesFromPrompt|proposalTimer|recognizedChanges|local fixture|mock controls/i,
@@ -1475,15 +1470,12 @@ test('production web code contains no fixture or browser-storage fallback', asyn
 });
 
 test('creation UI opens manual creation as a form and keeps AI drafts reviewable', async () => {
-  const source = await readFile(
-    fileURLToPath(new URL('../components/trip-dock-app.tsx', import.meta.url)),
-    'utf8',
-  );
+  const source = await productionSources();
   assert.match(source, /disabled=\{followUpBusy \|\| busy\} \/>/u);
   assert.match(source, /className="clarification-question"[^>]+disabled=\{followUpBusy\}/u);
   assert.match(source, /navigator\.language \|\| 'en-GB'/u);
   assert.match(source, /fieldStates\.get\('trip\.name'\)\?\.status === 'SUGGESTED'/u);
-  assert.match(source, /stage === 'clarify'[\s\S]+renderQuestionStage\(blockingQuestions, true\)/u);
+  assert.match(source, /<QuestionStage visibleQuestions=\{stage === 'clarify' \? blockingQuestions : optionalQuestions\} blocking=\{stage === 'clarify'\}/u);
   assert.match(source, /stage === 'edit'/u);
   assert.match(source, /initialDraft[\s\S]+\? 'review'[\s\S]+: 'edit'/u);
   assert.match(source, /initialDraft \? 'Trip details' : 'Create a trip'/u);
@@ -1499,10 +1491,7 @@ test('creation UI opens manual creation as a form and keeps AI drafts reviewable
 });
 
 test('dashboard chrome keeps a single trips heading without a redundant tab', async () => {
-  const source = await readFile(
-    fileURLToPath(new URL('../components/trip-dock-app.tsx', import.meta.url)),
-    'utf8',
-  );
+  const source = await productionSources();
   assert.match(source, /<h1>Your trips<\/h1>/u);
   assert.doesNotMatch(source, /Your travel plans|<nav aria-label="Primary"|nav-link-active/u);
 });

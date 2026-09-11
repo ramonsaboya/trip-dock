@@ -1,10 +1,10 @@
 'use client';
 
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import { idleDictation, VoiceDictation } from '../lib/voice-dictation';
 import { LiveRecognition, liveRecognitionSupported } from '../lib/live-recognition';
+import { idleDictation, VoiceDictation } from '../lib/voice-dictation';
 
-type Props = {
+export type Props = {
   id: string;
   rows: number;
   maxLength: number;
@@ -17,15 +17,11 @@ type Props = {
   context?: string;
 };
 
-const subscribeToSupport = () => () => {};
-const clientSupport = () => liveRecognitionSupported();
-const serverSupport = () => null;
+export const subscribeToSupport = () => () => {};
 
-export function VoiceAttribution({ visible }: { visible: boolean }) {
-  return <span className="voice-attribution" style={{ visibility: visible ? 'visible' : 'hidden' }} aria-hidden={!visible}>
-    <span>GPT Live Transcribe</span><small>Audio sent to OpenAI</small>
-  </span>;
-}
+export const clientSupport = () => liveRecognitionSupported();
+
+export const serverSupport = () => null;
 
 export function DictationTextarea({ id, rows, maxLength, value, onChange, onActiveChange, onVoiceUsed, placeholder, disabled = false, context }: Props) {
   const supported = useSyncExternalStore(subscribeToSupport, clientSupport, serverSupport);

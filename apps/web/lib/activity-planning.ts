@@ -1,4 +1,5 @@
-import { dateTimeLocalToIso, isoToDateTimeLocal, type Activity, type TripStop } from './graphql-client.ts';
+import { dateTimeLocalToIso, isoToDateTimeLocal } from './trips/dates.ts';
+import { type Activity, type TripStop } from './trips/types.ts';
 
 export const calendarHours = Array.from({ length: 24 }, (_, hour) => String(hour).padStart(2, '0') + ':00');
 
