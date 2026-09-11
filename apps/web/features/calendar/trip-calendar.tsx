@@ -23,12 +23,11 @@ export const transportDragType = 'application/tripdock-transport';
 
 export const dateLabel = (day: string) => new Date(`${day}T12:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
 
-export function TripCalendar({ trip, onChanged, onActivity, onStay, onTransport, onDestination, onRemove }: {
+export function TripCalendar({ trip, onChanged, onActivity, onStay, onTransport, onRemove }: {
   trip: Trip; onChanged: (trip: Trip) => void;
   onActivity: (activity?: Activity, stopId?: string, scheduledLocal?: string) => void;
   onStay: (stay?: Stay, stopId?: string) => void;
   onTransport: (leg?: TransportLeg, fromStopId?: string | null, toStopId?: string | null) => void;
-  onDestination: (stop: TripStop) => void;
   onRemove: (kind: 'activity' | 'stay' | 'transport' | 'stop', id: string) => void;
 }) {
   const columns = useMemo(() => calendarColumns(trip), [trip]);
@@ -311,7 +310,7 @@ export function TripCalendar({ trip, onChanged, onActivity, onStay, onTransport,
       <div className="trip-calendar-scroll" ref={viewport} onPointerDown={startPan} onPointerMove={movePan} onPointerUp={endPan} onPointerCancel={endPan} onLostPointerCapture={endPan} tabIndex={0} role="region" aria-label="Itinerary by date">
         <table className="trip-calendar-table"><colgroup><col style={{ width: 62 }} />{visible.flatMap((column) => [<col key={column.day + "-am"} />, <col key={column.day + "-pm"} />])}</colgroup>
           <thead ref={header}>
-            <tr className="destination-band"><th className="calendar-blank-corner" aria-hidden="true" />{bands.map((band, index) => <th key={`${band.key}-${index}`} colSpan={band.span} className={`destination-tint-${band.color}`} scope="colgroup"><div className="calendar-band-controls">{band.destinations.length ? band.destinations.map((stop, stopIndex) => <span key={stop.id}>{stopIndex ? <span className="shared-place-divider"> / </span> : null}<button type="button" onClick={() => onDestination(stop)}><span>{String(stops.findIndex((item) => item.id === stop.id) + 1).padStart(2, '0')}</span> {stop.name}</button></span>) : 'Dates open'}</div></th>)}</tr>
+            <tr className="destination-band"><th className="calendar-blank-corner" aria-hidden="true" />{bands.map((band, index) => <th key={`${band.key}-${index}`} colSpan={band.span} className={`destination-tint-${band.color}`} scope="colgroup"><div className="calendar-band-controls">{band.destinations.length ? band.destinations.map((stop, stopIndex) => <span key={stop.id}>{stopIndex ? <span className="shared-place-divider"> / </span> : null}<span className="calendar-destination-label"><span>{String(stops.findIndex((item) => item.id === stop.id) + 1).padStart(2, '0')}</span> {stop.name}</span></span>) : 'Dates open'}</div></th>)}</tr>
             <tr className="calendar-stay-row"><td className="calendar-blank-corner" aria-hidden="true" />{bands.map((band, index) => <td key={band.key + index} colSpan={band.span}><div className="calendar-band-controls"><div className="calendar-stay-items">{trip.stays.filter((stay) => band.destinations.some((stop) => stop.id === stay.stopId)).map(stayButton)}</div>{band.destinations.map((stop) => <button key={stop.id} type="button" className="calendar-add-stay" onClick={() => onStay(undefined, stop.id)}>+ Stay</button>)}</div></td>)}</tr>
             <tr className="calendar-date-row"><th scope="row">Date</th>{visible.map((column) => <th scope="col" data-day={column.day} colSpan={2} key={column.day} className={`destination-tint-${column.color}`}>{labels.get(column.day)}</th>)}</tr>
 

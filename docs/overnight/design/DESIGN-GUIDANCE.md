@@ -2,6 +2,8 @@
 
 Read this alongside `apps/web/AGENTS.md` when present; it supplements frontend rules and does not replace them.
 
+Follow the [latest product decisions](05-follow-up-decisions.md): saved destinations are intended to be fixed after creation. Do not add destination management until whole-trip change consequences are designed. Broader accessibility work, an agenda view and additional validation are deliberately deferred; preserve existing accessible behavior in the meantime.
+
 - Preserve TripDock's supplied logo, default dark theme, green primary actions, serif overview headings and destination/transport paper language. Improve an observed task problem before adding decoration.
 - Keep canonical trip data in PostgreSQL. Drafts remain editable and require explicit save plus server validation. Browser storage is only for established device preferences, never trip persistence.
 - Reuse existing fields, date inputs, dialogs and feature callbacks. Do not duplicate the creation form to solve a mobile layout issue.

@@ -5,18 +5,16 @@ import { errorMessage } from '../../lib/error-message';
 import { graphqlRequest } from '../../lib/graphql/request';
 import { formatDateRange } from '../../lib/trips/dates';
 import { operations } from '../../lib/trips/operations';
-import { type Activity, type Stay, type TransportLeg, type Trip, type TripStop } from '../../lib/trips/types';
+import { type Activity, type Stay, type TransportLeg, type Trip } from '../../lib/trips/types';
 import { TripCalendar } from '../calendar/trip-calendar';
 import { ActivityEditor } from './editors/activity-editor';
 import { StayEditor } from './editors/stay-editor';
-import { StopEditor } from './editors/stop-editor';
 import { TransportEditor } from './editors/transport-editor';
 import { TripEditor } from './editors/trip-editor';
 import { type Notice } from './trip-state';
 
 export type EntityEditor =
   | { kind: 'trip' }
-  | { kind: 'stop'; value?: TripStop }
   | { kind: 'transport'; value?: TransportLeg; fromStopId?: string | null; toStopId?: string | null }
   | { kind: 'stay'; value?: Stay; stopId?: string }
   | { kind: 'activity'; value?: Activity; stopId?: string; scheduledLocal?: string }
@@ -56,11 +54,9 @@ export function TripDetail({ trip, onChanged, onDeleted, notify }: { trip: Trip;
         onActivity={(activity, stopId, scheduledLocal) => setEditor({ kind: 'activity', value: activity, stopId, scheduledLocal })}
         onStay={(stay, stopId) => setEditor({ kind: 'stay', value: stay, stopId })}
         onTransport={(leg, fromStopId, toStopId) => setEditor({ kind: 'transport', value: leg, fromStopId, toStopId })}
-        onDestination={(stop) => setEditor({ kind: 'stop', value: stop })}
         onRemove={(kind, id) => void removeEntity(kind, id)} />
 
       {editor?.kind === 'trip' ? <TripEditor trip={trip} onClose={() => setEditor(null)} onSaved={(updated) => { setEditor(null); onChanged(updated); }} /> : null}
-      {editor?.kind === 'stop' ? <StopEditor trip={trip} stop={editor.value} onClose={() => setEditor(null)} onSaved={(updated) => { setEditor(null); onChanged(updated); }} /> : null}
       {editor?.kind === 'transport' ? <TransportEditor trip={trip} leg={editor.value} fromStopId={editor.fromStopId} toStopId={editor.toStopId} onClose={() => setEditor(null)} onSaved={(updated) => { setEditor(null); onChanged(updated); }} /> : null}
       {editor?.kind === 'stay' ? <StayEditor trip={trip} stay={editor.value} stopId={editor.stopId} onClose={() => setEditor(null)} onSaved={(updated) => { setEditor(null); onChanged(updated); }} /> : null}
       {editor?.kind === 'activity' ? <ActivityEditor trip={trip} activity={editor.value} stopId={editor.stopId} scheduledLocal={editor.scheduledLocal} onClose={() => setEditor(null)} onSaved={(updated) => { setEditor(null); onChanged(updated); }} /> : null}

@@ -71,7 +71,7 @@ The harness intercepts GraphQL on port 3312. It verifies UI behavior and request
 
 ## Remaining scope and limitations
 
-- D11: saved destination add/remove is still difficult to discover. Existing itinerary notes deliberately removed calendar add controls. A future destination-management section inside Edit trip needs an explicit interaction design; this pass does not add an arbitrary toolbar.
+- D11 is superseded by the [follow-up decision](05-follow-up-decisions.md): destinations should be fixed after creation. Destination management is intentionally deferred until a whole-trip editing flow addresses dependent activities, stays, transport and packing. It is no longer a discoverability improvement to implement now.
 - D5: many hourly Tab stops remain. A complete keyboard model needs to account for calendar windowing and receive assistive-technology testing. No partial ARIA grid was introduced.
 - Actual delete/cancel evidence remains incomplete because native confirmation stalled CUA. No acceptance was sent and a fresh tab showed the trip intact.
 - No physical mobile device, screen reader, production-server hydration or live AI/audio-quality session was run. Opaque token contrast checks are not a full accessibility certification. No representative-user usability study was conducted.

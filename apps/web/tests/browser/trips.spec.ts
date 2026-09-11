@@ -168,7 +168,9 @@ for (const width of [320, 390, 768]) {
     }));
     expect(geometry.calendar).toBeGreaterThanOrEqual(geometry.page - 34);
     expect(geometry.scrollWidth).toBe(geometry.page);
-    await expect(page.getByRole('button', { name: '01 Porto', exact: true })).toBeInViewport();
+    await expect(page.locator('.calendar-destination-label', { hasText: 'Porto' })).toBeInViewport();
+    await expect(page.getByRole('button', { name: '01 Porto', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('dialog', { name: 'Edit destination', exact: true })).toHaveCount(0);
     await expect(page.getByRole('button', { name: '+ Stay', exact: true })).toBeInViewport();
     const addActivity = page.getByRole('button', { name: '+ Activity', exact: true });
     await addActivity.press('Enter');

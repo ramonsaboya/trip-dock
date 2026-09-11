@@ -6,6 +6,8 @@ The baseline is commit `f80de19f32b39b2b77b940a480fabf4d6cebcd62`, inspected on 
 
 ## Review pack
 
+**Latest decisions:** [Follow-up product decisions](05-follow-up-decisions.md) supersede the review's destination-management recommendation and explicitly defer the broader accessibility, agenda and validation work.
+
 - [Baseline map and audit](01-baseline-audit.md): responsibilities, journeys, actual observations and screenshots.
 - [Research and applicability](02-research.md): standards, interaction guidance, competing approaches and evidence limits.
 - [Target design and decisions](03-design-plan.md): priorities, chosen defaults, tradeoffs and rollback.
