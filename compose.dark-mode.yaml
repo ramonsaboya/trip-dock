@@ -1,0 +1,21 @@
+name: tripdock-dark-mode
+
+services:
+  postgres:
+    image: postgres:17.6-alpine
+    environment:
+      POSTGRES_DB: tripdock_dark_mode
+      POSTGRES_USER: tripdock
+      POSTGRES_PASSWORD: tripdock
+    ports:
+      - "127.0.0.1:55437:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tripdock -d tripdock_dark_mode"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - dark_mode_data:/var/lib/postgresql/data
+
+volumes:
+  dark_mode_data:

@@ -1,8 +1,10 @@
 import type { Metadata, Viewport } from 'next';
 import './globals.css';
+import './theme.css';
+import { themeBootstrapScript } from '../lib/theme';
 
 export const viewport: Viewport = {
-  themeColor: '#174f47',
+  themeColor: '#141c1b',
 };
 
 export const metadata: Metadata = {
@@ -60,7 +62,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" data-theme="dark" suppressHydrationWarning>
+      <head><script dangerouslySetInnerHTML={{ __html: themeBootstrapScript }} /></head>
       <body>{children}</body>
     </html>
   );

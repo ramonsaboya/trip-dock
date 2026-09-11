@@ -1,9 +1,11 @@
 'use client';
 import { flushSync } from 'react-dom';
+import { ThemeToggle } from './theme-toggle';
 import { PackingWorkspace } from './packing-workspace';
 import { navigateHome, navigateTrip, useTripNavigation } from '../lib/packing-navigation';
 
 import { TripCalendar } from './trip-calendar';
+import { DictationTextarea, VoiceAttribution } from './dictation-textarea';
 
 import {
   cloneElement,
@@ -105,14 +107,21 @@ function deviceTimezone(): string | null {
 
 function Logo() {
   return (
-    // eslint-disable-next-line @next/next/no-img-element
+    <>
+    {/* eslint-disable-next-line @next/next/no-img-element */}
     <img
-      className="brand-logo"
+      className="brand-logo brand-logo-light"
       src="/brand/tripdock-logo.png"
       width="1863"
       height="844"
       alt="TripDock"
     />
+    <span
+      className="brand-logo brand-logo-dark"
+      role="img"
+      aria-label="TripDock"
+    />
+    </>
   );
 }
 
@@ -837,11 +846,13 @@ function DraftReviewSummary({
 function CreateTripForm({
   initialDraft,
   sourcePrompt,
+  inactive = false,
   onClose,
   onCreated,
 }: {
   initialDraft?: TripDraft;
   sourcePrompt?: string;
+  inactive?: boolean;
   onClose: () => void;
   onCreated: (trip: Trip) => void;
 }) {
@@ -867,8 +878,10 @@ function CreateTripForm({
   }));
   const [selectedOptions, setSelectedOptions] = useState<Record<string, string>>({});
   const [followUp, setFollowUp] = useState('');
+  const [followUpVoiceUsed, setFollowUpVoiceUsed] = useState(false);
   const [followUpHistory, setFollowUpHistory] = useState<string[]>([]);
   const [followUpBusy, setFollowUpBusy] = useState(false);
+  const [followUpDictating, setFollowUpDictating] = useState(false);
   const formLocale = initialDraft?.locale ??
     (typeof navigator === 'undefined' ? 'en-GB' : navigator.language || 'en-GB');
   const protectedPaths = useRef(new Set<string>());
@@ -1011,7 +1024,7 @@ function CreateTripForm({
   }
 
   async function submitFollowUp() {
-    if (!followUp.trim() || followUpBusy) return;
+    if (!followUp.trim() || followUpBusy || followUpDictating) return;
     const answer = followUp.trim();
     setFollowUpBusy(true);
     setError(null);
@@ -1197,8 +1210,11 @@ function CreateTripForm({
         {visibleQuestions.some((item) => item.options.length) ? <button className="button-secondary apply-quick-answers" type="button" onClick={applySelectedAnswers} disabled={followUpBusy || !Object.keys(selectedOptions).length}>{blocking ? 'Continue with selected answers' : 'Use selected answers'}</button> : null}
         <div className="follow-up-compose">
           <label htmlFor="trip-draft-follow-up">{blocking ? 'Or answer everything in one message' : 'Tell TripDock what to adjust'}</label>
-          <textarea id="trip-draft-follow-up" rows={4} maxLength={1500} value={followUp} onChange={(event) => setFollowUp(event.target.value)} placeholder={blocking ? 'For example: Bristol, 10–14 May, using the later weekend.' : 'For example: Keep the proposed dates, but give Rome one extra night.'} disabled={followUpBusy} />
-          <button className="button-primary" type="button" onClick={() => void submitFollowUp()} disabled={followUpBusy || !followUp.trim()}>{followUpBusy ? 'Updating your draft…' : 'Update interpreted draft'}</button>
+          <DictationTextarea id="trip-draft-follow-up" rows={4} maxLength={1500} value={followUp} context={sourcePrompt} onChange={setFollowUp} onActiveChange={setFollowUpDictating} onVoiceUsed={() => setFollowUpVoiceUsed(true)} placeholder={blocking ? 'For example: Bristol, 10–14 May, using the later weekend.' : 'For example: Keep the proposed dates, but give Rome one extra night.'} disabled={inactive || followUpBusy} />
+          <div className="composer-actions">
+            <button className="button-primary" type="button" onClick={() => void submitFollowUp()} disabled={followUpBusy || followUpDictating || !followUp.trim()}>{followUpBusy ? 'Updating your draft…' : 'Update interpreted draft'}</button>
+            <VoiceAttribution visible={followUpVoiceUsed} />
+          </div>
         </div>
         {error ? <p className="form-error" role="alert">{error}</p> : null}
         <footer className="dialog-footer"><button className="button-text" type="button" onClick={onClose}>Cancel</button>{!blocking ? <button className="button-secondary" type="button" onClick={() => { setSelectedOptions({}); setStage('review'); }}>Back to summary</button> : <small className="creation-stage-note">Your trip summary appears after the essentials are clear.</small>}</footer>
@@ -1244,13 +1260,16 @@ function CreateTripForm({
   );
 }
 
-function HomeDraftComposer({ onDraft, onStart, hidden }: { onDraft: (draft: TripDraft, prompt: string) => void; onStart: () => void; hidden: boolean }) {
+function HomeDraftComposer({ onDraft, onStart, hidden, disabled }: { onDraft: (draft: TripDraft, prompt: string) => void; onStart: () => void; hidden: boolean; disabled: boolean }) {
   const [prompt, setPrompt] = useState('');
+  const [dictating, setDictating] = useState(false);
+  const [voiceUsed, setVoiceUsed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function generateDraft(event: FormEvent) {
     event.preventDefault();
+    if (busy || disabled || dictating || !prompt.trim()) return;
     onStart();
     setBusy(true);
     setError(null);
@@ -1283,9 +1302,12 @@ function HomeDraftComposer({ onDraft, onStart, hidden }: { onDraft: (draft: Trip
       </div>
       <form onSubmit={(event) => void generateDraft(event)} aria-busy={busy}>
         <label htmlFor="home-trip-prompt">What do you have in mind?</label>
-        <textarea id="home-trip-prompt" rows={8} maxLength={5000} value={prompt} disabled={busy} onChange={(event) => setPrompt(event.target.value)} placeholder="Ten days in Japan for two people, starting in Tokyo and ending in Kyoto…" />
+        <DictationTextarea id="home-trip-prompt" rows={8} maxLength={5000} value={prompt} onChange={setPrompt} onActiveChange={setDictating} onVoiceUsed={() => setVoiceUsed(true)} disabled={busy || disabled} placeholder="Ten days in Japan for two people, starting in Tokyo and ending in Kyoto…" />
         {error ? <p className="form-error" role="alert">{error}</p> : null}
-        <button className="button-primary" type="submit" disabled={busy || !prompt.trim()}>{busy ? 'Building your draft…' : 'Build a trip draft'}</button>
+        <div className="composer-actions">
+          <button className="button-primary" type="submit" disabled={busy || disabled || dictating || !prompt.trim()}>{busy ? 'Building your draft…' : 'Build a trip draft'}</button>
+          <VoiceAttribution visible={voiceUsed} />
+        </div>
       </form>
     </section>
   );
@@ -1785,18 +1807,18 @@ function TripsOverview({ trips, onCreated, onOpen }: { trips: Trip[]; onCreated:
       <div className={`creation-stage ${trips.length ? 'has-trips' : ''} ${trips.length && active === 'manual' ? 'top-creation-open' : ''}`}>
       <div ref={workspace} inert={isMoving || (trips.length > 0 && active === 'manual')} className={`overview-layout creation-layout ${active && !(trips.length && active === 'manual') ? 'creation-active creation-' + active : ''}`}>
         <div className="creation-slot creation-ai-slot" data-active={active === 'ai'} inert={active === 'manual'} tabIndex={-1} aria-label="Create a trip with AI"><div className="creation-content">
-          <HomeDraftComposer hidden={Boolean(draft && active === 'ai')} onStart={() => expand('ai', true)} onDraft={(value, prompt) => setDraft({ value, prompt })} />
-          {draft ? <div hidden={active !== 'ai'}><CreateTripForm key={JSON.stringify(draft)} initialDraft={draft.value} sourcePrompt={draft.prompt} onClose={close} onCreated={onCreated} /></div> : null}
+          <HomeDraftComposer disabled={isMoving || active === 'manual' || Boolean(draft && active === 'ai')} hidden={Boolean(draft && active === 'ai')} onStart={() => expand('ai', true)} onDraft={(value, prompt) => setDraft({ value, prompt })} />
+          {draft ? <div hidden={active !== 'ai'}><CreateTripForm inactive={active !== 'ai' || isMoving} key={JSON.stringify(draft)} initialDraft={draft.value} sourcePrompt={draft.prompt} onClose={close} onCreated={onCreated} /></div> : null}
           {draft && !active ? <button className="button-text resume-draft" type="button" onClick={() => expand('ai')}>Continue your AI draft →</button> : null}
         </div></div>
         <div className="creation-slot creation-manual-slot" data-active={active === 'manual'} inert={active === 'ai'} tabIndex={-1} aria-label="Create a trip"><div className="creation-content">
           <div hidden={active === 'manual' && trips.length === 0}>
             {trips.length === 0 ? <section className="empty-state"><span className="empty-mark" aria-hidden="true">01</span><h2>Your first trip starts here</h2><p>Add the essentials now. You can fill in accommodation, activities, and transport as the plan takes shape.</p><button className="button-primary" type="button" onClick={() => expand('manual')}>{manualStarted ? 'Continue your trip' : 'Create your first trip'}</button></section> : <div className="overview-plans">{tripCards}</div>}
           </div>
-          {manualStarted && trips.length === 0 ? <div hidden={active !== 'manual'}><CreateTripForm onClose={close} onCreated={onCreated} /></div> : null}</div>
+          {manualStarted && trips.length === 0 ? <div hidden={active !== 'manual'}><CreateTripForm inactive={active !== 'manual' || isMoving} onClose={close} onCreated={onCreated} /></div> : null}</div>
         </div>
       </div>
-      {trips.length > 0 && manualStarted ? <div ref={topEditor} className="creation-top-editor" inert={active !== 'manual' || isMoving} tabIndex={-1} aria-label="Create a trip"><CreateTripForm onClose={close} onCreated={onCreated} /></div> : null}
+      {trips.length > 0 && manualStarted ? <div ref={topEditor} className="creation-top-editor" inert={active !== 'manual' || isMoving} tabIndex={-1} aria-label="Create a trip"><CreateTripForm inactive={active !== 'manual' || isMoving} onClose={close} onCreated={onCreated} /></div> : null}
       </div>
       {active === 'ai' && trips.length > 0 ? <section className="creation-existing-trips"><h2>Your saved trips</h2>{tripCards}</section> : null}
     </main>
@@ -1856,6 +1878,9 @@ export function TripDockApp() {
       <a className="skip-link" href="#main-content" onClick={event => { event.preventDefault(); document.getElementById('main-content')?.focus(); }}>Skip to main content</a>
       <header className="site-header"><div className={`header-inner ${selectedTrip ? 'header-inner-workbench' : ''}`}>
         <button className="logo-button" type="button" onClick={navigateHome} aria-label="TripDock home"><Logo /></button>
+        {navigation.tripId ? <button className="header-home" type="button" onClick={navigateHome} aria-label="Home" title="Home">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1V10Z" /></svg>
+        </button> : null}
         {selectedTrip ? <div className="app-section-tabs" role="tablist" aria-label="Trip views" onKeyDown={event => {
           if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
           event.preventDefault();
@@ -1866,7 +1891,7 @@ export function TripDockApp() {
           <button id="schedule-tab" role="tab" aria-selected={navigation.view === 'schedule'} aria-controls="schedule-panel" tabIndex={navigation.view === 'schedule' ? 0 : -1} onClick={() => navigateTrip(selectedTrip.id, 'schedule')}>Schedule</button>
           <button id="packing-tab" role="tab" aria-selected={navigation.view === 'packing'} aria-controls="packing-panel" tabIndex={navigation.view === 'packing' ? 0 : -1} onClick={() => navigateTrip(selectedTrip.id, 'packing')}>Packing</button>
         </div> : null}
-        <button className="button-text header-home" type="button" aria-current={!navigation.tripId ? 'page' : undefined} onClick={navigateHome}>Home</button>
+        <ThemeToggle />
       </div></header>
       {state.kind === 'loading' ? <main id="main-content" className="state-page" aria-busy="true"><Logo /><div className="loader" aria-hidden="true" /><h1>Opening your trips</h1><p>Getting your plans ready…</p></main> : null}
       {state.kind === 'error' ? <main id="main-content" className="state-page error-state"><Logo /><h1>TripDock could not open your data</h1><p role="alert">{state.message}</p><button className="button-primary" type="button" onClick={retry}>Retry connection</button></main> : null}

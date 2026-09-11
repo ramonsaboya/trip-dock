@@ -4,6 +4,7 @@ import { OpenAiGateway, UnconfiguredAiGateway } from './ai.js';
 import { readRuntimeConfig } from './config.js';
 import { createDatabase } from './db/client.js';
 import { createApi } from './graphql.js';
+import { createVoiceHandler } from './voice.js';
 
 const config = readRuntimeConfig();
 const database = createDatabase(config.databaseUrl);
@@ -17,7 +18,11 @@ const yoga = createApi({
   webOrigin: config.webOrigin,
   graphiql: config.isDevelopment,
 });
-const server = createServer(yoga);
+const voice = createVoiceHandler(config);
+const server = createServer((req, res) => {
+  if (req.url?.split('?')[0] === '/voice/session') void voice(req, res);
+  else void yoga(req, res);
+});
 
 server.listen(config.apiPort, '127.0.0.1', () => {
   console.log(`TripDock API ready at http://127.0.0.1:${config.apiPort}/graphql`);
