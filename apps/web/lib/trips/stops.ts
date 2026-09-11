@@ -1,5 +1,13 @@
 import { type TripInput, type TripStop } from './types.ts';
 
+// Creation derives its overall range from the destinations, including gaps and overlaps.
+export function withDestinationDates(input: TripInput): TripInput {
+  const stops = input.stops.filter((stop) => stop.name.trim());
+  const arrivals = stops.flatMap((stop) => stop.arrivalDate ? [stop.arrivalDate] : []).sort();
+  const departures = stops.flatMap((stop) => stop.departureDate ? [stop.departureDate] : []).sort();
+  return { ...input, startDate: arrivals[0] ?? '', endDate: departures.at(-1) ?? '' };
+}
+
 export function updateTripBoundaryDate(
   input: TripInput,
   boundary: 'start' | 'end',

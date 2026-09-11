@@ -27,7 +27,7 @@ export async function exerciseItinerary(api: ReturnType<typeof createApi>) {
     const result = await request(addTransport, { tripId: trip.id, revision: trip.revision, input });
     assert.equal(result.errors?.[0]?.extensions.code, 'BAD_USER_INPUT');
   }
-  const other = await request(`mutation($input: CreateTripInput!) { createTrip(input: $input) { ${fields} } }`, { input: { name: 'Other', destinationArea: 'Paris', startDate: '2027-06-01', endDate: '2027-06-06', stops: [{ name: 'Paris', locationText: null, arrivalDate: null, departureDate: null }] } });
+  const other = await request(`mutation($input: CreateTripInput!) { createTrip(input: $input) { ${fields} } }`, { input: { name: 'Other', destinationArea: 'Paris', startDate: '2027-06-01', endDate: '2027-06-06', stops: [{ name: 'Paris', locationText: null, arrivalDate: '2027-06-01', departureDate: '2027-06-06' }] } });
   const foreign = await request(addTransport, { tripId: trip.id, revision: trip.revision, input: { ...transport, toStopId: other.data!.createTrip!.stops[0]!.id } });
   assert.ok(foreign.errors, 'External endpoints do not bypass stop ownership');
   const activityInput = { stopId, title: 'Museum', status: 'BOOKED', scheduledAt: null, timezone: 'Asia/Tokyo' };

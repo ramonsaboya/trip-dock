@@ -644,7 +644,7 @@ test('trip boundaries and destination dates synchronize while destinations stay 
   }
 });
 
-test('createTrip preserves intentionally blank destination boundaries', async () => {
+test('createTrip rejects missing destination dates even with trip boundaries', async () => {
   const harness = await createHarness();
   try {
     const result = await gql<{ createTrip: TripResult }>(harness.yoga, createTripMutation, {
@@ -664,9 +664,22 @@ test('createTrip preserves intentionally blank destination boundaries', async ()
         ],
       },
     });
-    assert.equal(result.errors, undefined);
-    assert.equal(result.data?.createTrip.stops[0]?.arrivalDate, null);
-    assert.equal(result.data?.createTrip.stops[0]?.departureDate, null);
+    assert.equal(result.errors?.[0]?.extensions?.code, 'BAD_USER_INPUT');
+  } finally {
+    await harness.pool.end();
+  }
+});
+
+test('createTrip requires both dates on every destination', async () => {
+  const harness = await createHarness();
+  try {
+    for (const field of ['arrivalDate', 'departureDate'] as const) {
+      const result = await gql<{ createTrip: TripResult }>(harness.yoga, createTripMutation, {
+        input: { ...baseTripInput, stops: baseTripInput.stops.map((stop, index) =>
+          index === 1 ? { ...stop, [field]: null } : stop) },
+      });
+      assert.equal(result.errors?.[0]?.extensions?.code, 'BAD_USER_INPUT');
+    }
   } finally {
     await harness.pool.end();
   }

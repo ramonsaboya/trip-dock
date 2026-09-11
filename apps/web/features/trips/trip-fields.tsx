@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { DatePickerInput } from '../../components/ui/date-picker-input';
 import { Field } from '../../components/ui/field';
 import { remapDirtyTripDraftPaths } from '../../lib/trips/draft-alignment';
-import { appendTripStop, removeTripStop, updateTripBoundaryDate, updateTripStopDate } from '../../lib/trips/stops';
+import { updateTripStopDate } from '../../lib/trips/stops';
 import { type TripDraftFieldState, type TripDraftStop, type TripInput } from '../../lib/trips/types';
 import { blankStop } from './trip-defaults';
 
@@ -73,27 +73,6 @@ export function TripFields({
     onFieldDerived?.(key, fieldValue);
   }
 
-  function updateTripField<K extends 'name' | 'travelerCount'>(field: K, fieldValue: TripInput[K]) {
-    const next = { ...value, [field]: fieldValue };
-    markDirty(`trip.${field}`, true, fieldValue, next);
-    onChange(next);
-  }
-
-  function updateBoundary(boundary: 'start' | 'end', date: string) {
-    const tripKey = boundary === 'start' ? 'trip.startDate' : 'trip.endDate';
-    const stopIndex = boundary === 'start' ? 0 : value.stops.length - 1;
-    const stopField = boundary === 'start' ? 'arrivalDate' : 'departureDate';
-    const linkedKey = stopFieldKey(stopIndex, stopField);
-    const next = updateTripBoundaryDate(value, boundary, date, {
-      stopDateDirty: dirtyFields.has(linkedKey),
-    });
-    markDirty(tripKey, true, date, next);
-    if (next.stops[stopIndex]?.[stopField] !== value.stops[stopIndex]?.[stopField]) {
-      markDerived(linkedKey, next.stops[stopIndex]?.[stopField] ?? null);
-    }
-    onChange(next);
-  }
-
   function updateStop(index: number, patch: Partial<TripDraftStop>) {
     const normalizedPatch = Object.hasOwn(patch, 'name')
       ? {
@@ -109,7 +88,7 @@ export function TripFields({
     }
     const next = {
       ...value,
-      stops: (index === value.stops.length ? appendTripStop(value, { lastDepartureDirty: dirtyFields.has(stopFieldKey(index - 1, 'departureDate')) }).stops : value.stops).map((stop, stopIndex) =>
+      stops: (index === value.stops.length ? [...value.stops, { ...blankStop(), arrivalDate: value.stops.at(-1)?.departureDate ?? null }] : value.stops).map((stop, stopIndex) =>
         stopIndex === index ? { ...stop, ...normalizedPatch } : stop,
       ),
     };
@@ -134,9 +113,7 @@ export function TripFields({
     const nextArrivalKey = stopFieldKey(index + 1, 'arrivalDate');
     const next = updateTripStopDate(value, index, field, date || null, {
       nextArrivalDirty: dirtyFields.has(nextArrivalKey),
-      tripBoundaryDirty: dirtyFields.has(
-        field === 'arrivalDate' ? 'trip.startDate' : 'trip.endDate',
-      ),
+      tripBoundaryDirty: false,
     });
     markDirty(fieldKey, true, date || null, next);
     if (field === 'departureDate' && next.stops[index + 1]?.arrivalDate !== value.stops[index + 1]?.arrivalDate) {
@@ -152,18 +129,7 @@ export function TripFields({
   }
 
   function removeStop(index: number) {
-    const survivingDepartureKey = stopFieldKey(index - 1, 'departureDate');
-    const next = removeTripStop(value, index, {
-      preserveTripEnd: Boolean(value.stops[index]?.departureDate),
-      survivingDepartureDirty: dirtyFields.has(survivingDepartureKey),
-    });
-    if (next.startDate !== value.startDate) markDerived('trip.startDate', next.startDate);
-    if (next.endDate !== value.endDate) markDerived('trip.endDate', next.endDate);
-    const lastIndex = next.stops.length - 1;
-    const previousLastIndex = lastIndex >= index ? lastIndex + 1 : lastIndex;
-    if (lastIndex >= 0 && next.stops[lastIndex]?.departureDate !== value.stops[previousLastIndex]?.departureDate) {
-      markDerived(stopFieldKey(lastIndex, 'departureDate'), next.stops[lastIndex]?.departureDate ?? null);
-    }
+    const next = { ...value, stops: value.stops.filter((_, stopIndex) => stopIndex !== index) };
     onChange(next);
     onStopRemoved?.(index);
   }
@@ -171,11 +137,7 @@ export function TripFields({
   return (
     <fieldset disabled={disabled} style={{ border: 0, margin: 0, minWidth: 0, padding: 0 }}>
       <div className="form-stack">
-      <div className="form-grid form-grid-two">
-        <Field label="Start date" fieldState={fieldStates?.get('trip.startDate')}><DatePickerInput locale={locale} required max={value.endDate || undefined} value={value.startDate} onValueChange={(date) => updateBoundary('start', date)} /></Field>
-        <Field label="End date" fieldState={fieldStates?.get('trip.endDate')}><DatePickerInput locale={locale} required min={value.startDate || undefined} value={value.endDate} onValueChange={(date) => updateBoundary('end', date)} /></Field>
-
-      </div>
+      <p>Choose your destinations and dates. You can name your trip in the summary.</p>
       <fieldset className="stops-editor">
         <legend>Destinations</legend>
         {(value.stops.at(-1)?.name.trim() ? [...value.stops, blankStop()] : value.stops).map((stop, index) => (
@@ -186,18 +148,13 @@ export function TripFields({
             </div>
             <div className="destination-fields">
               <Field label="City" fieldState={fieldStates?.get(stopFieldKey(index, 'name'))}><input value={stop.name} onChange={(event) => updateStop(index, { name: event.target.value })} onBlur={(event) => { const city = event.currentTarget.value.trim(); if (!city) return; onChange({ ...value, stops: value.stops.map((item, stopIndex) => stopIndex === index ? { ...item, name: city, localityKind: 'CITY', cityResolution: 'RESOLVED' } : item) }); onFieldConfirmed?.(stopFieldKey(index, 'name')); onFieldConfirmed?.(stopFieldKey(index, 'localityKind')); onFieldConfirmed?.(stopFieldKey(index, 'cityResolution')); }} placeholder="A specific city" /></Field>
-              {(value.stops.filter((item) => item.name.trim()).length > 1 || (stop.arrivalDate && stop.arrivalDate !== value.startDate) || (stop.departureDate && stop.departureDate !== value.endDate) || fieldStates?.get(stopFieldKey(index, 'arrivalDate'))?.blocking || fieldStates?.get(stopFieldKey(index, 'departureDate'))?.blocking) && stop.name.trim() ? <><Field label="Start" fieldState={fieldStates?.get(stopFieldKey(index, 'arrivalDate'))}><DatePickerInput locale={locale} min={value.startDate || undefined} max={(stop.departureDate ?? value.endDate) || undefined} value={stop.arrivalDate ?? ''} onValueChange={(date) => updateStopDate(index, 'arrivalDate', date)} /></Field>
-              <Field label="End" fieldState={fieldStates?.get(stopFieldKey(index, 'departureDate'))}><DatePickerInput locale={locale} min={(stop.arrivalDate ?? value.startDate) || undefined} max={value.endDate || undefined} value={stop.departureDate ?? ''} onValueChange={(date) => updateStopDate(index, 'departureDate', date)} /></Field></> : null}
+              {index === 0 || stop.name.trim() ? <><Field label="Arrival date" fieldState={fieldStates?.get(stopFieldKey(index, 'arrivalDate'))}><DatePickerInput locale={locale} required max={stop.departureDate || undefined} value={stop.arrivalDate ?? ''} onValueChange={(date) => updateStopDate(index, 'arrivalDate', date)} /></Field>
+              <Field label="Departure date" fieldState={fieldStates?.get(stopFieldKey(index, 'departureDate'))}><DatePickerInput locale={locale} required min={stop.arrivalDate || undefined} value={stop.departureDate ?? ''} onValueChange={(date) => updateStopDate(index, 'departureDate', date)} /></Field></> : null}
             </div>
           </div>
         ))}
 
       </fieldset>
-      <div className="form-grid">
-        <Field label="Trip name" fieldState={fieldStates?.get('trip.name')}>
-          <input maxLength={160} value={value.name} onChange={(event) => updateTripField('name', event.target.value)} placeholder="A name you’ll recognize" />
-        </Field>
-      </div>
 
       </div>
     </fieldset>

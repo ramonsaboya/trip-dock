@@ -41,7 +41,7 @@ export function DraftReviewSummary({
       <div className="draft-overview-heading">
         <div>
           <p className="section-kicker">Your draft at a glance</p>
-          <h3 id="draft-overview-title">{form.name.trim() || form.destinationArea.trim() || 'New trip'}</h3>
+          <h3 id="draft-overview-title">{form.name.trim() || form.stops.map((stop) => stop.name.trim()).filter(Boolean).join(' · ') || 'New trip'}</h3>
           <p>{dateRangeLabel(form.startDate, form.endDate, locale)}{totalNights === null ? '' : ` · ${totalNights + 1} days · ${totalNights} ${totalNights === 1 ? 'night' : 'nights'}`}</p>
         </div>
       </div>
@@ -52,6 +52,7 @@ export function DraftReviewSummary({
       </div>
       <ol className="draft-route-summary">
         {form.stops.map((stop, index) => {
+          if (!stop.name.trim() && !stop.locationText?.trim()) return null;
           const nights = nightCount(stop.arrivalDate, stop.departureDate);
           const dateStates = [
             fieldStates.get(`stops.${index}.arrivalDate`),

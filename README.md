@@ -7,7 +7,7 @@ Canonical trip data lives only in PostgreSQL. The browser contains no trip fixtu
 ## What works
 
 - Create, view and delete trips. Trip-level details, including the name and dates, are fixed after creation for now.
-- Set destinations and their dates before creating a trip. Saved destinations are display-only; structural editing is [deliberately deferred](docs/overnight/design/05-follow-up-decisions.md).
+- Create destination-first: enter a city and required arrival/departure dates for each stop, review the route, then optionally name and explicitly save the trip. Overall dates follow the destinations. Saved destinations are display-only; structural editing is [deliberately deferred](docs/overnight/design/05-follow-up-decisions.md).
 - Add, edit, and remove transport legs, stays, and activities.
 - Generate an unpersisted trip draft from natural language, edit it, and explicitly create it.
 - Dictate into the initial AI prompt or follow-up in supported browsers, review the text, and explicitly send it.
@@ -110,7 +110,7 @@ Deterministic resolver (locale, calendar rules, conflicts, field states)
         └────────► human confirm/edit + explicit Create ─► GraphQL Yoga API
 ```
 
-The API owns validation, revision checks, entity ownership, and transaction boundaries. Model output is parsed through a strict intent schema, checked against quoted prompt evidence, and passed through deterministic date and minimum-viability rules. A creation draft needs at least one confirmed city plus valid start and end dates before it can be saved; traveler count is genuinely optional. Incomplete drafts still open in the normal create form with visible field states and all clarification questions together. The model cannot directly write accepted trip rows. Existing trips use manual CRUD only.
+The API owns validation, revision checks, entity ownership, and transaction boundaries. Model output is parsed through a strict intent schema, checked against quoted prompt evidence, and passed through deterministic date and minimum-viability rules. A creation draft needs at least one confirmed city and valid arrival and departure dates for every included destination before it can be saved; traveler count is genuinely optional. Incomplete drafts still open in the normal create form with visible field states and all clarification questions together. The model cannot directly write accepted trip rows. Existing trips use manual CRUD only.
 
 The active data model contains `trips`, `trip_stops`, `transport_legs`, `stays`, and `activities`. The immutable baseline migration also contains the legacy `ai_proposals` and `ai_proposal_operations` tables; they are retained only for migration compatibility and have no current GraphQL or application runtime path. UUID primary keys, foreign keys with cascades, ordered positions, timestamps, date/status checks, and trip revisions are defined in generated SQL migrations under `apps/api/drizzle`.
 

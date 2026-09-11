@@ -1,3 +1,4 @@
+import { withDestinationDates } from '../lib/trips/stops.ts';
 import { productionSources } from './source-files.ts';
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -1481,7 +1482,7 @@ test('creation UI opens manual creation as a form and keeps AI drafts reviewable
   assert.match(source, /initialDraft \? 'Trip details' : 'Create a trip'/u);
   assert.match(source, /Update details/u);
   assert.match(source, /Ask TripDock/u);
-  assert.match(source, /initialDraft \? 'Review trip' : busy \? 'Saving…' : 'Create trip'/u);
+  assert.match(source, />Review trip<\/button>/u);
   assert.match(source, /Back to summary/u);
   assert.match(source, /fieldStates\?\.entries\(\)[\s\S]+state\.status === 'CONFIRMED'/u);
   assert.doesNotMatch(source, /<Field label="Trip area"/u);
@@ -1494,4 +1495,21 @@ test('dashboard chrome keeps a single trips heading without a redundant tab', as
   const source = await productionSources();
   assert.match(source, /<h1>Your trips<\/h1>/u);
   assert.doesNotMatch(source, /Your travel plans|<nav aria-label="Primary"|nav-link-active/u);
+});
+
+test('creation range follows dated destinations and ignores the unused next destination', () => {
+  const input = tripInput({ startDate: '2028-01-01', endDate: '2028-12-31', stops: [
+    { name: 'Porto', locationText: null, arrivalDate: '2028-04-06', departureDate: '2028-04-10' },
+    { name: 'Lisbon', locationText: null, arrivalDate: '2028-04-02', departureDate: '2028-04-06' },
+    { name: '', locationText: null, arrivalDate: '2028-04-10', departureDate: '2028-04-20' },
+  ] });
+  const derived = withDestinationDates(input);
+  assert.equal(derived.startDate, '2028-04-02');
+  assert.equal(derived.endDate, '2028-04-10');
+  assert.equal(input.endDate, '2028-12-31');
+  const removed = withDestinationDates({ ...derived, stops: derived.stops.slice(1) });
+  assert.equal(removed.endDate, '2028-04-06');
+  const cleared = withDestinationDates({ ...derived, stops: [] });
+  assert.equal(cleared.startDate, '');
+  assert.equal(cleared.endDate, '');
 });

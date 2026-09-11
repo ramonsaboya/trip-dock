@@ -2,15 +2,16 @@
 import { mergeFollowUp, valueAtPath } from './merge-follow-up';
 import { QuestionStage } from './question-stage';
 
-import { useRef, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { Field } from '../../../components/ui/field';
 import { deviceTimezone } from '../../../lib/device-timezone';
 import { errorMessage } from '../../../lib/error-message';
 import { graphqlRequest } from '../../../lib/graphql/request';
 import { localIsoDate } from '../../../lib/trips/dates';
 import { remapTripDraftPathAfterStopRemoval } from '../../../lib/trips/draft-alignment';
-import { applyClarificationUpdates, buildTripFollowUpPrompt, clarificationPathsConfirmedByEdit, confirmedTripDraftFieldState, draftToTripInput, isTripMinimumViable, tripDraftFieldStateMap, tripStopsForCreation } from '../../../lib/trips/drafts';
+import { applyClarificationUpdates, buildTripFollowUpPrompt, clarificationPathsConfirmedByEdit, confirmedTripDraftFieldState, draftToTripInput, isTripMinimumViable, isRealIsoDate, tripDraftFieldStateMap, tripStopsForCreation } from '../../../lib/trips/drafts';
 import { operations } from '../../../lib/trips/operations';
-import { destinationAreaFromStops } from '../../../lib/trips/stops';
+import { destinationAreaFromStops, withDestinationDates } from '../../../lib/trips/stops';
 import { type GenerateTripDraftInput, type Trip, type TripClarificationQuestion, type TripDraft, type TripDraftFieldState, type TripInput } from '../../../lib/trips/types';
 import { blankTrip } from '../trip-defaults';
 import { TripFields } from '../trip-fields';
@@ -30,7 +31,7 @@ export function CreateTripForm({
   onCreated: (trip: Trip) => void;
 }) {
   const [form, setForm] = useState<TripInput>(() =>
-    initialDraft ? draftToTripInput(initialDraft) : blankTrip(),
+    initialDraft ? withDestinationDates(draftToTripInput(initialDraft)) : blankTrip(),
   );
   const [fieldStates, setFieldStates] = useState<Map<string, TripDraftFieldState>>(() =>
     tripDraftFieldStateMap(initialDraft?.fieldStates ?? []),
@@ -45,6 +46,15 @@ export function CreateTripForm({
         ? 'review'
         : 'edit',
   );
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  const previousStage = useRef(stage);
+  useEffect(() => {
+    if (previousStage.current === stage) return;
+    previousStage.current = stage;
+    if (inactive) return;
+    headingRef.current?.focus({ preventScroll: true });
+    headingRef.current?.scrollIntoView({ block: 'start' });
+  }, [stage, inactive]);
   const [notes, setNotes] = useState(() => ({
     assumptions: initialDraft?.assumptions ?? [],
     warnings: initialDraft?.warnings ?? [],
@@ -60,7 +70,22 @@ export function CreateTripForm({
   const protectedPaths = useRef(new Set<string>());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const minimumViable = isTripMinimumViable(form, fieldStates, questions);
+  const minimumViable = isTripMinimumViable(form, fieldStates, questions) &&
+    form.stops.filter((stop) => stop.name.trim()).every((stop) =>
+      Boolean(stop.arrivalDate && stop.departureDate &&
+        isRealIsoDate(stop.arrivalDate) && isRealIsoDate(stop.departureDate) &&
+        stop.departureDate >= stop.arrivalDate));
+
+  function updateDestinations(next: TripInput) {
+    const derived = withDestinationDates(next);
+    setForm(derived);
+    const datesChanged = next.stops.length !== form.stops.length || next.stops.some((stop, index) =>
+      stop.arrivalDate !== form.stops[index]?.arrivalDate || stop.departureDate !== form.stops[index]?.departureDate);
+    for (const path of ['trip.startDate', 'trip.endDate'] as const) {
+      const value = path === 'trip.startDate' ? derived.startDate : derived.endDate;
+      if (datesChanged) markFieldEdited(path, value, derived);
+    }
+  }
   const blockingQuestions = questions.filter((question) => question.blocking);
   const optionalQuestions = questions.filter((question) => !question.blocking && !question.fieldPaths.every((path) => path === 'trip.travelerCount'));
   const omittedStops = form.stops.filter((stop) => {
@@ -178,6 +203,7 @@ export function CreateTripForm({
       }
     }
     if (!answeredQuestionIds.size) return;
+    next = withDestinationDates(next);
     setForm(next);
     const remainingQuestions = questions.filter((item) => !answeredQuestionIds.has(item.id));
     setQuestions(remainingQuestions);
@@ -214,7 +240,7 @@ export function CreateTripForm({
       >(operations.generateDraft, { input });
       const next = mergeFollowUp({ form, fieldStates, questions, protectedPaths: protectedPaths.current, draft: data.generateTripDraft, answer, messageReferenceDate });
       protectedPaths.current = next.protectedPaths;
-      setForm(next.form);
+      setForm(withDestinationDates(next.form));
       setFieldStates(next.fieldStates);
       setQuestions(next.questions);
       setNotes(next.notes);
@@ -233,7 +259,7 @@ export function CreateTripForm({
     event.preventDefault();
     const resolvedStops = tripStopsForCreation(form, fieldStates);
     if (!minimumViable || !resolvedStops.length) {
-      setError('Confirm at least one city and provide valid start and end dates first.');
+      setError('Confirm a city and provide valid arrival and departure dates for every destination.');
       return;
     }
     setBusy(true);
@@ -270,34 +296,37 @@ export function CreateTripForm({
 
   return (
     <section className="inline-trip-form">
-      <header className="dialog-header"><div><p className="section-kicker">Make room for your next adventure</p><h2>{stage === 'clarify' ? 'A few details first' : stage === 'refine' ? 'Ask TripDock' : stage === 'edit' ? (initialDraft ? 'Trip details' : 'Create a trip') : 'Review your trip'}</h2></div></header>
+      <header className="dialog-header"><div><p className="section-kicker">Make room for your next adventure</p><h2 ref={headingRef} tabIndex={-1} style={{ scrollMarginTop: 100 }}>{stage === 'clarify' ? 'A few details first' : stage === 'refine' ? 'Ask TripDock' : stage === 'edit' ? (initialDraft ? 'Trip details' : 'Create a trip') : 'Review your trip'}</h2></div></header>
       {sourcePrompt ? <details className="creation-source"><summary>Your original idea</summary><p>{sourcePrompt}</p></details> : null}
       {stage === 'clarify' || stage === 'refine'
         ? <QuestionStage visibleQuestions={stage === 'clarify' ? blockingQuestions : optionalQuestions} blocking={stage === 'clarify'} followUpBusy={followUpBusy} selectedOptions={selectedOptions} setSelectedOptions={setSelectedOptions} applySelectedAnswers={applySelectedAnswers} followUp={followUp} sourcePrompt={sourcePrompt} setFollowUp={setFollowUp} setFollowUpDictating={setFollowUpDictating} setFollowUpVoiceUsed={setFollowUpVoiceUsed} inactive={inactive} submitFollowUp={submitFollowUp} followUpDictating={followUpDictating} followUpVoiceUsed={followUpVoiceUsed} error={error} onClose={onClose} onBack={() => { setSelectedOptions({}); setStage('review'); }} />
         : stage === 'edit'
             ? (
-              <form className="creation-edit-stage" aria-busy={busy} onSubmit={(event) => { if (initialDraft) { event.preventDefault(); setStage('review'); } else { void createTrip(event); } }}>
-                <TripFields value={form} onChange={setForm} fieldStates={fieldStates} onFieldEdited={markFieldEdited} onFieldProtected={(path) => protectPaths([path])} onFieldConfirmed={(path) => confirmPaths([path])} onFieldDerived={markFieldDerived} onStopRemoved={handleStopRemoved} locale={formLocale} disabled={followUpBusy || busy} />
+              <form className="creation-edit-stage" aria-busy={busy} onSubmit={(event) => { event.preventDefault(); if (minimumViable) { setError(null); setStage('review'); } }}>
+                <TripFields value={form} onChange={updateDestinations} fieldStates={fieldStates} onFieldEdited={markFieldEdited} onFieldProtected={(path) => protectPaths([path])} onFieldConfirmed={(path) => confirmPaths([path])} onFieldDerived={markFieldDerived} onStopRemoved={handleStopRemoved} locale={formLocale} disabled={followUpBusy || busy} />
                 {omittedStops.length ? <p className="draft-omission-note" role="status">If you create now, {omittedStops.length} unresolved {omittedStops.length === 1 ? 'destination idea' : 'destination ideas'} will stay out of the saved trip. Confirm {omittedStops.length === 1 ? 'it' : 'them'} to include {omittedStops.length === 1 ? 'it' : 'them'}.</p> : null}
                 {error ? <p className="form-error" role="alert">{error}</p> : null}
-                <footer className="dialog-footer"><button className="button-text" type="button" onClick={onClose}>Cancel</button><div className="create-readiness-action">{!initialDraft && !minimumViable ? <small>Needs a confirmed city and valid dates</small> : null}<button className="button-primary" type="submit" disabled={busy || followUpBusy || (!initialDraft && !minimumViable)}>{initialDraft ? 'Review trip' : busy ? 'Saving…' : 'Create trip'}</button></div></footer>
+                <footer className="dialog-footer"><button className="button-text" type="button" onClick={onClose}>Cancel</button><div className="create-readiness-action">{!minimumViable ? <small>Every destination needs a city and valid dates</small> : null}<button className="button-primary" type="submit" disabled={busy || followUpBusy || !minimumViable}>Review trip</button></div></footer>
               </form>
             )
             : (
             <form onSubmit={(event) => void createTrip(event)} aria-busy={busy}>
-              {initialDraft ? <DraftReviewSummary form={form} fieldStates={fieldStates} locale={formLocale} /> : null}
+              <DraftReviewSummary form={form} fieldStates={fieldStates} locale={formLocale} />
+              <Field label="Trip name" hint="Optional. Leave blank to use the destination-based name." fieldState={fieldStates.get('trip.name')}>
+                <input maxLength={160} disabled={busy} value={form.name} placeholder={`Trip to ${form.stops.filter((stop) => stop.name.trim()).map((stop) => stop.name.trim()).join(' · ')}`} onChange={(event) => { const next = { ...form, name: event.target.value }; setForm(next); markFieldEdited('trip.name', event.target.value, next); }} />
+              </Field>
               {(notes.assumptions.length || notes.warnings.length) ? <details className="draft-notes"><summary>Interpretation notes ({notes.assumptions.length + notes.warnings.length})</summary><div>{notes.assumptions.map((note) => <p key={note}><span aria-hidden="true">≈</span> {note}</p>)}{notes.warnings.map((note) => <p key={note}><span aria-hidden="true">!</span> {note}</p>)}</div></details> : null}
               <div className="draft-review-prompt">
                 <p className="section-kicker">Before you create it</p>
                 <h3>Make any final adjustments</h3>
               </div>
               <div className="draft-review-actions">
-                <button type="button" onClick={() => setStage('edit')}><span className="draft-review-action-icon" aria-hidden="true">✎</span><span><strong>Update details</strong><small>Open the form and adjust any field.</small></span></button>
-                <button type="button" onClick={() => { setSelectedOptions({}); setStage('refine'); }}><span className="draft-review-action-icon" aria-hidden="true">✦</span><span><strong>Ask TripDock</strong><small>{optionalQuestions.length ? `${optionalQuestions.length} suggested ${optionalQuestions.length === 1 ? 'question' : 'questions'}, or describe another adjustment.` : 'Describe the adjustment you want in your own words.'}</small></span></button>
+                <button type="button" onClick={() => setStage('edit')}><span className="draft-review-action-icon" aria-hidden="true">✎</span><span><strong>Update details</strong><small>Adjust destinations and dates.</small></span></button>
+                {sourcePrompt ? <button type="button" onClick={() => { setSelectedOptions({}); setStage('refine'); }}><span className="draft-review-action-icon" aria-hidden="true">✦</span><span><strong>Ask TripDock</strong><small>{optionalQuestions.length ? `${optionalQuestions.length} suggested ${optionalQuestions.length === 1 ? 'question' : 'questions'}, or describe another adjustment.` : 'Describe the adjustment you want in your own words.'}</small></span></button> : null}
               </div>
               {omittedStops.length ? <p className="draft-omission-note" role="status">If you create now, {omittedStops.length} unresolved {omittedStops.length === 1 ? 'destination idea' : 'destination ideas'} will stay out of the saved trip. Confirm {omittedStops.length === 1 ? 'it' : 'them'} to include {omittedStops.length === 1 ? 'it' : 'them'}.</p> : null}
               {error ? <p className="form-error" role="alert">{error}</p> : null}
-              <footer className="dialog-footer"><button className="button-text" type="button" onClick={onClose}>Cancel</button><div className="create-readiness-action">{!minimumViable ? <small>Needs a confirmed city and valid dates</small> : null}<button className="button-primary" type="submit" disabled={busy || followUpBusy || !minimumViable}>{busy ? 'Saving…' : 'Create trip'}</button></div></footer>
+              <footer className="dialog-footer"><button className="button-text" type="button" onClick={onClose}>Cancel</button><div className="create-readiness-action">{!minimumViable ? <small>Every destination needs a city and valid dates</small> : null}<button className="button-primary" type="submit" disabled={busy || followUpBusy || !minimumViable}>{busy ? 'Saving…' : 'Create trip'}</button></div></footer>
             </form>
             )}
     </section>

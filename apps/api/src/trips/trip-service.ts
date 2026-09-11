@@ -11,6 +11,9 @@ export function createTripService(db: AppDatabase) {
   return {
     async createTrip(args: { input: unknown }) {
       const input = parse(createTripInputSchema, args.input);
+      if (input.stops.some((stop) => !stop.arrivalDate || !stop.departureDate)) {
+        throw new AppError('Provide arrival and departure dates for every destination.', 'BAD_USER_INPUT');
+      }
       const enteredStops = input.stops.map((stop, position) => ({ ...stop, position }));
       const chronologicallyOrdered = orderStopsByDate(enteredStops);
       const startDate = input.startDate ?? chronologicallyOrdered[0]?.arrivalDate;
