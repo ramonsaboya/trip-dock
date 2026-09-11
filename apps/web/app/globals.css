@@ -2339,15 +2339,11 @@ html:has(.trip-workbench), body:has(.trip-workbench) { overflow: hidden; height:
   padding: clamp(24px, 4vw, 48px);
   background: var(--surface);
 }
-.inline-trip-form > form,
-.inline-trip-form > .creation-question-stage { max-width: 920px; margin-inline: auto; }
 .inline-trip-form .dialog-header { align-items: flex-start; margin-bottom: 32px; }
 .inline-trip-form .dialog-header .button-text { flex-shrink: 0; }
 .creation-source { margin: 0 0 28px; padding: 16px 20px; border-radius: 14px; background: var(--brand-soft); color: var(--brand-dark); }
 .creation-source p { white-space: pre-wrap; line-height: 1.6; }
 .creation-source summary { cursor: pointer; }
-.creation-existing-trips { margin-top: 40px; }
-.creation-existing-trips > h2 { font-size: 20px; margin-bottom: 20px; }
 .creation-progress { color: var(--brand-dark); line-height: 1.6; }
 .resume-draft { margin-top: 12px; }
 @media (max-width: 900px) {

@@ -1820,7 +1820,6 @@ function TripsOverview({ trips, onCreated, onOpen }: { trips: Trip[]; onCreated:
       </div>
       {trips.length > 0 && manualStarted ? <div ref={topEditor} className="creation-top-editor" inert={active !== 'manual' || isMoving} tabIndex={-1} aria-label="Create a trip"><CreateTripForm inactive={active !== 'manual' || isMoving} onClose={close} onCreated={onCreated} /></div> : null}
       </div>
-      {active === 'ai' && trips.length > 0 ? <section className="creation-existing-trips"><h2>Your saved trips</h2>{tripCards}</section> : null}
     </main>
   );
 }

@@ -79,7 +79,7 @@ export function PackingWorkspace({ trip }: { trip: Trip }) {
     <div className="packing-toolbar"><div className="packing-segments" aria-label="Packing views"><button disabled={busy} aria-pressed={view === 'days'} onClick={() => setView('days')}>Day tags</button><button disabled={busy} aria-pressed={view === 'list'} onClick={() => setView('list')}>Packing list{progress.total ? ` · ${progress.done}/${progress.total}` : ''}</button><button disabled={busy} aria-pressed={view === 'library'} onClick={() => setView('library')}>Your library</button></div>{current && library && view !== 'library' ? <button className="button-primary" disabled={busy} onClick={() => void edit({ action: 'GENERATE', expectedLibraryRevision: library.revision, startDate: current.startDate, endDate: current.endDate })}>{saving ? 'Saving…' : current.generatedAt ? 'Recalculate list' : 'Generate packing list'}</button> : null}</div>
     {error ? <div className="packing-error" role="alert">{error} <button type="button" disabled={busy} onClick={() => { setError(''); setReload(n => n + 1); }}>Refresh and retry</button></div> : null}
     <p className="packing-save-status" role="status" aria-live="polite">{busy ? 'Saving…' : status}</p>
-    {!library ? <div className="packing-empty" aria-busy="true">Opening your library…</div> : view === 'library' ? <PackingLibraryView library={library} onSaved={savedLibrary} onRefresh={refresh} onBusyChange={setLibraryBusy} disabled={busy} /> : !current ? <section className="packing-empty" aria-busy="true">Opening {trip.name}…</section> : <>
+    {!library ? (error ? null : <div className="packing-empty" aria-busy="true">Opening your library…</div>) : view === 'library' ? <PackingLibraryView library={library} onSaved={savedLibrary} onRefresh={refresh} onBusyChange={setLibraryBusy} disabled={busy} /> : !current ? (error ? null : <section className="packing-empty" aria-busy="true">Opening {trip.name}…</section>) : <>
       {current.stale ? <div className="packing-stale" role="status">Plans changed. Recalculate to refresh suggestions; your adjustments stay.</div> : null}
       {outside.length ? <details className="packing-stale"><summary>{outside.length} tags outside the trip dates</summary>{outside.map(a => <p key={a.day + a.tagId}>{a.day} · {library.tags.find(t => t.id === a.tagId)?.name} <button disabled={busy} onClick={() => void edit({ action: 'ASSIGN', days: [a.day], tagId: a.tagId, remove: true })}>Remove</button></p>)}</details> : null}
       {view === 'days' ? <PackingDays key={current.tripId} trip={trip} plan={current} library={library} busy={busy} edit={edit} onLibrarySaved={savedLibrary} onRefresh={refresh} onLibraryBusy={setLibraryBusy} />
@@ -87,5 +87,4 @@ export function PackingWorkspace({ trip }: { trip: Trip }) {
     </>}
   </main>;
 }
-
 
