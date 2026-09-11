@@ -9,6 +9,8 @@ import { createApi } from '../src/graphql.js';
 import { UnconfiguredAiGateway } from '../src/ai.js';
 import { exerciseItinerary } from './itinerary-scenarios.js';
 import { exercisePacking } from './packing-scenarios.js';
+import { exerciseBackendTransactions } from './backend-scenarios.js';
+import { exerciseReadSnapshots } from './postgres-read-scenarios.js';
 
 import { createDatabase } from '../src/db/client.js';
 
@@ -26,7 +28,7 @@ test('generated migrations apply to an explicitly configured real PostgreSQL dat
   const target = new URL(connectionString);
   assert.ok(['127.0.0.1', 'localhost', '::1'].includes(target.hostname));
   assert.equal(target.pathname.replace(/^\//, ''), 'tripdock_test');
-  const database = createDatabase(connectionString, { max: 1 });
+  const database = createDatabase(connectionString, { max: 4 });
   try {
     await database.pool.query('drop schema if exists public cascade');
     await database.pool.query('drop schema if exists drizzle cascade');
@@ -41,6 +43,8 @@ test('generated migrations apply to an explicitly configured real PostgreSQL dat
       "select table_name from information_schema.tables where table_schema = 'public' and table_name = 'trips'",
     );
     assert.equal(rows.rowCount, 1);
+    await exerciseBackendTransactions(database.db, true);
+    await exerciseReadSnapshots(database.db);
     await exercisePacking(database.db, true);
     await exerciseItinerary(createApi({ db: database.db, aiGateway: new UnconfiguredAiGateway(), webOrigin: 'http://localhost:3000', graphiql: false }));
 
