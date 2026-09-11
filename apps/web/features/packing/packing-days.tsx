@@ -1,10 +1,10 @@
 'use client';
 import { useState, type DragEvent } from 'react';
-import type { Trip } from '../lib/graphql-client';
-import { packingDates, type PackingLibrary, type PackingPlan } from '../lib/packing-client';
-import { LibraryForm } from './packing-library';
-import type { EditPacking } from './packing-checklist';
-import { PACKING_TAG_DRAG_TYPE, acceptedTagDrop } from '../lib/packing-drag';
+import { packingDates, type PackingLibrary, type PackingPlan } from '../../lib/packing-client';
+import { PACKING_TAG_DRAG_TYPE, acceptedTagDrop } from '../../lib/packing-drag';
+import type { Trip } from '../../lib/trips/types';
+import { LibraryForm } from './library-form';
+import type { EditPacking } from './packing-types';
 
 export function PackingDays({ trip, plan, library, busy, edit, onLibrarySaved, onRefresh, onLibraryBusy }: {
   trip: Trip; plan: PackingPlan; library: PackingLibrary; busy: boolean; edit: EditPacking;

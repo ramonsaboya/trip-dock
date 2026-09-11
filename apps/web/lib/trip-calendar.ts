@@ -1,5 +1,7 @@
-import { dateTimeLocalToIso, isoToDateTimeLocal, sortStopsByDate, type Activity, type Stay, type TransportLeg, type Trip, type TripStop } from './graphql-client.ts';
 import { activityAssignment, destinationDays } from './activity-planning.ts';
+import { dateTimeLocalToIso, isoToDateTimeLocal } from './trips/dates.ts';
+import { sortStopsByDate } from './trips/stops.ts';
+import { type Activity, type Stay, type TransportLeg, type Trip, type TripStop } from './trips/types.ts';
 
 export function calendarColumns(trip: Trip) {
   const stops = sortStopsByDate(trip.stops);

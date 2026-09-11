@@ -1,17 +1,27 @@
 'use client';
 
-import { memo, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type TdHTMLAttributes, type PointerEvent, type DragEvent } from 'react';
-import { activityAssignment, activityMoveInput, calendarHours } from '../lib/activity-planning';
-import { calendarHalfHours, slotHeight, timeMinutes, transportLocalTime, dragStartMinute, resizeStart, calendarColumns, calendarEventIndex, calendarPaperResolver, calendarTransition, calendarStartHour, stayCoversDay, transportPlacement, transportMoveInput, tripRoutes } from '../lib/trip-calendar';
-import { dateTimeLocalToIso, formatDateTime, graphqlRequest, operations, sortStopsByDate, type Activity, type Stay, type TransportLeg, type Trip, type TripStop } from '../lib/graphql-client';
+import { useEffect, useMemo, useRef, useState, type DragEvent, type PointerEvent } from 'react';
+import { activityAssignment, activityMoveInput, calendarHours } from '../../lib/activity-planning';
+import { createCalendarInteractions } from '../../lib/calendar-interactions';
+import { calendarColumnRuns, calendarDayWindow } from '../../lib/calendar-window';
+import { graphqlRequest } from '../../lib/graphql/request';
+import { calendarColumns, calendarEventIndex, calendarHalfHours, calendarPaperResolver, calendarStartHour, calendarTransition, dragStartMinute, resizeStart, slotHeight, stayCoversDay, timeMinutes, transportLocalTime, transportMoveInput, transportPlacement, tripRoutes } from '../../lib/trip-calendar';
+import { dateTimeLocalToIso, formatDateTime } from '../../lib/trips/dates';
+import { operations } from '../../lib/trips/operations';
+import { sortStopsByDate } from '../../lib/trips/stops';
+import { type Activity, type Stay, type TransportLeg, type Trip, type TripStop } from '../../lib/trips/types';
+import { CalendarCell } from './calendar-cell';
+import { CalendarPool } from './calendar-pool';
+import { DurationHandle } from './duration-handle';
+import { HourPaper } from './hour-paper';
 
-import { calendarDayWindow, calendarColumnRuns } from '../lib/calendar-window';
-import { createCalendarInteractions, type CalendarInteractions } from '../lib/calendar-interactions';
+export const statuses = { IDEA: 'Idea', PLANNED: 'Not booked', BOOKED: 'Booked', DONE: 'Done' };
 
-const statuses = { IDEA: 'Idea', PLANNED: 'Not booked', BOOKED: 'Booked', DONE: 'Done' };
-const dragType = 'application/tripdock-activity';
-const transportDragType = 'application/tripdock-transport';
-const dateLabel = (day: string) => new Date(`${day}T12:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
+export const dragType = 'application/tripdock-activity';
+
+export const transportDragType = 'application/tripdock-transport';
+
+export const dateLabel = (day: string) => new Date(`${day}T12:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
 
 export function TripCalendar({ trip, onChanged, onActivity, onStay, onTransport, onDestination, onRemove }: {
   trip: Trip; onChanged: (trip: Trip) => void;
@@ -318,41 +328,3 @@ export function TripCalendar({ trip, onChanged, onActivity, onStay, onTransport,
     {error ? <p className="form-error" role="alert">{error}</p> : null}
   </section>;
 }
-
-function DurationHandle({ edge, minutes, max, disabled, onPreview, onCommit, onCancel }: { edge: 'top' | 'bottom'; minutes: number; max: number; disabled: boolean; onPreview: (minutes: number) => void; onCommit: (minutes: number) => void; onCancel: () => void }) {
-  const drag = useRef<{ y: number; initial: number; value: number } | null>(null);
-  const [active, setActive] = useState(false);
-  const frame = useRef<number | null>(null);
-  function cancelFrame() { if (frame.current !== null) cancelAnimationFrame(frame.current); frame.current = null; }
-  useEffect(() => () => { if (frame.current !== null) cancelAnimationFrame(frame.current); }, []);
-  const clamp = (value: number) => Math.max(30, Math.min(max, Math.round(value / 30) * 30));
-  return <button type="button" className={`card-duration-handle resize-${edge}`} disabled={disabled} draggable={false} role="slider" aria-label={edge === 'top' ? 'Resize start time' : 'Resize end time'} aria-valuemin={30} aria-valuemax={max} aria-valuenow={minutes} aria-valuetext={minutes + ' minutes'}
-    onClick={(event) => event.stopPropagation()} onDragStart={(event) => { event.preventDefault(); event.stopPropagation(); }}
-    onPointerDown={(event) => { event.stopPropagation(); event.preventDefault(); event.currentTarget.focus({ preventScroll: true }); event.currentTarget.setPointerCapture(event.pointerId); drag.current = { y: event.clientY, initial: minutes, value: minutes }; setActive(true); }}
-    onPointerMove={(event) => { if (!drag.current) return; event.stopPropagation(); const value = clamp(drag.current.initial + (event.clientY - drag.current.y) / slotHeight * 30 * (edge === 'top' ? -1 : 1)); if (value !== drag.current.value) { drag.current.value = value; if (frame.current === null) frame.current = requestAnimationFrame(() => { frame.current = null; if (drag.current) onPreview(drag.current.value); }); } }}
-    onPointerUp={(event) => { event.stopPropagation(); const current = drag.current; cancelFrame(); drag.current = null; setActive(false); if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId); if (current && current.value !== current.initial) { onPreview(current.value); onCommit(current.value); } else if (current) onCancel(); }}
-    onPointerCancel={() => { cancelFrame(); if (drag.current) onCancel(); drag.current = null; setActive(false); }} onLostPointerCapture={() => { cancelFrame(); if (drag.current) onCancel(); drag.current = null; setActive(false); }}
-    onKeyDown={(event) => { if (['ArrowDown', 'ArrowUp'].includes(event.key)) { event.preventDefault(); event.stopPropagation(); onCommit(clamp(minutes + (event.key === 'ArrowDown' ? 30 : -30) * (edge === 'top' ? -1 : 1))); } }}>
-    <span aria-hidden="true">{active ? minutes + ' min' : '⋯'}</span>
-  </button>;
-}
-
-function CalendarCell({ feedback, cellKey, onAdd, children, className, ...props }: TdHTMLAttributes<HTMLTableCellElement> & { feedback: CalendarInteractions; cellKey: string; onAdd: (time: string) => void }) {
-  const subscribe = useCallback((listener: () => void) => feedback.subscribe(cellKey, listener), [feedback, cellKey]);
-  const get = useCallback(() => feedback.get(cellKey), [feedback, cellKey]);
-  const state = useSyncExternalStore(subscribe, get, get);
-  return <td {...props} className={className + (state.selected ? ' cell-selected' : '')}>
-    {children}
-    {state.end > state.start ? <span className="calendar-drop-preview" aria-hidden="true" style={{ top: state.start / 60 * 100 + '%', height: (state.end - state.start) / 60 * 100 + '%' }} /> : null}
-    {state.selected ? <button type="button" className="cell-add-activity" aria-label={'Add activity at ' + state.selected} onClick={() => onAdd(state.selected)}>+</button> : null}
-  </td>;
-}
-
-function CalendarPool({ feedback, children, ...props }: React.HTMLAttributes<HTMLElement> & { feedback: CalendarInteractions }) {
-  const subscribe = useCallback((listener: () => void) => feedback.subscribe('pool', listener), [feedback]);
-  const get = useCallback(() => feedback.get('pool'), [feedback]);
-  const state = useSyncExternalStore(subscribe, get, get);
-  return <aside {...props} className={'calendar-pool trip-calendar-pool' + (state.end ? ' drop-active' : '')}>{children}</aside>;
-}
-
-const HourPaper = memo(function HourPaper({ slices, stops }: { slices: { tint: number; transition: ReturnType<typeof calendarTransition>; time: number }[]; stops: TripStop[] }) { return <span className="calendar-hour-paper" aria-hidden="true">{slices.map(({ tint: sliceTint, transition, time }, index) => <span key={index} className={`calendar-paper-half destination-tint-${sliceTint}`}>{transition ? <span className="calendar-transfer-paper" aria-hidden="true">{[transition.from, transition.to].map((id, index) => { const color = stops.findIndex((stop) => stop.id === id) % 5; const progress = (time - transition.start) / (transition.end - transition.start); const top = Math.max(0, Math.min(100, (1 - progress) * 100)); const bottom = Math.max(0, Math.min(100, (1 - progress - .5 / (transition.end - transition.start)) * 100)); return <span key={index} className={`destination-tint-${color}`} style={index === 0 ? { clipPath: `polygon(0 0, ${top}% 0, ${bottom}% 100%, 0 100%)` } : undefined} />; })}<svg className="calendar-transfer-divider" viewBox="0 0 100 100" preserveAspectRatio="none"><line x1={(1 - (time - transition.start) / (transition.end - transition.start)) * 100} y1="0" x2={(1 - (time + .5 - transition.start) / (transition.end - transition.start)) * 100} y2="100" /></svg></span> : null}</span>)}</span>; });

@@ -1,49 +1,10 @@
 'use client';
-import { useId, useRef, useState } from 'react';
-import { packingProgress, type PackingEntry, type PackingLibrary, type PackingPlan, type PlanEdit } from '../lib/packing-client';
-import { LibraryForm } from './packing-library';
 
-export type EditPacking = (input: PlanEdit) => Promise<boolean>;
-
-function CountInput({ value, max, label, disabled, onSave }: { value: number; max: number; label: string; disabled: boolean; onSave: (value: number) => Promise<boolean> }) {
-  const [draft, setDraft] = useState(String(value));
-  const cancelled = useRef(false);
-  function commit() {
-    if (cancelled.current) { cancelled.current = false; setDraft(String(value)); return; }
-    const number = Number(draft);
-    if (draft !== '' && Number.isInteger(number) && number >= 0 && number <= max && number !== value) void onSave(number).then(saved => { if (!saved) setDraft(String(value)); });
-    else setDraft(String(value));
-  }
-  return <input aria-label={label} type="number" min={0} max={max} disabled={disabled} value={draft} onChange={e => setDraft(e.target.value)} onBlur={commit}
-    onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') { cancelled.current = true; e.currentTarget.blur(); } }} />;
-}
-function EntryRow({ entry, busy, edit }: { entry: PackingEntry; busy: boolean; edit: EditPacking }) {
-  const [expanded, setExpanded] = useState(false);
-  const detailId = useId();
-  return <article className={`packing-entry ${entry.excluded ? 'is-excluded' : ''} ${entry.target > 0 && entry.packed === entry.target ? 'is-packed' : ''}`}>
-    <div className="packing-entry-main">
-      <label className="packing-entry-check">
-        <input type="checkbox" aria-label={`Packed ${entry.name}`} checked={entry.target > 0 && entry.packed >= entry.target} disabled={busy || entry.excluded || entry.target === 0} onChange={e => void edit({ action: 'UPDATE_ENTRY', itemId: entry.itemId, packed: e.target.checked ? entry.target : 0 })} />
-        <span>{entry.name}</span>
-        {entry.needsReview ? <em>Review</em> : entry.excluded ? <em>Excluded</em> : entry.override !== null ? <em>Adjusted</em> : null}
-      </label>
-      <CountInput key={'target:' + entry.target} value={entry.target} max={entry.mode === 'CHECKBOX' ? 1 : 9999} label={`Quantity for ${entry.name}`} disabled={busy || entry.excluded} onSave={override => edit({ action: 'UPDATE_ENTRY', itemId: entry.itemId, override })} />
-      {entry.mode === 'QUANTITY'
-        ? <CountInput key={'packed:' + entry.packed} value={entry.packed} max={entry.target} label={`Packed quantity for ${entry.name}`} disabled={busy || entry.excluded} onSave={packed => edit({ action: 'UPDATE_ENTRY', itemId: entry.itemId, packed })} />
-        : <span className="packing-count-static" aria-hidden="true">{entry.packed ? '✓' : '—'}</span>}
-      <button className="packing-quiet" aria-label={`Details for ${entry.name}`} aria-expanded={expanded} aria-controls={detailId} onClick={() => setExpanded(!expanded)}>{expanded ? '−' : '⋯'}</button>
-    </div>
-    {expanded ? <div className="packing-entry-details" id={detailId}>
-      <p><strong>{entry.explanation.rule}</strong> · Suggested: {entry.suggested}{entry.override !== null ? ` · Yours: ${entry.override}` : ''}</p>
-      <p>{entry.manual ? 'Added by you.' : entry.explanation.baseline ? 'Everyday essential.' : entry.explanation.tags.join(' + ')}{entry.explanation.dates.length ? ` ${entry.explanation.dates.length} eligible dates: ${entry.explanation.dates.join(', ')}.` : ''}</p>
-      <div className="packing-inline-actions">
-        {entry.override !== null ? <button disabled={busy} onClick={() => void edit({ action: 'UPDATE_ENTRY', itemId: entry.itemId, resetOverride: true })}>Use suggestion</button> : null}
-        <button disabled={busy} onClick={() => void edit({ action: 'UPDATE_ENTRY', itemId: entry.itemId, excluded: !entry.excluded })}>{entry.excluded ? 'Include again' : 'Exclude'}</button>
-        {entry.manual || entry.needsReview ? <button disabled={busy} onClick={() => void edit({ action: 'REMOVE_ENTRY', itemId: entry.itemId })}>Remove item</button> : null}
-      </div>
-    </div> : null}
-  </article>;
-}
+import { useState } from 'react';
+import { packingProgress, type PackingLibrary, type PackingPlan } from '../../lib/packing-client';
+import { EntryRow } from './entry-row';
+import { LibraryForm } from './library-form';
+import { type EditPacking } from './packing-types';
 
 export function PackingChecklist({ plan, library, busy, edit, onLibrarySaved, onRefresh, onLibraryBusy }: {
   plan: PackingPlan; library: PackingLibrary; busy: boolean; edit: EditPacking;
