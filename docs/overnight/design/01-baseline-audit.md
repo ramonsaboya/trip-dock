@@ -56,6 +56,7 @@ The browser's selected view and unsaved inputs are transient. A screenshot alone
 | D8 | Date pickers label full calendar dates, prevent end dates before start, return focus after selecting, and expose roving day focus. | Reproduced/source strength | Preserve and regression check |
 | D9 | The AI prompt remains editable and the disabled create action explains the minimum requirements. Provenance text accompanies status colors. | Observed/source strength; successful generation not exercised live | Preserve |
 | D10 | Opening Edit trip then pressing Escape closes the dialog but leaves `document.activeElement` as BODY. The invoking Edit trip button still exists. | Reproduced focus restoration defect | High |
+| D11 | Saved destination names/dates are editable from the calendar, but the current schedule exposes no add/remove destination action. `StopEditor` and remove-stop API paths exist but are not wired to reachable schedule controls. The itinerary redesign explicitly removed add controls from the calendar. | Product-contract gap; historical direction explains it | Follow-up in Edit trip, not a new calendar toolbar |
 
 ## Screenshot evidence
 
@@ -72,6 +73,8 @@ Desktop calendar retains the recognizable paper grid, date row and idea pool. Ho
 ![Baseline desktop schedule](screenshots/before-desktop-schedule.png)
 
 The narrow calendar is squeezed by its sidebar. This is caused by the final mobile rule in `globals.css` setting `grid-template-columns: minmax(0, 1fr) 160px`, overriding earlier one-column rules.
+
+Read-only browser geometry measured calendar width 182 px at a 390 px viewport and 112 px at 320 px. Page scrollWidth equaled viewport width in both cases: the issue is internal clipping, so a page-overflow assertion alone would miss it. See `screenshots/baseline-measurements.json` and the matched populated screenshots for exact comparison data.
 
 ![Baseline mobile schedule](screenshots/before-mobile-schedule.png)
 
@@ -92,6 +95,8 @@ Packing's mobile layout is already closer to the desired behavior: the tag tray 
 Baseline browser actions created `Design audit · Lisbon`, September 20–24, entered Lisbon as a city, saved `Walk along the waterfront` as an activity idea, assigned City walking to the first packing day using clicks, and generated a 14-item checklist. These requests used the production API and isolated PostgreSQL. Additional editing, reload and failure checks are recorded in the final verification report.
 
 Further baseline checks saved `Audit guesthouse` with the suggested check-in/out dates, saved inbound `Audit flight to Lisbon` from London, and checked Day bag in the packing list. Reload retained the day assignment and showed Packing list · 1/14 with Day bag checked. Schedule/Packing arrow-key focus movement worked. Edit trip correctly disabled Save changes before any change.
+
+At 320 px, the date popup in Edit trip measured left 12 px, right 308 px, width 296 px; it stayed within the viewport. Destination editing exposed name, start/end dates and a disabled unchanged Save action. These controls should be preserved. No saved-destination add/remove/reorder UI journey is claimed: the current reachable surface does not supply one.
 
 The unconfigured-AI path returned a clear configuration error and retained the typed Lisbon prompt. It made no provider request. Its technical recovery message is suited to local setup, but does not directly offer manual creation; Back to trips remains available.
 
