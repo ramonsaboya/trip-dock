@@ -15,6 +15,10 @@ import * as schema from '../src/db/schema.js';
 import { createApi } from '../src/graphql.js';
 import { exerciseItinerary } from './itinerary-scenarios.js';
 import { exercisePacking } from './packing-scenarios.js';
+import { loadTrips } from '../src/data.js';
+import { createTripService } from '../src/trips/trip-service.js';
+import { createItineraryService } from '../src/trips/itinerary-service.js';
+import { exerciseBackendTransactions } from './backend-scenarios.js';
 
 // pg-mem's timestamp adapter uses the process timezone; keep the test adapter deterministic.
 process.env.TZ = 'UTC';
@@ -876,4 +880,58 @@ test('single-destination arrival and return transport and activity assignment pe
 test('packing persists personal libraries, day tags and reconciled lists with ownership checks', async () => {
   const harness = await createHarness();
   try { await exercisePacking(harness.db); } finally { await harness.pool.end(); }
+});
+
+test('trip collection hydration uses five selects and keeps children with their owning trip', async () => {
+  const h = await createHarness();
+  try {
+    let selects = 0;
+    const reader = { select: (...args: Parameters<AppDatabase['select']>) => {
+      selects++;
+      return h.db.select(...args);
+    } } as Pick<AppDatabase, 'select'>;
+    assert.deepEqual(await loadTrips(reader), []);
+    assert.equal(selects, 1);
+    const service = createTripService(h.db);
+    const itinerary = createItineraryService(h.db);
+    for (const name of ['First', 'Second', 'Third']) {
+      const trip = await service.createTrip({ input: { ...baseTripInput, name } });
+      await itinerary.addActivity({ tripId: trip.id, expectedRevision: 0, input: {
+        stopId: trip.stops[0]!.id, title: `${name} activity`, status: 'IDEA', scheduledAt: null, timezone: null,
+      } });
+    }
+    selects = 0;
+    const loaded = await loadTrips(reader);
+    assert.equal(selects, 5, 'collection size must not multiply database round trips');
+    assert.equal(loaded.length, 3);
+    for (const trip of loaded) {
+      assert.equal(trip.stops.length, 2);
+      assert.ok(trip.stops.every(stop => stop.tripId === trip.id));
+      assert.deepEqual(trip.activities.map(activity => activity.title), [`${trip.name} activity`]);
+      assert.deepEqual(trip.transportLegs, []);
+      assert.deepEqual(trip.stays, []);
+    }
+  } finally { await h.pool.end(); }
+});
+
+test('application services preserve stop chronology and rollback rejected changes', async () => {
+  const h = await createHarness();
+  try { await exerciseBackendTransactions(h.db); } finally { await h.pool.end(); }
+});
+
+test('unexpected errors remain masked even when NODE_ENV is development', async () => {
+  const previous = process.env.NODE_ENV;
+  process.env.NODE_ENV = 'development';
+  const h = await createHarness({ interpretTripCreation: async () => { throw new Error('private SQL and provider credential details'); } });
+  try {
+    const result = await gql(h.yoga, `mutation($input: GenerateTripDraftInput!) { generateTripDraft(input: $input) { name } }`, {
+      input: { prompt: 'A trip', locale: 'en-GB', timeZone: 'Europe/London', referenceDate: '2027-01-01' },
+    });
+    assert.equal(result.errors?.[0]?.message, 'Unexpected error.');
+    assert.doesNotMatch(JSON.stringify(result), /private SQL|credential details|originalError|stack/);
+  } finally {
+    if (previous === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = previous;
+    await h.pool.end();
+  }
 });

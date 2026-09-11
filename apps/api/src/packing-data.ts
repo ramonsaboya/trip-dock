@@ -1,14 +1,12 @@
 import { and, eq } from 'drizzle-orm';
-import { GraphQLError } from 'graphql';
 import { z } from 'zod';
-import type { AppDatabase } from './db/client.js';
+import type { AppDatabase, DbTransaction as Tx, DatabaseReader as Reader } from './db/client.js';
+import { handle } from './graphql/errors.js';
 import { trips, packingProfiles as profiles, packingCategories as categories, packingItems as items, packingTags as tags, packingTagItems as links, packingPlans as plans, packingDayTags as dayTags, packingEntries as entries } from './db/schema.js';
 import { AppError, isoDateSchema } from './domain.js';
 import { catalog, starterRule } from './packing-catalog.js';
 import { calculate, daysBetween, fingerprint, itemInput, nameInput, reconcile, target, type Library } from './packing-domain.js';
 
-type Tx = Parameters<Parameters<AppDatabase['transaction']>[0]>[0];
-type Reader = Pick<AppDatabase, 'select'>;
 export const LOCAL_PACKING_PROFILE = '00000000-0000-4000-8000-000000000001';
 const idInput = z.string().uuid();
 const revisionInput = z.number().int().nonnegative();
@@ -18,23 +16,26 @@ const fail = (message: string) => { throw new AppError(message, 'BAD_USER_INPUT'
 const conflict = () => { throw new AppError('Packing changed in another request. Refresh and try again.', 'REVISION_CONFLICT'); };
 
 async function checked<T>(fn: () => Promise<T>): Promise<T> {
-  try { return await fn(); } catch (error) {
-    if (error instanceof AppError) throw new GraphQLError(error.message, { extensions: { code: error.code } });
-    if (error instanceof z.ZodError) throw new GraphQLError(error.issues[0]?.message ?? 'Check the packing fields.', { extensions: { code: 'BAD_USER_INPUT' } });
-    const cause = error as { code?: string; cause?: { code?: string } };
-    if ((cause.code ?? cause.cause?.code) === '23505') throw new GraphQLError('That name is already in your library. Edit the existing entry or choose another name.', { extensions: { code: 'BAD_USER_INPUT' } });
-    throw error;
-  }
+  return handle(async () => {
+    try { return await fn(); } catch (error) {
+      // Only packing has this name-uniqueness policy; unknown database errors stay masked.
+      const cause = error as { code?: string; cause?: { code?: string } } | null;
+      if ((cause?.code ?? cause?.cause?.code) === '23505') {
+        throw new AppError('That name is already in your library. Edit the existing entry or choose another name.', 'BAD_USER_INPUT');
+      }
+      throw error;
+    }
+  });
 }
 export async function loadLibrary(db: Reader, profileId: string): Promise<Library | null> {
   const [profile] = await db.select().from(profiles).where(eq(profiles.id, profileId));
   if (!profile) return null;
-  const [categoryList, itemList, tagList, linkList] = await Promise.all([
-    db.select().from(categories).where(eq(categories.profileId, profileId)),
-    db.select().from(items).where(eq(items.profileId, profileId)),
-    db.select().from(tags).where(eq(tags.profileId, profileId)),
-    db.select().from(links).where(eq(links.profileId, profileId)),
-  ]);
+  const [categoryList, itemList, tagList, linkList] = [
+    await db.select().from(categories).where(eq(categories.profileId, profileId)),
+    await db.select().from(items).where(eq(items.profileId, profileId)),
+    await db.select().from(tags).where(eq(tags.profileId, profileId)),
+    await db.select().from(links).where(eq(links.profileId, profileId)),
+  ];
   return {
     revision: profile.revision,
     categories: categoryList.sort((a,b) => a.name.localeCompare(b.name)),
@@ -72,11 +73,11 @@ async function readPlan(db: Reader, profileId: string, tripId: string) {
   if (!plan) return null;
   const [trip] = await db.select().from(trips).where(eq(trips.id, tripId));
   if (!trip) return null;
-  const [assignments, list, library] = await Promise.all([
-    db.select().from(dayTags).where(and(eq(dayTags.profileId, profileId), eq(dayTags.planId, plan.id))),
-    db.select().from(entries).where(and(eq(entries.profileId, profileId), eq(entries.planId, plan.id))),
-    loadLibrary(db, profileId),
-  ]);
+  const [assignments, list, library] = [
+    await db.select().from(dayTags).where(and(eq(dayTags.profileId, profileId), eq(dayTags.planId, plan.id))),
+    await db.select().from(entries).where(and(eq(entries.profileId, profileId), eq(entries.planId, plan.id))),
+    await loadLibrary(db, profileId),
+  ];
   return { ...plan, startDate: trip.startDate, endDate: trip.endDate,
     assignments: assignments.sort((a,b) => a.day.localeCompare(b.day) || a.tagId.localeCompare(b.tagId)),
     entries: list.map(e => ({...e, target: target(e)})).sort((a,b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name)),

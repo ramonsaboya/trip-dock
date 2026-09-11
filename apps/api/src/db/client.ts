@@ -4,6 +4,8 @@ import { Pool, type PoolConfig } from 'pg';
 import * as tables from './schema.js';
 
 export type AppDatabase = NodePgDatabase<typeof tables>;
+export type DbTransaction = Parameters<Parameters<AppDatabase['transaction']>[0]>[0];
+export type DatabaseReader = Pick<AppDatabase, 'select'>;
 
 export type DatabaseHandle = {
   db: AppDatabase;
