@@ -10,6 +10,7 @@ A traveler should be able to start manually or describe a trip, finish missing e
 2. **Make destination actions reachable.** Keep destination and stay controls visible within wide grouped headers as the calendar pans, or provide a compact equivalent action outside the merged header. Choose after testing the existing sticky table constraints.
 3. **Expose manual creation early on narrow screens.** Reuse the existing expansion path and preserve mounted draft state. Reduce excess small-screen surface heights/spacing. Keep both AI and manual routes.
 4. **Improve calendar instructions and keyboard access where bounded.** Describe click-to-edit scheduling as an alternative to dragging. Avoid introducing a partially implemented ARIA grid. Test native dialog Escape/focus and Schedule/Packing arrows.
+   Restore dialog focus explicitly to a still-connected invoker after React unmount; retain native modal semantics. This addresses reproduced finding D10 without a new modal dependency.
 5. **Verify real persistence and state recovery.** Create/edit/reload the isolated audit trip, transport, stay and activity; exercise packing and failure recovery. Use deterministic tests for AI/voice states without paid calls.
 
 ## Decisions and rollback

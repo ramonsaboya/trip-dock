@@ -55,6 +55,7 @@ The browser's selected view and unsaved inputs are transient. A screenshot alone
 | D7 | Packing offers tag selection then day click, searchable tags and checklist items, quantity controls, collapsed details and status feedback. Its narrow view stacks the tag tray. | Reproduced strength | Preserve |
 | D8 | Date pickers label full calendar dates, prevent end dates before start, return focus after selecting, and expose roving day focus. | Reproduced/source strength | Preserve and regression check |
 | D9 | The AI prompt remains editable and the disabled create action explains the minimum requirements. Provenance text accompanies status colors. | Observed/source strength; successful generation not exercised live | Preserve |
+| D10 | Opening Edit trip then pressing Escape closes the dialog but leaves `document.activeElement` as BODY. The invoking Edit trip button still exists. | Reproduced focus restoration defect | High |
 
 ## Screenshot evidence
 
@@ -78,6 +79,10 @@ The activity dialog fits at 390 × 844 with visible labels and Save/Cancel. It u
 
 ![Baseline mobile activity dialog](screenshots/before-mobile-activity-dialog.png)
 
+The light variant retains the original palette. Text-token spot checks are healthy: ink/canvas 14.63:1 and muted/surface 6.09:1 in light; 14.69:1 and 7.96:1 respectively in dark. These are sRGB calculations for opaque token pairs, not an exhaustive composited-element audit. No palette replacement is justified by those samples.
+
+![Baseline light schedule](screenshots/before-desktop-light-schedule.png)
+
 Packing's mobile layout is already closer to the desired behavior: the tag tray gets its own row and the day list remains full width. Smaller metadata and dense list controls deserve future assistive-technology testing, but this is not evidence for a wholesale rewrite.
 
 ![Baseline mobile packing](screenshots/before-mobile-packing.png)
@@ -85,6 +90,14 @@ Packing's mobile layout is already closer to the desired behavior: the tag tray 
 ## Journey and state coverage
 
 Baseline browser actions created `Design audit · Lisbon`, September 20–24, entered Lisbon as a city, saved `Walk along the waterfront` as an activity idea, assigned City walking to the first packing day using clicks, and generated a 14-item checklist. These requests used the production API and isolated PostgreSQL. Additional editing, reload and failure checks are recorded in the final verification report.
+
+Further baseline checks saved `Audit guesthouse` with the suggested check-in/out dates, saved inbound `Audit flight to Lisbon` from London, and checked Day bag in the packing list. Reload retained the day assignment and showed Packing list · 1/14 with Day bag checked. Schedule/Packing arrow-key focus movement worked. Edit trip correctly disabled Save changes before any change.
+
+The unconfigured-AI path returned a clear configuration error and retained the typed Lisbon prompt. It made no provider request. Its technical recovery message is suited to local setup, but does not directly offer manual creation; Back to trips remains available.
+
+![Unconfigured AI retains the prompt](screenshots/before-ai-unconfigured.png)
+
+The native trip-deletion confirmation stalled the in-app browser automation transport. No confirmation acceptance was sent, and a fresh tab still showed the saved trip. This limits browser evidence for baseline cancellation/deletion; it is not evidence that TripDock deleted a record or that its confirmation logic is wrong. The stalled temporary tab could not be closed through the documented API. Subsequent checks use a new tab in the same browser.
 
 Loading appeared during initial fetch and reload, with a named opening state. The empty database displayed no fake trips. Manual creation transitioned into an inline form and exposed its readiness explanation. A native activity dialog showed the background as inert, and its form retained an explicit optional scheduling hint. Destructive controls invoke a browser confirmation; final deletion tests must use only the disposable audit data.
 
