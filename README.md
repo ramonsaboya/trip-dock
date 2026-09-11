@@ -6,7 +6,7 @@ Canonical trip data lives only in PostgreSQL. The browser contains no trip fixtu
 
 ## What works
 
-- Create, view, update, and delete trips.
+- Create, view and delete trips. Trip-level details, including the name and dates, are fixed after creation for now.
 - Set destinations and their dates before creating a trip. Saved destinations are display-only; structural editing is [deliberately deferred](docs/overnight/design/05-follow-up-decisions.md).
 - Add, edit, and remove transport legs, stays, and activities.
 - Generate an unpersisted trip draft from natural language, edit it, and explicitly create it.

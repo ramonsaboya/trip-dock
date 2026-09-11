@@ -41,7 +41,7 @@ async function chooseDate(page: Page, field: string, day: string) {
   await page.getByRole('button', { name: new RegExp(`, ${day} April 2028$`) }).click();
 }
 
-test('manual create, retained edits, accepted revision, reload and modal keyboard exit', async ({ page }, testInfo) => {
+test('manual create, retained draft, locked trip, reload and modal keyboard exit', async ({ page }, testInfo) => {
   const api = await isolatedApi(page);
   await page.clock.setFixedTime(new Date('2028-04-02T12:00:00Z'));
   await page.goto('/');
@@ -62,23 +62,20 @@ test('manual create, retained edits, accepted revision, reload and modal keyboar
   await expect(page.getByRole('heading', { name: 'Spring break' })).toBeVisible();
   expect(api.trips[0]?.stops[0]?.name).toBe('Porto');
   expect(api.trips[0]?.startDate).toBe('2028-04-02');
-  await page.getByRole('button', { name: 'Edit trip', exact: true }).click();
-  await page.getByRole('textbox', { name: 'Trip name', exact: true }).fill('Spring holiday');
-  await page.getByRole('button', { name: 'Save changes' }).click();
-  await expect(page.getByRole('heading', { name: 'Spring holiday' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Edit trip', exact: true })).toHaveCount(0);
   await page.reload();
-  await expect(page.getByRole('heading', { name: 'Spring holiday' })).toBeVisible();
-  expect(api.trips[0]?.revision).toBe(1);
+  await expect(page.getByRole('heading', { name: 'Spring break' })).toBeVisible();
+  expect(api.trips[0]?.revision).toBe(0);
   await page.screenshot({ path: testInfo.outputPath('saved-trip.png'), animations: 'disabled' });
-  await page.getByRole('button', { name: 'Edit trip', exact: true }).click();
-  await page.getByRole('combobox', { name: 'Start date', exact: true }).press('Enter');
-  await expect(page.getByRole('dialog', { name: 'Choose date', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '+ Activity', exact: true }).click();
+  await page.getByRole('combobox', { name: 'Scheduled time (optional)', exact: true }).press('Enter');
+  await expect(page.getByRole('dialog', { name: 'Choose date and time', exact: true })).toBeVisible();
   await page.keyboard.press('Escape');
-  await expect(page.getByRole('dialog', { name: 'Edit trip essentials' })).toBeVisible();
+  await expect(page.getByRole('dialog', { name: 'Add activity', exact: true })).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(page.getByRole('dialog')).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Edit trip', exact: true })).toBeFocused();
-  expect(api.mutations).toEqual(['create', 'update']);
+  await expect(page.getByRole('button', { name: '+ Activity', exact: true })).toBeFocused();
+  expect(api.mutations).toEqual(['create']);
 });
 
 test('AI draft stays unpersisted through manual review and follow-up', async ({ page }) => {

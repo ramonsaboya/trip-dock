@@ -1,0 +1,268 @@
+$ pnpm test && pnpm lint && pnpm typecheck && pnpm build
+$ pnpm -r --filter @tripdock/api --filter @tripdock/web test
+Scope: 2 of 3 workspace projects
+apps/api test$ tsx --test --test-concurrency=1 tests/*.test.ts
+apps/web test$ node --experimental-strip-types --test tests/*.test.ts
+apps/web test: ✔ destination days include arrival and departure across month and DST boundaries (3.4911ms)
+apps/web test: ✔ assignments group by the record timezone, and moving preserves booking status (27.2527ms)
+apps/web test: ✔ blank trailing creation rows do not block saving or become destinations (0.8812ms)
+apps/web test: ✔ hourly moves support precise times, midnight and late evening without changing booking facts (6.4253ms)
+apps/web test: ✔ production modules keep discoverable components and point dependencies toward data (153.3924ms)
+apps/web test: ✔ hover selection notifies only the old and new cells, preserving half-hour time (2.564ms)
+apps/web test: ✔ drop preview spans exact half-hours and clears stale cells when moving to the pool (0.5291ms)
+apps/web test: ✔ removing subscriptions and repeating a drag target performs no extra notifications (0.3476ms)
+apps/web test: ✔ day window bounds mounted columns while preserving focused/dragged columns and total width (0.887ms)
+apps/web test: ✔ add-stop operation declares and forwards optional trip-end movement intent (1.936ms)
+apps/web test: ✔ GraphQL client preserves a genuine empty trips result (39.3931ms)
+apps/web test: ✔ GraphQL client surfaces the server error code and details (1.0862ms)
+apps/web test: ✔ AI drafts map to editable, still-unpersisted trip inputs (0.6389ms)
+apps/web test: ✔ AI draft trip boundaries and first/last destination dates fall back to each other (0.3827ms)
+apps/web test: ✔ minimum viability requires a resolved city and valid trip dates, not travelers (0.7374ms)
+apps/web test: ✔ batched clarification updates can confirm city and weekend fields atomically (0.8564ms)
+apps/web test: ✔ confirmed historical dates retain a visible, nonblocking past-date state (0.2305ms)
+apps/web test: ✔ editing either boundary confirms a valid displayed pair for a blocking date conflict (0.2611ms)
+apps/web test: ✔ AI creation persists only resolved cities and links surviving boundary stops (0.5769ms)
+apps/web test: ✔ follow-up draft merging preserves manually confirmed fields (1.7864ms)
+apps/web test: ✔ follow-up destinations are aligned by unique city name before protected merging (0.9998ms)
+apps/web test: ✔ an explicit destination reorder honors the order named in the latest reply (0.3685ms)
+apps/web test: ✔ before and after phrasing can explicitly reorder destinations (0.2853ms)
+apps/web test: ✔ an inserted destination keeps every city paired with its own dates and paths (0.3024ms)
+apps/web test: ✔ an explicit middle-destination removal remaps survivors without restoring the removed city (0.5248ms)
+apps/web test: ✔ negated or unrelated wording cannot delete an omitted protected destination (0.2661ms)
+apps/web test: ✔ follow-up prompts include confirmed values but exclude unconfirmed suggestions (0.2853ms)
+apps/web test: ✔ an explicit latest follow-up can replace a previously protected field (0.7097ms)
+apps/web test: ✔ an explicit numeric correction releases only the date with matching evidence (0.3373ms)
+apps/web test: ✔ a directional end-date correction cannot release a stable start with duplicated evidence (0.308ms)
+apps/web test: ✔ common city-correction phrases release a protected destination with matching evidence (0.502ms)
+apps/web test: ✔ terse and direct open-question city answers replace rather than append (0.3972ms)
+apps/web test: ✔ unrelated date wording cannot release a protected city (0.1814ms)
+apps/web test: ✔ date corrections containing a month name cannot replace a protected city (0.1067ms)
+apps/web test: ✔ a valid answer to an open question becomes protected for later turns (0.1262ms)
+apps/web test: ✔ prior free-text answers remain in later follow-up prompts (0.2367ms)
+apps/web test: ✔ an unrelated follow-up cannot silently resolve an earlier relative-date question (0.5423ms)
+apps/web test: ✔ a semantic answer to a date-duration conflict clears the resolved question (0.5511ms)
+apps/web test: ✔ follow-up prompts carry message dates and stay within the API limit (0.254ms)
+apps/web test: ✔ stop-indexed state paths remap after a destination is removed (0.3925ms)
+apps/web test: ✔ dirty stop-date paths follow city identity through AI insertion and reordering (0.428ms)
+apps/web test: ✔ trip and boundary-destination dates stay in sync without overwriting an explicit stop date (0.1983ms)
+apps/web test: ✔ a newly appended destination inherits an explicit previous departure date (0.1392ms)
+apps/web test: ✔ adding a destination moves an untouched trip end to the new last destination (0.0954ms)
+apps/web test: ✔ a destination end keeps the next untouched destination start linked (0.1003ms)
+apps/web test: ✔ a dirty main trip boundary is not overwritten by a destination edit (0.0883ms)
+apps/web test: ✔ a cleared destination date remains untouched by later boundary changes once dirty (0.0804ms)
+apps/web test: ✔ removing an auto-linked last destination restores the trip end to its predecessor (0.1669ms)
+apps/web test: ✔ removing an auto-linked last destination preserves explicit predecessor state (0.1279ms)
+apps/web test: ✔ removing a boundary destination derives trip boundaries from the remaining route (0.1425ms)
+apps/web test: ✔ the trip area is preserved when supplied and otherwise synthesized from stops (0.1753ms)
+apps/web test: ✔ the destination area never exceeds the API compatibility limit (0.1718ms)
+apps/web test: ✔ destinations sort chronologically without mutating the server-provided collection (7.9362ms)
+apps/web test: ✔ presentation helpers derive labels from arbitrary persisted dates (10.4105ms)
+apps/web test: ✔ IANA timezone helpers preserve wall time across UTC conversion (1.938ms)
+apps/web test: ✔ unchanged ambiguous local times preserve their original instant (0.7024ms)
+apps/web test: ✔ new stay date-times use the destination dates with practical suggested times (0.1959ms)
+apps/web test: ✔ transport and activity suggestions stay anchored to their destinations (0.1891ms)
+apps/web test: ✔ transport suggestions never invert the timing for overlapping or reverse routes (0.1065ms)
+apps/web test: ✔ production web code contains no fixture or browser-storage fallback (36.2289ms)
+apps/web test: ✔ creation UI opens manual creation as a form and keeps AI drafts reviewable (18.6209ms)
+apps/web test: ✔ dashboard chrome keeps a single trips heading without a redundant tab (13.4598ms)
+apps/web test: ✔ streams each live delta immediately, replaces with final text and closes all media (39.4413ms)
+apps/web test: ✔ cancellation while permission is pending stops a late microphone without opening a peer (3.4976ms)
+apps/web test: ✔ cancel ignores queued transcript events and stops tracks; permission errors are actionable (3.9968ms)
+apps/web test: ✔ connection and provider failures terminate media without discarding prior transcript (1.9307ms)
+apps/web test: ✔ prepares the offer during authentication, with no audio or call sent before the credential (1.6234ms)
+apps/web test: ✔ cancelling during authentication closes the prepared peer and never exchanges an offer (1.6554ms)
+apps/web test: ✔ follow-up keeps a manual trip name and stable city when the answer only changes dates (3.967ms)
+apps/web test: ✔ unanswered essential questions remain blocking when an unrelated follow-up returns no questions (0.616ms)
+apps/web test: ✔ day drops accept only active tags in the current personal library (0.9215ms)
+apps/web test: ✔ opening a trip starts in Schedule and both tabs preserve that trip across reloads (2.0916ms)
+apps/web test: ✔ Home and incomplete packing links never select an unrelated trip (0.6172ms)
+apps/web test: ✔ only an explicit light preference overrides the dark default (1.1965ms)
+apps/web test: ✔ pre-paint initialization handles fresh storage (1.4077ms)
+apps/web test: ✔ pre-paint initialization handles light (0.6213ms)
+apps/web test: ✔ pre-paint initialization handles dark (0.7245ms)
+apps/web test: ✔ pre-paint initialization handles invalid (0.6808ms)
+apps/web test: ✔ pre-paint initialization handles blocked (0.7255ms)
+apps/web test: ✔ initialization tolerates an absent browser chrome meta tag (2.3502ms)
+apps/web test: ✔ trip calendar has one chronological column per day and marks shared transfer dates (14.8886ms)
+apps/web test: ✔ transport uses real local timestamps or an explicitly suggested day with an unsaved 10 a.m. placeholder (10.291ms)
+apps/web test: ✔ accommodation row uses local stay dates and does not count checkout as another night (1.1392ms)
+apps/web test: ✔ route planning keeps arrival and return for a single destination (0.3185ms)
+apps/web test: ✔ calendar opens at 9 a.m. or the earliest visible scheduled item in its local timezone (0.8713ms)
+apps/web test: ✔ stay cells merge across unchanged nights and split when the accommodation changes (1.9564ms)
+apps/web test: ✔ transfer-day paper changes city after the two-hour placeholder (0.8331ms)
+apps/web test: ✔ recorded transport times replace the placeholder transition in local time (1.9481ms)
+apps/web test: ✔ empty stay sections align to destination boundaries without a shared header (0.3314ms)
+apps/web test: ✔ placeholder transition spans two hours and excludes external trip boundaries (0.4748ms)
+apps/web test: ✔ dragging transport preserves route, details and elapsed travel duration (2.2379ms)
+apps/web test: ✔ half-hour grid and drag footprint preserve the grabbed offset and duration (0.4783ms)
+apps/web test: ✔ top resizing preserves the end while bottom resizing preserves the start (0.1489ms)
+apps/web test: ✔ transport paper changes at the exact half-hour arrival boundary (1.6158ms)
+apps/web test: ✔ event index keeps local half-hours, sorted activities, missing-route placeholders and unplaced items (0.9019ms)
+apps/web test: ✔ prepared paper shares a day model and preserves overnight and fractional transport boundaries (0.545ms)
+apps/web test: ✔ aborted collection request cannot publish even when fetch resolves after cleanup (29.2932ms)
+apps/web test: ✔ collection failure is visible and a fresh attempt can load an honestly empty list (1.6748ms)
+apps/web test: ✔ an aborted failure does not replace a later successful attempt (1.2557ms)
+apps/web test: ✔ accepted revisions replace whole records and deletion preserves unrelated trips (0.515ms)
+apps/web test: ✔ detects standard/prefixed APIs only in secure environments (0.9094ms)
+apps/web test: ✔ replaces interim hypotheses, handles shortened lists, and never duplicates final segments (1.2039ms)
+apps/web test: ✔ editing freezes visible text and ignores queued results across repeated sessions (0.4061ms)
+apps/web test: ✔ permission, capture, network, silence, and service failures preserve text and allow retry (0.6014ms)
+apps/web test: ✔ start/stop timeouts and cancelling before permission cannot leave listening stuck (0.8551ms)
+apps/web test: ✔ unmount disposes handlers, timers and queued events without more callbacks (0.4567ms)
+apps/web test: ✔ respects composer limits, existing whitespace, and Unicode boundaries (0.3774ms)
+apps/web test: ✔ constructor/start exceptions recover without discarding input (0.3091ms)
+apps/web test: ℹ tests 108
+apps/web test: ℹ suites 0
+apps/web test: ℹ pass 108
+apps/web test: ℹ fail 0
+apps/web test: ℹ cancelled 0
+apps/web test: ℹ skipped 0
+apps/web test: ℹ todo 0
+apps/web test: ℹ duration_ms 599.2773
+apps/web test: Done
+apps/api test: ✔ FixtureAiGateway is explicit, deterministic, and records calls (3.9075ms)
+apps/api test: ✔ UnconfiguredAiGateway fails clearly and never returns fixture data (0.4594ms)
+apps/api test: ✔ generated migration creates a genuine empty database with no fixtures (149.4081ms)
+apps/api test: ✔ manual GraphQL data persists across API instances and every edit bumps revision (140.2824ms)
+apps/api test: ✔ destination departure changes keep only an untouched next arrival linked (83.2893ms)
+apps/api test: ✔ adding a destination transfers an explicitly linked trip end without inventing a link on removal (56.153ms)
+apps/api test: ✔ adding a destination preserves explicit date intent when no end transfer occurs (87.683ms)
+apps/api test: ✔ trip boundaries and destination dates synchronize while destinations stay date-ordered (79.6108ms)
+apps/api test: ✔ createTrip preserves intentionally blank destination boundaries (32.2988ms)
+apps/api test: ✔ createTrip persists an omitted traveler count without inventing one (32.1133ms)
+apps/api test: ✔ explicit destination boundary dates can diverge while linked edits still flow both ways (49.6131ms)
+apps/api test: ✔ homepage AI draft generation remains available without persisting a trip (42.6567ms)
+apps/api test: ✔ existing-trip AI proposal fields are absent from the GraphQL schema (22.3992ms)
+apps/api test: ✔ single-destination arrival and return transport and activity assignment persist safely (130.2027ms)
+apps/api test: ✔ packing persists personal libraries, day tags and reconciled lists with ownership checks (975.1697ms)
+apps/api test: ✔ packing worked example deduplicates dates across tags and applies personal reuse rules (10.3321ms)
+apps/api test: ✔ packing calendar days handle DST, leap day and same-day trips without pajamas (0.9674ms)
+apps/api test: ✔ all 30 starter tags reference real items and baseline/tag overlaps do not multiply quantities (0.7827ms)
+apps/api test: ✔ fingerprints ignore assignment order but change when a relevant rule or dates change (1.8122ms)
+apps/api test: ✔ recalculation preserves overrides including zero, excluded items and obsolete packed items for review (0.8451ms)
+apps/api test: ﹣ generated migrations apply to an explicitly configured real PostgreSQL database (0.8176ms) # Run pnpm test:postgres to use the explicitly configured PostgreSQL database.
+apps/api test: ✔ the MVP corpus has four stable scenario families and four prompt cases (1.2227ms)
+apps/api test: ✔ the year-elision regression passes when the resolver anchors the paired endpoint (36.8705ms)
+apps/api test: ✔ the country hierarchy regression passes with Italy as area and exactly three city stops (5.4928ms)
+apps/api test: ✔ the fixed-boundaries regression passes with contiguous exact-night intervals (7.7542ms)
+apps/api test: ✔ the oracle detects a wrong inherited year (7.1875ms)
+apps/api test: ✔ the oracle detects a country incorrectly added as a fourth city stop (0.9604ms)
+apps/api test: ✔ the oracle detects missing per-stop dates even when overall dates are correct (6.9897ms)
+apps/api test: ✔ the start-plus-nights regression derives the trip end and contiguous intervals (3.9317ms)
+apps/api test: ✔ yearless calendar dates use the next occurrence on or after the reference date (1.4132ms)
+apps/api test: ✔ yearless ranges are anchored together after the start rolls into the following year (38.6365ms)
+apps/api test: ✔ same-month yearless ranges stay together when both dates have passed this year (9.2263ms)
+apps/api test: ✔ numeric dates follow the user locale while unambiguous dates do not (1.4245ms)
+apps/api test: ✔ ISO and named range evidence is not reinterpreted as a locale-dependent numeric date (0.2176ms)
+apps/api test: ✔ shared named ranges verify the correct boundary and retain a shared year (70.816ms)
+apps/api test: ✔ cross-month ranges bind each extracted value to its semantic boundary (31.0893ms)
+apps/api test: ✔ full-span December-January ranges anchor the implicit endpoint across years (16.2248ms)
+apps/api test: ✔ punctuated month abbreviations retain explicit years (18.2847ms)
+apps/api test: ✔ invalid calendar dates remain missing and require attention (0.4209ms)
+apps/api test: ✔ month-only input remains unresolved instead of inventing a day (0.5716ms)
+apps/api test: ✔ this Friday means today when the reference date is Friday (0.161ms)
+apps/api test: ✔ next weekend is Saturday-Sunday, with Friday asking between two weekends (0.9091ms)
+apps/api test: ✔ next weekend only becomes a complete range when both boundaries carry that intent (1.2001ms)
+apps/api test: ✔ next weekend remains blocked when it contradicts a stated duration (1.8133ms)
+apps/api test: ✔ implicit end dates roll forward relative to a far-future December start (10.4549ms)
+apps/api test: ✔ a yearless range endpoint is anchored to its explicitly dated counterpart (16.1929ms)
+apps/api test: ✔ anchoring a yearless endpoint can produce a clearly marked historical range (7.5842ms)
+apps/api test: ✔ an unexpected implicit cross-year range requires clarification (8.6047ms)
+apps/api test: ✔ explicit reversed years remain a blocking contradiction (12.1996ms)
+apps/api test: ✔ a model-supplied year absent from evidence cannot turn a yearless date into an accepted past date (7.3662ms)
+apps/api test: ✔ an explicit year in date evidence is retained even if the model omits it (7.5494ms)
+apps/api test: ✔ calendar components that do not match their quoted evidence are not accepted (11.9043ms)
+apps/api test: ✔ relative and numeric date kinds must match their evidence (3.8072ms)
+apps/api test: ✔ next week cannot be mislabeled as next weekend (0.3492ms)
+apps/api test: ✔ traveler count and duration must match their quoted evidence (24.8959ms)
+apps/api test: ✔ uncertain scalar alternatives are never certified as exact values (43.4062ms)
+apps/api test: ✔ traveler compositions are counted additively from ordinary wording (102.8286ms)
+apps/api test: ✔ traveler provenance is derived from evidence rather than model origin labels (13.1871ms)
+apps/api test: ✔ invalid boundaries are never replaced by a duration calculation (7.3459ms)
+apps/api test: ✔ week durations are converted deterministically without treating months as days (3.6242ms)
+apps/api test: ✔ AI suggestions and city substrings cannot satisfy the city requirement (29.4152ms)
+apps/api test: ✔ cropped evidence cannot hide alternatives or a larger place name (89.836ms)
+apps/api test: ✔ city-states still satisfy the city-level destination requirement (8.2835ms)
+apps/api test: ✔ explicit historical dates are permitted and visibly marked (8.7307ms)
+apps/api test: ✔ hallucinated city evidence cannot satisfy the city-level MVT (8.8855ms)
+apps/api test: ✔ country-level destination and missing dates produce batched questions (1.1498ms)
+apps/api test: ✔ a trip-wide country is kept as the area while specific cities become stops (9.4653ms)
+apps/api test: ✔ destination day allocations produce a shared-transfer schedule with visible uncertainty (7.3587ms)
+apps/api test: ✔ destination night allocations produce exact adjacent stays without a clarification (6.7779ms)
+apps/api test: ✔ exact destination nights derive a missing trip end and contiguous stays (4.6956ms)
+apps/api test: ✔ individual day counts do not derive a missing trip end (4.507ms)
+apps/api test: ✔ ambiguous or incomplete destination nights do not derive a missing trip end (6.8595ms)
+apps/api test: ✔ trip boundary autofill is reflected in destination field provenance (6.538ms)
+apps/api test: ✔ invalid or inconsistent destination dates are not overwritten by trip boundaries (26.2153ms)
+apps/api test: ✔ yearless destination dates are anchored inside a far-future trip range (21.398ms)
+apps/api test: ✔ yearless destination dates anchor across December and January (20.2506ms)
+apps/api test: ✔ reversed destination dates are cleared before persistence (19.9778ms)
+apps/api test: ✔ large drafts keep blocking clarifications while bounding optional questions (266.6851ms)
+apps/api test: ✔ a duration-derived historical boundary remains blocking (4.5049ms)
+apps/api test: ✔ issues only a short-lived credential with the exact live model and minimum delay (44.0366ms)
+apps/api test: ✔ rejects foreign origins, invalid context/language and missing configuration before spending (24.8293ms)
+apps/api test: ✔ provider failures never disclose the provider body or key and retries are bounded (23.1292ms)
+apps/api test: ℹ tests 82
+apps/api test: ℹ suites 0
+apps/api test: ℹ pass 81
+apps/api test: ℹ fail 0
+apps/api test: ℹ cancelled 0
+apps/api test: ℹ skipped 1
+apps/api test: ℹ todo 0
+apps/api test: ℹ duration_ms 9511.1219
+apps/api test: Done
+$ pnpm -r --filter @tripdock/api --filter @tripdock/web lint
+Scope: 2 of 3 workspace projects
+apps/api lint$ eslint . --ignore-pattern dist
+apps/web lint$ eslint . --ignore-pattern dist --ignore-pattern .next
+apps/api lint: Done
+apps/web lint: Done
+$ pnpm -r --filter @tripdock/api --filter @tripdock/web typecheck
+Scope: 2 of 3 workspace projects
+apps/api typecheck$ tsc --noEmit --incremental false
+apps/web typecheck$ tsc --noEmit --incremental false
+apps/api typecheck: Done
+apps/web typecheck: Done
+$ pnpm -r --filter @tripdock/api --filter @tripdock/web build
+Scope: 2 of 3 workspace projects
+apps/api build$ tsc -p tsconfig.build.json
+apps/web build$ vinext build
+apps/web build:   vinext build  (Vite 8.2.2)
+apps/web build: [1/5] analyze client references...
+apps/web build: transforming...
+apps/web build: ✓ 241 modules transformed.
+apps/web build: rendering chunks...
+apps/web build: ✓ built in 819ms
+apps/web build: [2/5] analyze server references...
+apps/web build: transforming...
+apps/api build: Done
+apps/web build: ✓ 138 modules transformed.
+apps/web build: rendering chunks...
+apps/web build: ✓ built in 318ms
+apps/web build: [3/5] build rsc environment...
+apps/web build: transforming...
+apps/web build: ✓ 233 modules transformed.
+apps/web build: rendering chunks...
+apps/web build: computing gzip size...
+apps/web build: ✓ built in 643ms
+apps/web build: [4/5] build client environment...
+apps/web build: transforming...
+apps/web build: ✓ 182 modules transformed.
+apps/web build: rendering chunks...
+apps/web build: computing gzip size...
+apps/web build: ✓ built in 442ms
+apps/web build: [5/5] build ssr environment...
+apps/web build: transforming...
+apps/web build: ✓ 144 modules transformed.
+apps/web build: rendering chunks...
+apps/web build: computing gzip size...
+apps/web build: ✓ built in 485ms
+apps/web build: [0m
+apps/web build:   Route (app)
+apps/web build:   ─ ? /
+apps/web build:   ? Unknown
+apps/web build:   ? Some routes could not be classified. vinext currently uses static analysis
+apps/web build:     and cannot detect dynamic API usage (headers(), cookies(), etc.) at build time.
+apps/web build:     Automatic classification will be improved in a future release.
+apps/web build:   Build complete. Run `vinext start` to start the production server.
+apps/web build: Done

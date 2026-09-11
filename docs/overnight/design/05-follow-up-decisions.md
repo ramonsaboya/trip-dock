@@ -18,11 +18,11 @@ Before enabling structural changes, decide and test:
 
 Do not silently shift or delete dependent records to make an edit fit. Existing activity, stay and transport editing is not being redesigned by this decision.
 
-The implementation scope for overall trip-date editing is being clarified separately: the existing Edit trip dialog exposes overall dates as well as the trip name. This distinction matters because changing overall dates can affect the same dependent records. Do not claim that the current UI enforces a complete date freeze until the corresponding controls have been addressed.
+Confirmed follow-up: lock all trip-level details after creation, including the trip name and overall dates. Remove Edit trip for now. This completes the structural-editing deferral; creation drafts remain editable, and activities, stays, transport and packing retain their existing workflows.
 
 ### Current enforcement
 
-Calendar destination headings are now text, with no edit action or saved-destination editor mounted by TripDetail. Creation fields stay editable. This is a product-UI restriction, not a new backend immutability guarantee: existing stop mutation contracts and the unused StopEditor module remain for separate coordinated consideration. Overall trip dates remain as before pending the scope clarification above.
+Calendar destination headings are text, and TripDetail mounts neither the saved-destination editor nor the trip editor. The Edit trip action is absent. Creation fields stay editable. This is a product-UI restriction, not a new backend immutability guarantee: existing trip/stop mutation contracts and the unused editor modules remain for separate coordinated consideration.
 
 ## Accessibility: revisit as a whole
 
@@ -43,3 +43,7 @@ Keep this follow-up on the isolated design branch. Frontend and backend tasks we
 ## Verification of the destination-only follow-up
 
 `pnpm check` passed: 108 web tests, 81 API tests, one optional PostgreSQL test skipped, lint, typechecks and both builds. All seven browser flows passed, including 320/390/768 px checks that the destination label remains visible and has no edit button. The 390 px browser-harness screenshot was visually inspected. See [gate output](follow-up-check.txt) and [browser output](follow-up-browser-tests.txt). This follow-up used the available Node 24.21.0 runtime; pinned Node 22.23.2 verification remains outstanding. No database or live provider calls were needed for this UI restriction.
+
+## Complete trip-level lock verification
+
+The subsequent confirmation also removes trip-name and overall-date editing. The browser regression now verifies absence of Edit trip, unchanged saved details after reload, and only the create mutation. Nested date-picker Escape and focus restoration remain covered through Add activity. All seven browser flows pass; the mobile screenshot was inspected. Final gate output is in [locked-trip-check.txt](locked-trip-check.txt), with browser output in [locked-trip-browser-tests.txt](locked-trip-browser-tests.txt). The same runtime limitation applies. No other worktree or backend contract was changed.
