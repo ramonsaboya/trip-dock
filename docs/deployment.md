@@ -52,7 +52,7 @@ the container build. The existing local preview profile remains the default.
 
    ```sh
    docker build --target verify -f docker/Dockerfile .
-   docker compose --env-file deployment/.env -f compose.production.yaml build --parallel=false
+   docker compose --parallel 1 --env-file deployment/.env -f compose.production.yaml build
    docker compose --env-file deployment/.env -f compose.production.yaml up -d --wait postgres api web
    ```
 

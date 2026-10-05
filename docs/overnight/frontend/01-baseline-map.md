@@ -4,7 +4,7 @@
 
 TripDock is a single-route React application rendered through Vinext's App Router integration. [page.tsx](../../../apps/web/app/page.tsx) renders `TripDockApp`. [layout.tsx](../../../apps/web/app/layout.tsx) supplies metadata, icons, the dark-first theme bootstrap, global styles and the document shell. Neither entry loads trip data on the server. The client queries the existing GraphQL API after mounting.
 
-[vite.config.ts](../../../apps/web/vite.config.ts) combines Vinext, the Sites plugin, Tailwind's PostCSS plugin and Cloudflare's RSC environment. The checked-in Sites metadata is prototype lineage, not a decision to deploy the PostgreSQL product. [ADR 0001](../../decisions/0001-local-first-development-with-live-openai.md) explicitly leaves the runtime/provider decision open.
+[vite.config.ts](../../../apps/web/vite.config.ts) combines Vinext, the Sites plugin, Tailwind's PostCSS plugin and Cloudflare's RSC environment for local previews. `TRIPDOCK_WEB_RUNTIME=node` selects the container build and omits the Sites/Workers plugins. The checked-in Sites metadata remains prototype lineage. The owner-requested personal DigitalOcean installation and runtime settings are recorded in [deployment and recovery](../../deployment.md).
 
 Navigation is a hash subscription in [packing-navigation.ts](../../../apps/web/lib/packing-navigation.ts): `#trip/<uuid>/schedule` and `#trip/<uuid>/packing`, plus legacy packing links. The selected trip is derived from that ID and the accepted collection. It is not a second mutable copy of the record. The file's historical packing name understates its application-wide responsibility; renaming it was deferred to avoid unnecessary downstream import changes.
 
