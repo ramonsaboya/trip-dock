@@ -6,6 +6,7 @@ loadEnv({ path: fileURLToPath(new URL('../../../.env', import.meta.url)), quiet:
 export type RuntimeConfig = {
   databaseUrl: string;
   apiPort: number;
+  apiHost: string;
   webOrigin: string;
   openAiApiKey: string;
   openAiModel: string;
@@ -27,6 +28,7 @@ export function readRuntimeConfig(): RuntimeConfig {
       process.env.DATABASE_URL ??
       'postgresql://tripdock:tripdock@127.0.0.1:5432/tripdock',
     apiPort,
+    apiHost: process.env.API_HOST ?? '127.0.0.1',
     webOrigin: parsedOrigin.origin,
     openAiApiKey: process.env.OPENAI_API_KEY ?? '',
     openAiModel: process.env.OPENAI_MODEL ?? '',

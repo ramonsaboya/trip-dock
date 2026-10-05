@@ -24,8 +24,8 @@ const server = createServer((req, res) => {
   else void yoga(req, res);
 });
 
-server.listen(config.apiPort, '127.0.0.1', () => {
-  console.log(`TripDock API ready at http://127.0.0.1:${config.apiPort}/graphql`);
+server.listen(config.apiPort, config.apiHost, () => {
+  console.log(`TripDock API ready at http://${config.apiHost}:${config.apiPort}/graphql`);
 });
 
 async function shutdown(signal: string) {

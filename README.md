@@ -36,7 +36,7 @@ pnpm dev
 
 On PowerShell, use `Copy-Item .env.example .env` instead of `cp`.
 
-Open [http://localhost:3000](http://localhost:3000). The GraphQL endpoint is [http://127.0.0.1:4000/graphql](http://127.0.0.1:4000/graphql); GraphiQL is enabled only in development. Both servers bind locally, and the API permits the exact `WEB_ORIGIN` configured in `.env`.
+Open [http://localhost:3000](http://localhost:3000). The GraphQL endpoint is [http://127.0.0.1:4000/graphql](http://127.0.0.1:4000/graphql); GraphiQL is enabled only in development. Both servers bind locally by default, and the API permits the exact `WEB_ORIGIN` configured in `.env`.
 
 The Compose service initializes two empty databases on a fresh volume:
 
@@ -122,11 +122,11 @@ The deterministic brand generator is `scripts/generate-brand-assets.py`. It requ
 
 ## Current limitations
 
-- This is intentionally local-only: no deployment, authentication, authorization, collaboration, or multi-user concurrency beyond optimistic revision protection.
+- No application authentication, authorization or collaboration; shared editing uses optimistic revision protection. The owner-requested personal Droplet installation is publicly accessible.
 - Voice dictation uses GPT Live Transcribe in its fastest mode and requires server-only OpenAI API access plus browser microphone/WebRTC support. Spoken AI responses remain out of scope. See [dictation setup, cost, and verification](docs/voice-dictation.md).
 - WhatsApp, booking providers, uploads, background workers, notifications, and AI changes to existing trips are out of scope.
 - Live model compatibility uses `pnpm test:ai-live`; trip-creation quality uses `pnpm test:ai-eval`. Deterministic tests do not spend API credits.
-- Production hosting and infrastructure providers remain undecided.
+- The personal installation uses Docker on the existing DigitalOcean Droplet with Nginx and Cloudflare DNS. See [deployment and recovery](docs/deployment.md).
 
 The detailed slice contract is recorded in [docs/prototype-v0.md](docs/prototype-v0.md). The local-first/OpenAI boundary is recorded in [ADR 0001](docs/decisions/0001-local-first-development-with-live-openai.md).
 
