@@ -1,0 +1,121 @@
+name: CI and delivery
+
+on:
+  push:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify and package
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: postgres:17.6-alpine
+        env:
+          POSTGRES_USER: tripdock
+          POSTGRES_PASSWORD: ci-only-password
+          POSTGRES_DB: tripdock_test
+        ports: [5432:5432]
+        options: >-
+          --health-cmd "pg_isready -U tripdock -d tripdock_test"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      CI: "true"
+      TRIPDOCK_WEB_RUNTIME: node
+      TEST_DATABASE_URL: postgresql://tripdock:ci-only-password@127.0.0.1:5432/tripdock_test
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+      - name: Install pinned pnpm and dependencies
+        run: |
+          npm install --global pnpm@11.19.0
+          pnpm install --frozen-lockfile
+      - name: Deterministic tests, lint, types and builds
+        run: pnpm check
+      - name: PostgreSQL migrations and integration tests
+        run: pnpm test:postgres
+      - name: Install browser
+        run: pnpm --filter @tripdock/web exec playwright install --with-deps chrome
+      - name: Browser interactions
+        run: pnpm --filter @tripdock/web test:browser
+      - name: Build immutable production images
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        env:
+          PUBLIC_ORIGIN: https://tripdock.saboya.net
+        run: |
+          docker build --target api -f docker/Dockerfile -t "tripdock-api:$GITHUB_SHA" .
+          docker build --target web -f docker/Dockerfile --build-arg "PUBLIC_ORIGIN=$PUBLIC_ORIGIN" -t "tripdock-web:$GITHUB_SHA" .
+          docker save "tripdock-api:$GITHUB_SHA" "tripdock-web:$GITHUB_SHA" | gzip > images.tar.gz
+          git archive --format=tar.gz --output=source.tar.gz "$GITHUB_SHA"
+      - name: Store release
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ github.sha }}
+          path: |
+            images.tar.gz
+            source.tar.gz
+          compression-level: 0
+          retention-days: 7
+
+  deploy:
+    name: Deploy production
+    needs: verify
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment:
+      name: production
+      url: https://tripdock.saboya.net
+    concurrency:
+      group: tripdock-production
+      cancel-in-progress: false
+    env:
+      DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+      DEPLOY_USER: ${{ vars.DEPLOY_USER }}
+      DEPLOY_PORT: ${{ vars.DEPLOY_PORT || '22' }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-${{ github.sha }}
+      - name: Configure SSH
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          set -eu
+          test -n "$DEPLOY_HOST" && test -n "$DEPLOY_USER"
+          test -n "$DEPLOY_SSH_KEY" && test -n "$DEPLOY_KNOWN_HOSTS"
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+      - name: Transfer and deploy exact release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          # A slow older run must not replace a newer main release.
+          latest=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)
+          if [ "$latest" != "$GITHUB_SHA" ]; then
+            echo "Skipping superseded release $GITHUB_SHA"
+            exit 0
+          fi
+          destination="$DEPLOY_USER@$DEPLOY_HOST"
+          release="/srv/tripdock-releases/$GITHUB_SHA"
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -p "$DEPLOY_PORT" "$destination" "umask 077; mkdir -p '$release'"
+          scp -o BatchMode=yes -o StrictHostKeyChecking=yes -P "$DEPLOY_PORT" source.tar.gz images.tar.gz "$destination:$release/"
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -p "$DEPLOY_PORT" "$destination" "set -eu; cd '$release'; tar -xzf source.tar.gz; bash deployment/deploy.sh '$GITHUB_SHA'"
+      - name: Remove runner SSH credentials
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519 ~/.ssh/known_hosts

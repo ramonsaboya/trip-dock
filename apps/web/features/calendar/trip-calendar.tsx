@@ -1,12 +1,12 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState, type DragEvent, type PointerEvent } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent, type PointerEvent } from 'react';
 import { activityAssignment, activityMoveInput, calendarHours } from '../../lib/activity-planning';
 import { createCalendarInteractions } from '../../lib/calendar-interactions';
 import { calendarColumnRuns, calendarDayWindow } from '../../lib/calendar-window';
 import { graphqlRequest } from '../../lib/graphql/request';
-import { calendarColumns, calendarEventIndex, calendarHalfHours, calendarPaperResolver, calendarStartHour, calendarTransition, dragStartMinute, resizeStart, slotHeight, stayCoversDay, timeMinutes, transportLocalTime, transportMoveInput, transportPlacement, tripRoutes } from '../../lib/trip-calendar';
-import { dateTimeLocalToIso, formatDateTime } from '../../lib/trips/dates';
+import { calendarColumns, calendarEventIndex, calendarHalfHours, calendarPaperResolver, calendarStartHour, calendarTransition, dragStartMinute, resizeStart, slotHeight as defaultSlotHeight, stayCoversDay, timeMinutes, transportLocalTime, transportMoveInput, transportPlacement, tripRoutes } from '../../lib/trip-calendar';
+import { dateTimeLocalToIso, formatDateTime, isoToDateTimeLocal } from '../../lib/trips/dates';
 import { operations } from '../../lib/trips/operations';
 import { sortStopsByDate } from '../../lib/trips/stops';
 import { type Activity, type Stay, type TransportLeg, type Trip, type TripStop } from '../../lib/trips/types';
@@ -23,6 +23,15 @@ export const transportDragType = 'application/tripdock-transport';
 
 export const dateLabel = (day: string) => new Date(`${day}T12:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
 
+const compactDateLabel = (day: string) => `${new Date(`${day}T12:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', timeZone: 'UTC' })} ${day.slice(8, 10)}/${day.slice(5, 7)}`;
+
+function calendarTimeRange(leg: TransportLeg) {
+  const start = isoToDateTimeLocal(leg.departureTime, leg.timezone);
+  const end = isoToDateTimeLocal(leg.arrivalTime, leg.timezone);
+  if (!start || !end) return 'Time to confirm';
+  return `${start.slice(11, 16)}–${end.slice(11, 16)}${start.slice(0, 10) !== end.slice(0, 10) ? ` (${end.slice(8, 10)}/${end.slice(5, 7)})` : ''}`;
+}
+
 export function TripCalendar({ trip, onChanged, onActivity, onStay, onTransport, onRemove }: {
   trip: Trip; onChanged: (trip: Trip) => void;
   onActivity: (activity?: Activity, stopId?: string, scheduledLocal?: string) => void;
@@ -34,6 +43,14 @@ export function TripCalendar({ trip, onChanged, onActivity, onStay, onTransport,
   const stops = useMemo(() => sortStopsByDate(trip.stops), [trip.stops]);
   const routes = useMemo(() => tripRoutes(trip), [trip]);
   const visible = columns;
+  const [zoom, setZoom] = useState(100);
+  const [resetView, setResetView] = useState(0);
+  const [calendarFits, setCalendarFits] = useState(false);
+  const [compactDates, setCompactDates] = useState<string[]>([]);
+  const [minimumSlotHeight, setMinimumSlotHeight] = useState(0);
+  const slotHeight = Math.max(defaultSlotHeight * zoom / 100, minimumSlotHeight);
+  const previousZoom = useRef(zoom);
+  const previousSlotHeight = useRef(slotHeight);
   const [windowRange, setWindowRange] = useState({ start: 0, end: 14, pinned: -1 });
   const [busy, setBusy] = useState(false);
   const moving = useRef(false);
@@ -45,6 +62,16 @@ export function TripCalendar({ trip, onChanged, onActivity, onStay, onTransport,
     feedback.drop(key === 'pool' ? key : key.slice(0, 10), key && key !== 'pool' ? timeMinutes(key.slice(11)) : 0, dragged.current?.minutes ?? 0);
   }
   const viewport = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const board = viewport.current;
+    if (board && previousZoom.current !== zoom) {
+      const ratio = zoom / previousZoom.current;
+      board.scrollLeft *= ratio;
+      board.scrollTop *= slotHeight / previousSlotHeight.current;
+    }
+    previousZoom.current = zoom;
+    previousSlotHeight.current = slotHeight;
+  }, [zoom, slotHeight]);
   const panning = useRef(false);
   function setPanning(value: boolean) { panning.current = value; viewport.current?.classList.toggle('is-panning', value); }
   const setSelectedCell = feedback.select;
@@ -109,7 +136,9 @@ export function TripCalendar({ trip, onChanged, onActivity, onStay, onTransport,
   useEffect(() => {
     const board = viewport.current;
     const headings = header.current;
-    if (!board || !headings) return;
+    const table = board?.querySelector('table');
+    if (!board || !headings || !table) return;
+    const textMeasure = document.createElement('canvas').getContext('2d');
     let frame: number | null = null;
     const update = () => {
       frame = null;
@@ -118,7 +147,17 @@ export function TripCalendar({ trip, onChanged, onActivity, onStay, onTransport,
       const width = firstDestination ? Math.max(0, firstDestination.getBoundingClientRect().left - boardRect.left - 1) : 0;
       const height = headings.rows[2] ? Math.max(0, headings.rows[2].getBoundingClientRect().top - boardRect.top - 1) : 0;
       const dayWidth = headings.rows[2]?.cells[1]?.getBoundingClientRect().width ?? 220;
+      const narrowDates = Array.from(headings.rows[2]?.cells ?? []).flatMap((cell) => {
+        const day = cell.dataset.day;
+        const label = cell.querySelector('span');
+        if (!day || !label || !textMeasure) return [];
+        textMeasure.font = getComputedStyle(label).font;
+        return textMeasure.measureText(dateLabel(day)).width > cell.clientWidth - 12 ? [day] : [];
+      });
+      setCompactDates((previous) => previous.join() === narrowDates.join() ? previous : narrowDates);
       const range = calendarDayWindow(columns.length, board.scrollLeft, board.clientWidth, dayWidth);
+      setMinimumSlotHeight(Math.max(0, board.clientHeight - headings.offsetHeight) / calendarHalfHours.length);
+      setCalendarFits(table.scrollWidth <= board.clientWidth + 1 && table.offsetHeight <= board.clientHeight + 1);
       const focused = document.activeElement?.closest<HTMLElement>('td[data-day]')?.dataset.day;
       const pinned = columns.findIndex(({ day }) => day === (dragged.current?.day ?? focused));
       board.style.setProperty('--notch-width', width + 'px');
@@ -136,18 +175,30 @@ export function TripCalendar({ trip, onChanged, onActivity, onStay, onTransport,
       schedule();
     };
     update(); board.addEventListener('scroll', scroll, { passive: true });
-    const observer = new ResizeObserver(schedule); observer.observe(headings); observer.observe(board);
+    const observer = new ResizeObserver(schedule); observer.observe(headings); observer.observe(board); observer.observe(table);
     return () => { if (frame !== null) cancelAnimationFrame(frame); board.removeEventListener('scroll', scroll); observer.disconnect(); };
-  }, [columns, feedback]);
+  }, [columns, feedback, zoom]);
   const bodyRuns = useMemo(() => calendarColumnRuns(columns.length, windowRange.start, windowRange.end, [windowRange.pinned]), [columns.length, windowRange]);
   const firstHour = useMemo(() => calendarStartHour(trip, columns.map((column) => column.day)), [trip, columns]);
   const firstDate = visible[0]?.day;
   const lastDate = visible.at(-1)?.day;
-  useEffect(() => {
-    const board = viewport.current;
-    const morning = board?.querySelector<HTMLElement>(`[data-hour="${firstHour}"]`);
-    if (board && morning) board.scrollTop += morning.getBoundingClientRect().top - board.getBoundingClientRect().top - (header.current?.offsetHeight ?? 180);
-  }, [firstHour, firstDate, lastDate, trip.id]);
+  useLayoutEffect(() => {
+    let frame: number;
+    const restore = () => {
+      const board = viewport.current;
+      const morning = board?.querySelector<HTMLElement>(`[data-hour="${firstHour}"]`);
+      if (board && morning) {
+        if ((morning.closest('tr')?.getBoundingClientRect().height ?? 0) < previousSlotHeight.current * 2 - 1) {
+          frame = requestAnimationFrame(restore);
+          return;
+        }
+        board.scrollLeft = 0;
+        board.scrollTop += morning.getBoundingClientRect().top - board.getBoundingClientRect().top - (header.current?.offsetHeight ?? 180) - board.clientTop;
+      }
+    };
+    frame = requestAnimationFrame(restore);
+    return () => cancelAnimationFrame(frame);
+  }, [firstHour, firstDate, lastDate, trip.id, resetView]);
   const eventIndex = useMemo(() => calendarEventIndex(trip), [trip]);
   const { unplacedActivities, unplacedTransport } = eventIndex;
   const unplacedStays = useMemo(() => trip.stays.filter((stay) => !columns.some((column) => stayCoversDay(stay, column.day, stops))), [trip.stays, columns, stops]);
@@ -240,13 +291,13 @@ export function TripCalendar({ trip, onChanged, onActivity, onStay, onTransport,
   function resizeHandle(key: string, minutes: number, max: number, activity?: Activity, leg?: TransportLeg, route?: ReturnType<typeof tripRoutes>[number]) {
     const start = activity ? timeMinutes(activityAssignment(activity)?.time ?? '00:00') : leg ? timeMinutes(transportLocalTime(leg)) : 600;
     const original = activity?.durationMinutes ?? (leg?.departureTime && leg.arrivalTime ? (new Date(leg.arrivalTime).getTime() - new Date(leg.departureTime).getTime()) / 60000 : 120);
-    return <>{(['top', 'bottom'] as const).map((edge) => <DurationHandle key={edge} edge={edge} minutes={minutes} max={edge === 'top' ? start + original : max} disabled={busy} onPreview={(value) => { clearSelection(); setResizeEdges((current) => ({ ...current, [key]: edge })); setDurations((current) => ({ ...current, [key]: value })); if (!activity) setPaperPreview({ [key]: { minutes: value, edge } }); }} onCancel={() => clearResize(key)} onCommit={(value) => void saveDuration(key, value, activity, leg, route, edge)} />)}</>;
+    return <>{(['top', 'bottom'] as const).map((edge) => <DurationHandle key={edge} edge={edge} slotHeight={slotHeight} minutes={minutes} max={edge === 'top' ? start + original : max} disabled={busy} onPreview={(value) => { clearSelection(); setResizeEdges((current) => ({ ...current, [key]: edge })); setDurations((current) => ({ ...current, [key]: value })); if (!activity) setPaperPreview({ [key]: { minutes: value, edge } }); }} onCancel={() => clearResize(key)} onCommit={(value) => void saveDuration(key, value, activity, leg, route, edge)} />)}</>;
   }
   function activityNote(activity: Activity) {
     const assignment = eventIndex.assignments.get(activity.id);
     const minutes = durations[activity.id] ?? activity.durationMinutes ?? 60;
-    return <article className={`calendar-note note-${activity.status.toLowerCase()}`} style={assignment ? { marginTop: timeMinutes(assignment.time) % 60 / 30 * slotHeight, height: minutes / 30 * slotHeight, transform: resizeEdges[activity.id] === 'top' ? `translateY(${((activity.durationMinutes ?? 60) - minutes) / 30 * slotHeight}px)` : undefined } : undefined} onPointerDown={(event) => event.stopPropagation()} key={activity.id} draggable={!busy} onDragEnd={endCardDrag} onDragStart={(event) => startCardDrag(event, minutes, dragType, activity.id)}>
-      <button className="record-main" draggable={!busy} type="button" disabled={busy} onClick={() => onActivity(activity)}><strong>{activity.title}</strong><span className="note-meta">{statuses[activity.status]}</span></button>
+    return <article className={`calendar-note note-${activity.status.toLowerCase()}`} data-compact={assignment && minutes / 30 * slotHeight < 64 ? true : undefined} style={assignment ? { marginTop: timeMinutes(assignment.time) % 60 / 30 * slotHeight, height: minutes / 30 * slotHeight, transform: resizeEdges[activity.id] === 'top' ? `translateY(${((activity.durationMinutes ?? 60) - minutes) / 30 * slotHeight}px)` : undefined } : undefined} onPointerDown={(event) => event.stopPropagation()} key={activity.id} draggable={!busy} onDragEnd={endCardDrag} onDragStart={(event) => startCardDrag(event, minutes, dragType, activity.id)}>
+      <button className="record-main" draggable={!busy} type="button" disabled={busy} aria-label={`${activity.title} · ${statuses[activity.status]}`} onClick={() => onActivity(activity)}><strong title={activity.title}>{activity.title}</strong>{assignment ? <small className="calendar-card-time">{assignment.time}</small> : null}<span className="note-meta">{statuses[activity.status]}</span></button>
       <div className="note-actions"><button className="button-text button-danger" type="button" disabled={busy} aria-label={`Remove ${activity.title}`} onClick={() => onRemove('activity', activity.id)}>×</button></div>{assignment ? resizeHandle(activity.id, minutes, 1440 - timeMinutes(assignment.time), activity) : null}
     </article>;
   }
@@ -256,7 +307,7 @@ export function TripCalendar({ trip, onChanged, onActivity, onStay, onTransport,
     const from = stops.find((stop) => stop.id === leg.fromStopId)?.name ?? leg.fromLocation;
     const to = stops.find((stop) => stop.id === leg.toStopId)?.name ?? leg.toLocation;
     return <article className="journey-note" style={{ marginTop: timeMinutes(transportLocalTime(leg)) % 60 / 30 * slotHeight, height: Math.min(minutes, 1440 - timeMinutes(transportLocalTime(leg))) / 30 * slotHeight, transform: resizeEdges[leg.id] === 'top' ? `translateY(${((leg.departureTime && leg.arrivalTime ? (new Date(leg.arrivalTime).getTime() - new Date(leg.departureTime).getTime()) / 60000 : 120) - minutes) / 30 * slotHeight}px)` : undefined }} key={leg.id} draggable={!busy} onPointerDown={(event) => event.stopPropagation()} onDragEnd={endCardDrag} onDragStart={(event) => startCardDrag(event, minutes, transportDragType, leg.id)}>
-      <button type="button" draggable={!busy} className="record-main" onClick={() => onTransport(leg)}><span className="journey-note-mode">↗ {leg.mode}</span><strong>{leg.title}</strong><span>{from} → {to}</span><small>{placement.suggested ? '10 a.m.–12 p.m. placeholder · time to confirm' : `${formatDateTime(leg.departureTime, leg.timezone)} → ${formatDateTime(leg.arrivalTime, leg.timezone)}`}</small></button>
+      <button type="button" draggable={!busy} className="record-main" onClick={() => onTransport(leg)}><strong title={leg.title}>{leg.title}</strong><small className="calendar-card-time" title={placement.suggested ? 'Time to confirm' : `${formatDateTime(leg.departureTime, leg.timezone)} → ${formatDateTime(leg.arrivalTime, leg.timezone)}`}>{placement.suggested ? '10:00–12:00 · Confirm' : calendarTimeRange(leg)}</small><span className="calendar-card-detail" title={`${from} → ${to}`}>{from} → {to}</span><span className="journey-note-mode calendar-card-detail">↗ {leg.mode}</span></button>
       <div className="journey-note-actions"><button type="button" className="button-text button-danger" aria-label={`Remove ${leg.title}`} onClick={() => onRemove('transport', leg.id)}>×</button></div>{resizeHandle(leg.id, minutes, 1440 - timeMinutes(transportLocalTime(leg)), undefined, leg)}
     </article>;
   }
@@ -308,22 +359,32 @@ export function TripCalendar({ trip, onChanged, onActivity, onStay, onTransport,
       </CalendarPool>
       <div className="calendar-surface">
       <div className="trip-calendar-scroll" ref={viewport} onPointerDown={startPan} onPointerMove={movePan} onPointerUp={endPan} onPointerCancel={endPan} onLostPointerCapture={endPan} tabIndex={0} role="region" aria-label="Itinerary by date">
-        <table className="trip-calendar-table"><colgroup><col style={{ width: 62 }} />{visible.flatMap((column) => [<col key={column.day + "-am"} />, <col key={column.day + "-pm"} />])}</colgroup>
+        <table className="trip-calendar-table" style={{ '--calendar-zoom': zoom / 100, '--calendar-days': columns.length, '--calendar-hour-height': `${slotHeight * 2}px` } as CSSProperties}><colgroup><col style={{ width: 62 }} />{visible.flatMap((column) => [<col key={column.day + "-am"} />, <col key={column.day + "-pm"} />])}</colgroup>
           <thead ref={header}>
             <tr className="destination-band"><th className="calendar-blank-corner" aria-hidden="true" />{bands.map((band, index) => <th key={`${band.key}-${index}`} colSpan={band.span} className={`destination-tint-${band.color}`} scope="colgroup"><div className="calendar-band-controls">{band.destinations.length ? band.destinations.map((stop, stopIndex) => <span key={stop.id}>{stopIndex ? <span className="shared-place-divider"> / </span> : null}<span className="calendar-destination-label"><span>{String(stops.findIndex((item) => item.id === stop.id) + 1).padStart(2, '0')}</span> {stop.name}</span></span>) : 'Dates open'}</div></th>)}</tr>
             <tr className="calendar-stay-row"><td className="calendar-blank-corner" aria-hidden="true" />{bands.map((band, index) => <td key={band.key + index} colSpan={band.span}><div className="calendar-band-controls"><div className="calendar-stay-items">{trip.stays.filter((stay) => band.destinations.some((stop) => stop.id === stay.stopId)).map(stayButton)}</div>{band.destinations.map((stop) => <button key={stop.id} type="button" className="calendar-add-stay" onClick={() => onStay(undefined, stop.id)}>+ Stay</button>)}</div></td>)}</tr>
-            <tr className="calendar-date-row"><th scope="row">Date</th>{visible.map((column) => <th scope="col" data-day={column.day} colSpan={2} key={column.day} className={`destination-tint-${column.color}`}>{labels.get(column.day)}</th>)}</tr>
+            <tr className="calendar-date-row"><th scope="row">Date</th>{visible.map((column) => <th scope="col" data-day={column.day} colSpan={2} key={column.day} className={`destination-tint-${column.color}`}><span title={labels.get(column.day)}>{compactDates.includes(column.day) ? compactDateLabel(column.day) : labels.get(column.day)}</span></th>)}</tr>
 
           </thead>
           <tbody>
 
             {calendarHours.map((hour) => <tr key={hour} data-calendar-hour={hour}><th scope="row" data-hour={hour}>{hour}</th>{bodyRuns.map((run) => { if (run.spacer) return <td key={'spacer-' + run.index} colSpan={run.span * 2} aria-hidden="true" className="calendar-column-spacer" />; const column = columns[run.index]!; const { destination, tint, slices } = papers.get(column.day + '-' + hour)!; const hasPlaceholder = (timeMinutes(hour) >= 600 && timeMinutes(hour) < 720) && Boolean(eventIndex.placeholders.get(column.day)?.length); return <CalendarCell feedback={feedback} cellKey={column.day + '-' + hour} onAdd={(time) => { if (!suppressClick.current) onActivity(undefined, destination?.id ?? column.destinations[0]?.id, `${column.day}T${time}`); }} data-day={column.day} colSpan={2} key={column.day} className={`trip-calendar-hour destination-tint-${tint} ${hasPlaceholder ? 'has-placeholder' : ''} ${hasPlaceholder && hour === '10:00' ? 'placeholder-origin' : ''}`} onPointerLeave={() => { clearSelection(); hover('', ''); }} tabIndex={0} onClick={(event) => { if (!suppressClick.current && !(event.target as HTMLElement).closest('button, article')) setSelectedCell(`${column.day}-${pointerTime(event.clientY, hour)}`); }} onKeyDown={(event) => { if (event.key === 'Escape') clearSelection(); if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); setSelectedCell(`${column.day}-${hour}`); } }} onDragOver={(event) => dragOver(event, `${column.day}-${hour}`)} onDrop={(event) => void drop(event, column.destination?.id, column.day, hour)} aria-label={`${labels.get(column.day)} at ${hour}${column.destination ? ` in ${column.destination.name}` : ''}`}>
               <HourPaper slices={slices} stops={stops} />
-              <div className="journey-options">{(eventIndex.transport.get(column.day + '-' + hour) ?? []).map(transportNote)}{hour === '10:00' ? (eventIndex.placeholders.get(column.day) ?? []).map((route) => <article key={`${route.fromStopId}-${route.toStopId}`} className="plan-journey journey-placeholder journey-continuous" draggable={!busy} onDragEnd={endCardDrag} onDragStart={(event) => startCardDrag(event, durations[`${route.fromStopId}-${route.toStopId}`] ?? 120, transportDragType, 'placeholder', route)} style={{ height: (durations[`${route.fromStopId}-${route.toStopId}`] ?? 120) / 30 * slotHeight, transform: resizeEdges[`${route.fromStopId}-${route.toStopId}`] === 'top' ? `translateY(${(120 - (durations[`${route.fromStopId}-${route.toStopId}`] ?? 120)) / 30 * slotHeight}px)` : undefined }} ><button type="button" className="record-main" onClick={() => onTransport(undefined, route.fromStopId, route.toStopId)}>↗ {route.label}<strong>10 a.m.–12 p.m.</strong><small>Click to plan transport</small></button>{resizeHandle(`${route.fromStopId}-${route.toStopId}`, durations[`${route.fromStopId}-${route.toStopId}`] ?? 120, 840, undefined, undefined, route)}</article>) : null}</div>
+              <div className="journey-options">{(eventIndex.transport.get(column.day + '-' + hour) ?? []).map(transportNote)}{hour === '10:00' ? (eventIndex.placeholders.get(column.day) ?? []).map((route) => <article key={`${route.fromStopId}-${route.toStopId}`} className="plan-journey journey-placeholder journey-continuous" draggable={!busy} onDragEnd={endCardDrag} onDragStart={(event) => startCardDrag(event, durations[`${route.fromStopId}-${route.toStopId}`] ?? 120, transportDragType, 'placeholder', route)} style={{ height: (durations[`${route.fromStopId}-${route.toStopId}`] ?? 120) / 30 * slotHeight, transform: resizeEdges[`${route.fromStopId}-${route.toStopId}`] === 'top' ? `translateY(${(120 - (durations[`${route.fromStopId}-${route.toStopId}`] ?? 120)) / 30 * slotHeight}px)` : undefined }} ><button type="button" className="record-main" onClick={() => onTransport(undefined, route.fromStopId, route.toStopId)}><strong title={route.label}>{route.label}</strong><small className="calendar-card-time">10:00–12:00</small><small className="calendar-card-detail">Plan transport</small></button>{resizeHandle(`${route.fromStopId}-${route.toStopId}`, durations[`${route.fromStopId}-${route.toStopId}`] ?? 120, 840, undefined, undefined, route)}</article>) : null}</div>
               <div className="calendar-activity-notes">{(eventIndex.activities.get(column.day + '-' + hour) ?? []).map(activityNote)}</div>
             </CalendarCell>; })}</tr>)}
           </tbody>
         </table>
+      </div>
+      <div className="calendar-zoom-controls" role="group" aria-label="Calendar zoom">
+        <button type="button" className="calendar-zoom-reset" aria-label="Reset calendar zoom to 100%" title="Reset zoom to 100%" disabled={busy} onClick={() => { hover('', ''); setZoom(100); setResetView((value) => value + 1); }}><output aria-live="polite" aria-label="Calendar zoom level">{zoom}%</output></button>
+        <button type="button" aria-label="Zoom out calendar" title={calendarFits ? 'The whole calendar is visible' : 'Zoom out'} disabled={zoom <= 10 || calendarFits || busy} onClick={() => {
+          const board = viewport.current;
+          const table = board?.querySelector('table');
+          if (!board || !table || (table.scrollWidth <= board.clientWidth + 1 && table.offsetHeight <= board.clientHeight + 1)) return;
+          hover('', ''); setZoom((value) => Math.max(10, value - 10));
+        }}>−</button>
+        <button type="button" aria-label="Zoom in calendar" title="Zoom in" disabled={zoom >= 150 || busy} onClick={() => { hover('', ''); setZoom((value) => Math.min(150, value + 10)); }}>+</button>
       </div>
       </div>
     </div>

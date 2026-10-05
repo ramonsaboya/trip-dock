@@ -237,3 +237,57 @@ for (const theme of ['light', 'dark']) {
     expect(api.trips[0]?.stops).toHaveLength(1);
   });
 }
+
+for (const theme of ['light', 'dark']) {
+  test(`calendar zoom, fit limit, compact labels and reset in ${theme} theme`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width: 1200, height: 900 });
+    await page.addInitScript((value) => localStorage.setItem('tripdock-theme', value), theme);
+    const api = await isolatedApi(page);
+    api.trips.push({
+      id, name: 'Calendar zoom trip', startDate: '2027-08-28', endDate: '2027-09-10',
+      destinationArea: 'Rome', travelerCount: null, revision: 0, createdAt: '', updatedAt: '',
+      stops: [{ id: 'rome', tripId: id, name: 'Rome', position: 0, locationText: null, arrivalDate: '2027-08-28', departureDate: '2027-09-10' }],
+      stays: [], transportLegs: [],
+      activities: [{ id: 'walk', tripId: id, stopId: 'rome', position: 0, title: 'Explore the historic centre of Rome', status: 'PLANNED', scheduledAt: '2027-08-28T11:30:00Z', timezone: 'UTC', durationMinutes: 60 }],
+    });
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Open trip', exact: true }).click();
+    if (theme === 'light') await page.getByRole('button', { name: 'Dark mode', exact: true }).click();
+    await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+    const board = page.getByRole('region', { name: 'Itinerary by date' });
+    const out = page.getByRole('button', { name: 'Zoom out calendar', exact: true });
+    const reset = page.getByRole('button', { name: 'Reset calendar zoom to 100%', exact: true });
+    await expect(out).toBeVisible();
+    await expect(board.locator('.calendar-date-row th[data-day]').first()).toContainText('Sat 28 Aug');
+    await board.evaluate((element) => { element.scrollLeft = 400; element.scrollTop = 0; });
+    await reset.click();
+    await expect.poll(() => board.evaluate((element) => element.scrollLeft)).toBe(0);
+    await expect.poll(() => board.evaluate((element) => {
+      const row = element.querySelector('[data-hour="10:00"]')!;
+      const header = element.querySelector('thead')!;
+      return Math.abs(row.getBoundingClientRect().top - header.getBoundingClientRect().bottom);
+    })).toBeLessThan(2);
+    for (let step = 0; step < 9 && await out.isEnabled(); step++) await out.click();
+    await expect(out).toBeDisabled();
+    const percentage = await reset.innerText();
+    expect(Number(percentage.replace('%', ''))).toBeLessThan(50);
+    await expect(board.locator('.calendar-date-row th[data-day]').first().locator('span').first()).toHaveText('Sat 28/08');
+    const geometry = await board.evaluate((element) => {
+      const table = element.querySelector('table')!;
+      const body = element.querySelector('tbody')!;
+      const header = element.querySelector('thead')!;
+      return { width: table.scrollWidth, height: table.offsetHeight, viewportWidth: element.clientWidth, viewportHeight: element.clientHeight, bodyHeight: body.getBoundingClientRect().height, availableBodyHeight: element.clientHeight - header.offsetHeight, axisWidth: element.querySelector('col')!.getBoundingClientRect().width };
+    });
+    expect(geometry.width).toBeLessThanOrEqual(geometry.viewportWidth + 1);
+    expect(geometry.height).toBeLessThanOrEqual(geometry.viewportHeight + 1);
+    expect(geometry.bodyHeight).toBeGreaterThanOrEqual(geometry.availableBodyHeight - 1);
+    expect(geometry.axisWidth).toBeCloseTo(62, 0);
+    await page.screenshot({ path: testInfo.outputPath(`calendar-compact-${theme}.png`), animations: 'disabled' });
+    await reset.click();
+    await expect(reset).toHaveText('100%');
+    await expect.poll(() => board.evaluate((element) => Math.abs(element.querySelector('[data-hour="10:00"]')!.getBoundingClientRect().top - element.querySelector('thead')!.getBoundingClientRect().bottom))).toBeLessThan(2);
+    await expect(out).toBeEnabled();
+    await page.screenshot({ path: testInfo.outputPath(`calendar-default-${theme}.png`), animations: 'disabled' });
+    expect(api.mutations).toEqual([]);
+  });
+}

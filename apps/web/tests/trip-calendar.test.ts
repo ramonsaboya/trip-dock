@@ -49,10 +49,12 @@ test('route planning keeps arrival and return for a single destination', () => {
 });
 
 
-test('calendar opens at 9 a.m. or the earliest visible scheduled item in its local timezone', () => {
+test('calendar opens one hour before the earliest visible scheduled item, with a 9 a.m. empty fallback', () => {
   assert.equal(calendarStartHour(trip, ['2027-06-01']), '09:00');
   const earlyTrip: Trip = { ...trip, activities: [{ id: 'walk', tripId: 'trip', stopId: 'rome', position: 0, title: 'Walk', status: 'IDEA', scheduledAt: '2027-06-01T05:30:00Z', timezone: 'Europe/Rome' }] };
-  assert.equal(calendarStartHour(earlyTrip, ['2027-06-01']), '07:00');
+  assert.equal(calendarStartHour(earlyTrip, ['2027-06-01']), '06:00');
+  const afternoonTrip = { ...earlyTrip, activities: [{ ...earlyTrip.activities[0]!, scheduledAt: '2027-06-01T13:30:00Z' }] };
+  assert.equal(calendarStartHour(afternoonTrip, ['2027-06-01']), '14:00');
   assert.equal(calendarStartHour(earlyTrip, ['2027-06-02']), '09:00');
   assert.equal(calendarStartHour({ ...trip, transportLegs: [{ ...leg, departureTime: '2027-06-02T22:30:00Z' }] }, ['2027-06-03']), '00:00');
   assert.equal(calendarStartHour({ ...trip, transportLegs: [leg] }, ['2027-06-03']), '09:00');

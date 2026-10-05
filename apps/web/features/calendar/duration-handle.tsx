@@ -1,9 +1,9 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { slotHeight } from '../../lib/trip-calendar';
+import { slotHeight as defaultSlotHeight } from '../../lib/trip-calendar';
 
-export function DurationHandle({ edge, minutes, max, disabled, onPreview, onCommit, onCancel }: { edge: 'top' | 'bottom'; minutes: number; max: number; disabled: boolean; onPreview: (minutes: number) => void; onCommit: (minutes: number) => void; onCancel: () => void }) {
+export function DurationHandle({ edge, minutes, max, disabled, slotHeight = defaultSlotHeight, onPreview, onCommit, onCancel }: { edge: 'top' | 'bottom'; minutes: number; max: number; disabled: boolean; slotHeight?: number; onPreview: (minutes: number) => void; onCommit: (minutes: number) => void; onCancel: () => void }) {
   const drag = useRef<{ y: number; initial: number; value: number } | null>(null);
   const [active, setActive] = useState(false);
   const frame = useRef<number | null>(null);

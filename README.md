@@ -116,7 +116,9 @@ The active data model contains `trips`, `trip_stops`, `transport_legs`, `stays`,
 
 ## Verification
 
-`pnpm test` covers empty-database behavior, persistence across API instances, revision increments, destination-date linking, locale/year/weekend date resolution, city-level creation readiness, batched clarification transitions, protected manual edits, nullable travelers, the absence of existing-trip AI GraphQL fields, GraphQL error handling, and removal of production browser fixtures/storage. `pnpm test:postgres` is the optional real-PostgreSQL migration smoke. `pnpm check` is the required local gate.
+`pnpm test` covers empty-database behavior, persistence across API instances, revision increments, destination-date linking, locale/year/weekend date resolution, city-level creation readiness, batched clarification transitions, protected manual edits, nullable travelers, the absence of existing-trip AI GraphQL fields, GraphQL error handling, and removal of production browser fixtures/storage. `pnpm test:postgres` is the real-PostgreSQL migration smoke. Follow the owner's phases in [AGENTS.md](AGENTS.md): implement and iterate without test writing or verification commands, then run the final gate after explicit owner acceptance. `pnpm check` is the required release gate, with browser and isolated PostgreSQL checks as relevant. Never report unverified work as tested or correct.
+
+GitHub Actions runs the deterministic gate, browser interactions, and isolated PostgreSQL tests on pushes and pull requests to `main`. Successful `main` runs package the exact commit and automatically deploy to the existing DigitalOcean Droplet after the required production SSH settings are configured. Experimental branches run CI without deploying. See [continuous delivery setup and recovery](docs/deployment.md#continuous-delivery).
 
 The deterministic brand generator is `scripts/generate-brand-assets.py`. It requires Python 3 and Pillow (`python -m pip install Pillow`) and reproduces all checked-in icons and the social preview from `apps/web/public/brand/tripdock-logo.png`.
 

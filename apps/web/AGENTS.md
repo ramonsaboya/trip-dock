@@ -27,6 +27,6 @@ Preserve associated labels, error descriptions, keyboard date navigation, nested
 
 ## Verification
 
-Run `pnpm check` from the repository root. For UI changes run `pnpm --filter @tripdock/web test:browser`; it mounts actual components under StrictMode using a test-only Vite entry and intercepted GraphQL. It does not validate real PostgreSQL or Vinext hydration. Installed Chrome is the default browser channel; configure another available Playwright channel deliberately for other machines.
+Follow the implementation/release phases in root `AGENTS.md`: defer verification and test writing until owner acceptance or an explicit request. At final verification, run `pnpm check` from the repository root. For UI changes run `pnpm --filter @tripdock/web test:browser`; it mounts actual components under StrictMode using a test-only Vite entry and intercepted GraphQL. It does not validate real PostgreSQL or Vinext hydration. Installed Chrome is the default browser channel; configure another available Playwright channel deliberately for other machines.
 
 Unit tests use Node's built-in runner and `.ts` import extensions for directly executed pure modules. Prefer behavior tests for interactions; source checks enforce architecture/trust boundaries only. Keep existing assertions when moving their source targets. Production must never import `tests` or use its fixtures. For reproducible file metrics run `node apps/web/scripts/architecture-metrics.mjs [git-ref]` from the root.

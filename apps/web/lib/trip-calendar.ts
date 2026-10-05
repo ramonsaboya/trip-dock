@@ -40,7 +40,7 @@ export function tripRoutes(trip: Trip) {
 
 export function calendarStartHour(trip: Trip, days: string[]) {
   const visible = new Set(days);
-  const hours = [9];
+  const hours: number[] = [];
   for (const activity of trip.activities) {
     const placement = activityAssignment(activity);
     if (placement && visible.has(placement.day)) hours.push(Number(placement.hour.slice(0, 2)));
@@ -49,7 +49,7 @@ export function calendarStartHour(trip: Trip, days: string[]) {
     const placement = transportPlacement(leg, trip.stops);
     if (placement.day && !placement.suggested && visible.has(placement.day)) hours.push(Number(placement.hour.slice(0, 2)));
   }
-  return String(Math.min(...hours)).padStart(2, '0') + ':00';
+  return String(hours.length ? Math.max(0, Math.min(...hours) - 1) : 9).padStart(2, '0') + ':00';
 }
 
 export function calendarStayBands(trip: Trip, columns: ReturnType<typeof calendarColumns>) {
