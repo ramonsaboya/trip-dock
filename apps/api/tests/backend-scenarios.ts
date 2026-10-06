@@ -6,6 +6,7 @@ import { loadTrip } from '../src/data.js';
 import { AppError } from '../src/domain.js';
 import { createTripService } from '../src/trips/trip-service.js';
 import { createStopService } from '../src/trips/stop-service.js';
+import { exerciseTripEditing } from './trip-editing-scenarios.js';
 
 const input = {
   name: 'Transaction review', destinationArea: 'Test area', startDate: '2027-06-01', endDate: '2027-06-09',
@@ -17,6 +18,7 @@ const input = {
 };
 
 export async function exerciseBackendTransactions(db: AppDatabase, concurrent = false) {
+  await exerciseTripEditing(db);
   const trips = createTripService(db);
   const stops = createStopService(db);
   let trip = await trips.createTrip({ input });

@@ -6,7 +6,8 @@ Canonical trip data lives only in PostgreSQL. The browser contains no trip fixtu
 
 ## What works
 
-- Create, view and delete trips. Trip-level details, including the name and dates, are fixed after creation for now.
+- Create, view, edit and delete trips. Edit the name and dates from the trip page; activities that no longer fit return to the pool without losing their details. Destination dates are clipped to the new range (excluded destinations remain as single-day stops); linked first/last dates follow the trip boundaries. Stay and transport booking dates remain unchanged.
+- Expand the itinerary and activity pool to the full page width, then restore the standard width. This view preference lasts only while the trip page is mounted.
 - Create destination-first: enter a city and required arrival/departure dates for each stop, review the route, then optionally name and explicitly save the trip. Overall dates follow the destinations. Saved destinations are display-only; structural editing is [deliberately deferred](docs/overnight/design/05-follow-up-decisions.md).
 - Add, edit, and remove transport legs, stays, and activities.
 - Generate an unpersisted trip draft from natural language, edit it, and explicitly create it.

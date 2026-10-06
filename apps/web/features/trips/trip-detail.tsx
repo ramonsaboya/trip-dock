@@ -10,9 +10,11 @@ import { TripCalendar } from '../calendar/trip-calendar';
 import { ActivityEditor } from './editors/activity-editor';
 import { StayEditor } from './editors/stay-editor';
 import { TransportEditor } from './editors/transport-editor';
+import { TripEditor } from './editors/trip-editor';
 import { type Notice } from './trip-state';
 
 export type EntityEditor =
+  | { kind: 'trip' }
   | { kind: 'transport'; value?: TransportLeg; fromStopId?: string | null; toStopId?: string | null }
   | { kind: 'stay'; value?: Stay; stopId?: string }
   | { kind: 'activity'; value?: Activity; stopId?: string; scheduledLocal?: string }
@@ -20,6 +22,7 @@ export type EntityEditor =
 
 export function TripDetail({ trip, onChanged, onDeleted, notify }: { trip: Trip; onChanged: (trip: Trip) => void; onDeleted: () => void; notify: (notice: Notice) => void }) {
   const [editor, setEditor] = useState<EntityEditor>(null);
+  const [expanded, setExpanded] = useState(false);
   async function removeEntity(kind: 'stop' | 'transport' | 'stay' | 'activity', id: string) {
     const warning = kind === 'stop'
       ? 'Remove this destination? Its stays, activities, and connected transport will also be removed. This cannot be undone.'
@@ -43,16 +46,26 @@ export function TripDetail({ trip, onChanged, onDeleted, notify }: { trip: Trip;
   }
 
   return (
-    <main id="main-content" className="detail-page trip-workbench" tabIndex={-1}>
+    <main id="main-content" className={`detail-page trip-workbench${expanded ? ' trip-workbench-expanded' : ''}`} tabIndex={-1}>
       <header className="trip-workbench-header">
         <div className="trip-workbench-title"><h1>{trip.name}</h1><p>{formatDateRange(trip.startDate, trip.endDate)}</p></div>
-        <div className="hero-actions"><button className="button-text button-danger" type="button" onClick={() => void deleteTrip()}>Delete</button></div>
+        <div className="hero-actions">
+          <button className="button-text" type="button" aria-pressed={expanded} onClick={() => setExpanded(!expanded)}>{expanded ? 'Restore width' : 'Expand view'}</button>
+          <button className="button-text" type="button" onClick={() => setEditor({ kind: 'trip' })}>Edit trip</button>
+          <button className="button-text button-danger" type="button" onClick={() => void deleteTrip()}>Delete</button>
+        </div>
       </header>
       <TripCalendar trip={trip} onChanged={onChanged}
         onActivity={(activity, stopId, scheduledLocal) => setEditor({ kind: 'activity', value: activity, stopId, scheduledLocal })}
         onStay={(stay, stopId) => setEditor({ kind: 'stay', value: stay, stopId })}
         onTransport={(leg, fromStopId, toStopId) => setEditor({ kind: 'transport', value: leg, fromStopId, toStopId })}
         onRemove={(kind, id) => void removeEntity(kind, id)} />
+
+      {editor?.kind === 'trip' ? <TripEditor trip={trip} onClose={() => setEditor(null)} onSaved={(updated) => {
+        setEditor(null); onChanged(updated);
+        const returned = trip.activities.filter(activity => activity.scheduledAt && updated.activities.some(value => value.id === activity.id && !value.scheduledAt)).length;
+        notify({ tone: 'success', message: returned ? `Trip updated. ${returned} ${returned === 1 ? 'activity returned' : 'activities returned'} to the pool.` : 'Trip updated.' });
+      }} /> : null}
 
       {editor?.kind === 'transport' ? <TransportEditor trip={trip} leg={editor.value} fromStopId={editor.fromStopId} toStopId={editor.toStopId} onClose={() => setEditor(null)} onSaved={(updated) => { setEditor(null); onChanged(updated); }} /> : null}
       {editor?.kind === 'stay' ? <StayEditor trip={trip} stay={editor.value} stopId={editor.stopId} onClose={() => setEditor(null)} onSaved={(updated) => { setEditor(null); onChanged(updated); }} /> : null}

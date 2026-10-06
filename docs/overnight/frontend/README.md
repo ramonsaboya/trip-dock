@@ -1,5 +1,13 @@
 # TripDock frontend review
 
+## Trip editing and expanded workbench (6 October 2026)
+
+`TripDetail` owns the trip editor and transient full-width toggle. `TripEditor` edits the saved name/date range through `updateTrip`, using the revision captured when opened. `theme.css` owns the expanded page width and wider desktop activity pool. The existing calendar ResizeObserver handles its changed viewport without remounting or resetting zoom.
+
+Server date edits remain atomic under the parent trip lock. Linked boundary dates follow trip dates; all destination intervals are clipped to the new range, preserving destinations even when reduced to one day. Scheduled activities whose local time interval falls outside their trip or destination return to the pool by clearing only `scheduledAt`. Midnight end times are exclusive. Stay and transport bookings remain unchanged. Enlarging dates never reschedules pool activities automatically.
+
+Verification: Node 22.23.2 / pnpm 11.19.0; `pnpm check` passed (109 web tests, 85 API tests, one optional PostgreSQL test skipped), including lint, types and builds. All 15 isolated Chrome flows passed, including trip edits, cancellation, error retention, reload and width toggling on desktop/mobile in both themes. `pnpm test:postgres` passed on the dedicated local `tripdock_test`, including shared regressions for date clipping, activity timezone/duration boundaries, booking preservation and stale revision rejection. A browser review against the real isolated itinerary API confirmed two activities return to the pool after shortening a five-day trip to three days and remain there after reload; the synthetic review trip was deleted afterward. No billed AI commands were run.
+
 The frontend now has explicit feature and data boundaries. The application shell is 70 lines, down from 1,910, and each production React component has its own file. Trip creation, entity editing, calendar controls and packing views can be maintained independently. The refactor preserves the current visual design and GraphQL contracts.
 
 Read these documents in order, or go directly to the verification and integration report:

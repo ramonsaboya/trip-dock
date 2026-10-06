@@ -30,6 +30,10 @@
   max-width: 1180px;
 }
 .header-inner.header-inner-workbench { justify-content: flex-start; }
+.detail-page.trip-workbench.trip-workbench-expanded { width: calc(100% - 24px); max-width: none; }
+@media (min-width: 1000px) {
+  .trip-workbench-expanded .trip-calendar-workspace { grid-template-columns: minmax(0, 1fr) 280px; }
+}
 .header-home {
   min-width: 44px;
   display: inline-flex;

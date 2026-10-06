@@ -1,11 +1,11 @@
 import { eq } from 'drizzle-orm';
 import { requireTrip } from '../data.js';
 import type { AppDatabase } from '../db/client.js';
-import { trips, tripStops } from '../db/schema.js';
+import { activities, trips, tripStops } from '../db/schema.js';
 import { AppError, parseInput as parse, validateDateRange } from '../domain.js';
 import { createTripInputSchema, idSchema, revisionSchema, updateTripInputSchema } from './inputs.js';
 import { orderStopsByDate, validateStopsWithinTrip } from './policy.js';
-import { finishManualMutation, lockTrip, synchronizeStopsFromTripDates } from './transactions.js';
+import { finishManualMutation, lockTrip, orderedTripStops, synchronizeStopsFromTripDates } from './transactions.js';
 
 export function createTripService(db: AppDatabase) {
   return {
@@ -62,6 +62,21 @@ export function createTripService(db: AppDatabase) {
       return db.transaction(async (tx) => {
         const trip = await lockTrip(tx, id, expectedRevision);
         await synchronizeStopsFromTripDates(tx, trip, input.startDate, input.endDate);
+        if (trip.startDate !== input.startDate || trip.endDate !== input.endDate) {
+          const stops = await orderedTripStops(tx, id);
+          const scheduled = await tx.select().from(activities).where(eq(activities.tripId, id));
+          for (const activity of scheduled) {
+            if (!activity.scheduledAt) continue;
+            const localDate = new Intl.DateTimeFormat('en-CA', { timeZone: activity.timezone ?? 'UTC', year: 'numeric', month: '2-digit', day: '2-digit' });
+            const firstDay = localDate.format(new Date(activity.scheduledAt));
+            // The interval is half-open: finishing exactly at midnight still fits the previous day.
+            const lastDay = localDate.format(new Date(new Date(activity.scheduledAt).getTime() + activity.durationMinutes * 60_000 - 1));
+            const stop = stops.find(value => value.id === activity.stopId)!;
+            if (firstDay < input.startDate || lastDay > input.endDate || (stop.arrivalDate && firstDay < stop.arrivalDate) || (stop.departureDate && lastDay > stop.departureDate)) {
+              await tx.update(activities).set({ scheduledAt: null, updatedAt: new Date().toISOString() }).where(eq(activities.id, activity.id));
+            }
+          }
+        }
         await tx.update(trips).set({ ...input, updatedAt: new Date().toISOString() }).where(eq(trips.id, id));
         await finishManualMutation(tx, id, trip.revision);
         return requireTrip(tx, id);

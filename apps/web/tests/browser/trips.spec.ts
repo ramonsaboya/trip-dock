@@ -8,6 +8,7 @@ async function isolatedApi(page: Page, failFirst = false, draft: TripDraft = exa
   const trips: Trip[] = [];
   const mutations: string[] = [];
   let offline = failFirst;
+  let updateError = false;
   await page.route('**/__test/graphql', async route => {
     const { query, variables } = route.request().postDataJSON();
     if (query.includes('query Trips')) {
@@ -27,13 +28,73 @@ async function isolatedApi(page: Page, failFirst = false, draft: TripDraft = exa
     }
     if (query.includes('mutation UpdateTrip')) {
       expect(variables.expectedRevision).toBe(trips[0]!.revision);
+      if (updateError) { updateError = false; await route.fulfill({ json: { errors: [{ message: 'This trip changed in another request. Refresh and try again.', extensions: { code: 'REVISION_CONFLICT' } }] } }); return; }
       mutations.push('update');
       trips[0] = { ...trips[0]!, ...variables.input, revision: trips[0]!.revision + 1 };
       await route.fulfill({ json: { data: { updateTrip: trips[0] } } }); return;
     }
     throw new Error(`Unexpected GraphQL operation: ${query.slice(0, 90)}`);
   });
-  return { trips, mutations, recover: () => { offline = false; } };
+  return { trips, mutations, recover: () => { offline = false; }, failUpdate: () => { updateError = true; } };
+}
+
+for (const theme of ['light', 'dark']) {
+  for (const width of [390, 1600]) {
+    test(`trip editing and full-width view at ${width}px in ${theme}`, async ({ page }, testInfo) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.addInitScript(value => localStorage.setItem('tripdock-theme', value), theme);
+      const api = await isolatedApi(page);
+      api.trips.push({ id, name: 'Editable trip', startDate: '2028-04-02', endDate: '2028-04-06', destinationArea: 'Porto', travelerCount: null, revision: 0, createdAt: '', updatedAt: '',
+        stops: [{ id: 'porto', tripId: id, name: 'Porto', position: 0, locationText: null, arrivalDate: '2028-04-02', departureDate: '2028-04-06' }],
+        activities: [], stays: [], transportLegs: [] });
+      await page.goto('/');
+      await page.getByRole('button', { name: 'Open trip', exact: true }).click();
+      if (theme === 'light') await page.getByRole('button', { name: 'Dark mode', exact: true }).click();
+      await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+      const main = page.getByRole('main');
+      const initialWidth = (await main.boundingBox())!.width;
+      const board = page.getByRole('region', { name: 'Itinerary by date', exact: true });
+      const initialBoardWidth = (await board.boundingBox())!.width;
+      const initialPoolWidth = (await page.locator('.trip-calendar-pool').boundingBox())!.width;
+      await page.getByRole('button', { name: 'Expand view', exact: true }).click();
+      await expect(page.getByRole('button', { name: 'Restore width', exact: true })).toHaveAttribute('aria-pressed', 'true');
+      await expect.poll(async () => (await main.boundingBox())!.width).toBe(width - 24);
+      expect((await board.boundingBox())!.width).toBeGreaterThan(initialBoardWidth);
+      expect((await page.locator('.trip-calendar-pool').boundingBox())!.width).toBeGreaterThan(initialPoolWidth);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(width);
+      await expectCalendarZoomInside(page);
+      await page.screenshot({ path: testInfo.outputPath('expanded.png'), animations: 'disabled', fullPage: width < 800 });
+      await page.getByRole('button', { name: 'Edit trip', exact: true }).click();
+      const dialog = page.getByRole('dialog', { name: 'Edit trip', exact: true });
+      await expect(dialog.getByRole('button', { name: 'Save changes' })).toBeDisabled();
+      await dialog.getByRole('textbox', { name: 'Trip name', exact: true }).fill('Unsaved name');
+      await page.keyboard.press('Escape');
+      await expect(page.getByRole('button', { name: 'Edit trip', exact: true })).toBeFocused();
+      await expect(page.getByRole('heading', { name: 'Editable trip', exact: true })).toBeVisible();
+      await page.getByRole('button', { name: 'Edit trip', exact: true }).click();
+      await dialog.getByRole('textbox', { name: 'Trip name', exact: true }).fill('Summer plans');
+      await chooseDate(page, 'Start date', '3');
+      await chooseDate(page, 'End date', '5');
+      await page.screenshot({ path: testInfo.outputPath('edit-dialog.png'), animations: 'disabled' });
+      api.failUpdate();
+      await dialog.getByRole('button', { name: 'Save changes' }).click();
+      await expect(dialog.getByRole('alert')).toContainText('changed in another request');
+      await expect(dialog.getByRole('textbox', { name: 'Trip name', exact: true })).toHaveValue('Summer plans');
+      await dialog.getByRole('button', { name: 'Save changes' }).click();
+      await expect(dialog).toHaveCount(0);
+      await expect(page.getByRole('heading', { name: 'Summer plans', exact: true })).toBeVisible();
+      expect(api.trips[0]?.startDate).toBe('2028-04-03');
+      expect(api.trips[0]?.endDate).toBe('2028-04-05');
+      await expect(board.locator('.calendar-date-row th[data-day]')).toHaveCount(3);
+      await expect(page.getByRole('button', { name: 'Restore width', exact: true })).toHaveAttribute('aria-pressed', 'true');
+      await page.getByRole('button', { name: 'Restore width', exact: true }).click();
+      await expect.poll(async () => (await main.boundingBox())!.width).toBe(initialWidth);
+      await page.reload();
+      await expect(page.getByRole('heading', { name: 'Summer plans', exact: true })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Expand view', exact: true })).toHaveAttribute('aria-pressed', 'false');
+      expect(api.mutations).toEqual(['update']);
+    });
+  }
 }
 
 async function chooseDate(page: Page, field: string, day: string) {
@@ -52,7 +113,7 @@ async function expectCalendarZoomInside(page: Page) {
   }).toBe(true);
 }
 
-test('manual create, retained draft, locked trip, reload and modal keyboard exit', async ({ page }, testInfo) => {
+test('manual create, retained draft, editable trip, reload and modal keyboard exit', async ({ page }, testInfo) => {
   const api = await isolatedApi(page);
   await page.clock.setFixedTime(new Date('2028-04-02T12:00:00Z'));
   await page.goto('/');
@@ -77,7 +138,7 @@ test('manual create, retained draft, locked trip, reload and modal keyboard exit
   await expect(page.getByRole('heading', { name: 'Spring break' })).toBeVisible();
   expect(api.trips[0]?.stops[0]?.name).toBe('Porto');
   expect(api.trips[0]?.startDate).toBe('2028-04-02');
-  await expect(page.getByRole('button', { name: 'Edit trip', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Edit trip', exact: true })).toBeVisible();
   await page.reload();
   await expect(page.getByRole('heading', { name: 'Spring break' })).toBeVisible();
   expect(api.trips[0]?.revision).toBe(0);

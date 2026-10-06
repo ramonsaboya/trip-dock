@@ -89,26 +89,20 @@ export async function synchronizeStopsFromTripDates(
     trip.endDate,
     startDate,
     endDate,
-  );
+  ).map(stop => ({
+    ...stop,
+    arrivalDate: stop.arrivalDate ? (stop.arrivalDate < startDate ? startDate : stop.arrivalDate > endDate ? endDate : stop.arrivalDate) : null,
+    departureDate: stop.departureDate ? (stop.departureDate < startDate ? startDate : stop.departureDate > endDate ? endDate : stop.departureDate) : null,
+  }));
   validateStopsWithinTrip(linked, startDate, endDate);
-  const currentFirst = current[0]!;
-  const currentLast = current.at(-1)!;
-  const linkedFirst = linked[0]!;
-  const linkedLast = linked.at(-1)!;
   const now = new Date().toISOString();
-  if (currentFirst.arrivalDate !== linkedFirst.arrivalDate) {
-    await tx
-      .update(tripStops)
-      .set({ arrivalDate: linkedFirst.arrivalDate, updatedAt: now })
-      .where(eq(tripStops.id, linkedFirst.id));
+  for (const [index, stop] of linked.entries()) {
+    const previous = current[index]!;
+    if (previous.arrivalDate !== stop.arrivalDate || previous.departureDate !== stop.departureDate) {
+      await tx.update(tripStops).set({ arrivalDate: stop.arrivalDate, departureDate: stop.departureDate, updatedAt: now }).where(eq(tripStops.id, stop.id));
+    }
   }
-  if (currentLast.departureDate !== linkedLast.departureDate) {
-    await tx
-      .update(tripStops)
-      .set({ departureDate: linkedLast.departureDate, updatedAt: now })
-      .where(eq(tripStops.id, linkedLast.id));
-  }
-  await resequenceTripStops(tx, trip.id, linked);
+  await resequenceTripStops(tx, trip.id, orderStopsByDate(linked));
 }
 
 export async function persistStopChronology(
