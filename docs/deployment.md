@@ -130,19 +130,20 @@ The origin is fixed to this installation's `https://tripdock.saboya.net`.
 The workflow is inactive until it is committed to GitHub and the SSH settings
 below are configured. Creating the local files alone does not activate delivery.
 
-1. On the existing Droplet, choose a dedicated deployment SSH user. It needs Docker
-   access and write permission to `/srv/tripdock-releases` and
-   `/srv/tripdock-backups`, plus read permission to
-   `/srv/tripdock/deployment/.env`. Docker access grants powerful host access;
-   use a deployment-specific key, never a personal SSH key. Keep the existing
-   Compose installation, environment file, database volume, Nginx and backup timer.
-   Install Docker Compose v2, Bash, `flock`, gzip, tar and curl if missing.
-   Create the release directory with mode `700` owned by the deployment user.
-   The runner uses native Linux images; the existing Droplet must be x86-64.
+1. On the existing Droplet, install the reviewed `release_gateway.py` and
+   `install-release-gateway.sh` with the existing administrative connection.
+   Run `bash install-release-gateway.sh /path/to/release_gateway.py /path/to/actions.pub`
+   as root. This creates the Linux account `tripdock-deploy`, a root-owned forced
+   SSH command, and one narrowly scoped sudo helper. It does not grant a shell,
+   Docker-group membership, general sudo, or access to the application environment
+   and backups. Keep the existing Compose installation, environment file, database
+   volume, Nginx and backup timer. Python 3.12, sudo, Docker Compose v2, Bash, `flock`,
+   gzip, tar and curl must be installed. The existing Droplet must be x86-64.
 2. Generate a dedicated Ed25519 key using the operator's secure key management.
-   Add its public key to the user's `authorized_keys`, with forwarding disabled
-   using the `restrict` option. The pipeline needs file transfer and remote shell
-   commands, so do not configure a forced command that blocks these operations.
+   Pass its public key to the installer above. The root-owned `authorized_keys`
+   entry uses `restrict` and the gateway's forced command. Ordinary SSH shells,
+   forwarding, SCP and SFTP are rejected. The only accepted commands are
+   `upload FULL_COMMIT_SHA` (ZIP bytes on stdin) and `deploy FULL_COMMIT_SHA`.
 3. In the repository's **Settings → Environments**, create `production`. Restrict
    deployment branches to `main`. Leave required reviewers and wait timers off
    to preserve the requested automatic deployment after checks pass.
@@ -151,7 +152,7 @@ below are configured. Creating the local files alone does not activate delivery.
    | Kind | Name | Value |
    | --- | --- | --- |
    | Variable | `DEPLOY_HOST` | `162.243.91.97` |
-   | Variable | `DEPLOY_USER` | The deployment SSH username |
+   | Variable | `DEPLOY_USER` | `tripdock-deploy` |
    | Variable | `DEPLOY_PORT` | SSH port; defaults to `22` |
    | Secret | `DEPLOY_SSH_KEY` | The dedicated private key, without a passphrase |
    | Secret | `DEPLOY_KNOWN_HOSTS` | Verified OpenSSH known-hosts entry for this host/port |
@@ -174,6 +175,29 @@ below are configured. Creating the local files alone does not activate delivery.
    dispatch on other branches verifies only.
 
 ### Deployment behavior and failures
+
+The receiver in `deployment/release_gateway.py` verifies the exact uploaded ZIP
+against GitHub's SHA-256 artifact digest. It accepts only the current `main` SHA,
+the `delivery.yaml` workflow, a push/manual run on `main`, and a successful
+**Verify and package** job. It checks again for a superseded commit before
+deployment. Uploads are serialized and bounded to 2 GiB; source archives reject
+path traversal, links and protected-file collisions. The privileged helper
+snapshots the upload into a root-owned directory before verifying or extracting
+it, so the SSH user cannot substitute files during promotion. Network/API errors
+fail closed. This uses the public repository's read-only GitHub API and stores no
+GitHub token on the server; private repositories require a separate reviewed plan.
+
+Write access to `main` and its workflow remains an administrative trust boundary:
+the verified release contains the deployment script that runs with privilege.
+The restricted SSH key alone cannot run arbitrary commands or substitute an
+unverified release. Protect GitHub administrator accounts with strong account
+security, revoke/rotate the dedicated key when necessary, and review workflow
+dependency updates. The receiver and sudo helper are root-owned operator files;
+changes to them require an explicit administrative install, not an app release.
+
+Receiver regressions run in CI with
+`python3 -m unittest discover -s deployment -p 'test_*.py'`. They can also be run
+locally in an isolated Python 3.12 container.
 
 `deployment/deploy.sh` executes inside `/srv/tripdock-releases/<commit>`. It loads
 the prebuilt images, copies the existing server `.env` to a mode-600 release file,

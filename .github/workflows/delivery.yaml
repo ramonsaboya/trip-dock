@@ -30,10 +30,10 @@ jobs:
       TRIPDOCK_WEB_RUNTIME: node
       TEST_DATABASE_URL: postgresql://tripdock:ci-only-password@127.0.0.1:5432/tripdock_test
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version-file: .node-version
       - name: Install pinned pnpm and dependencies
@@ -44,6 +44,8 @@ jobs:
         run: pnpm check
       - name: PostgreSQL migrations and integration tests
         run: pnpm test:postgres
+      - name: Restricted deployment receiver regressions
+        run: python3 -m unittest discover -s deployment -p 'test_*.py'
       - name: Install browser
         run: pnpm --filter @tripdock/web exec playwright install --with-deps chrome
       - name: Browser interactions
@@ -59,7 +61,7 @@ jobs:
           git archive --format=tar.gz --output=source.tar.gz "$GITHUB_SHA"
       - name: Store release
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: release-${{ github.sha }}
           path: |
@@ -85,9 +87,6 @@ jobs:
       DEPLOY_USER: ${{ vars.DEPLOY_USER }}
       DEPLOY_PORT: ${{ vars.DEPLOY_PORT || '22' }}
     steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: release-${{ github.sha }}
       - name: Configure SSH
         env:
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
@@ -112,10 +111,12 @@ jobs:
             exit 0
           fi
           destination="$DEPLOY_USER@$DEPLOY_HOST"
-          release="/srv/tripdock-releases/$GITHUB_SHA"
-          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -p "$DEPLOY_PORT" "$destination" "umask 077; mkdir -p '$release'"
-          scp -o BatchMode=yes -o StrictHostKeyChecking=yes -P "$DEPLOY_PORT" source.tar.gz images.tar.gz "$destination:$release/"
-          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -p "$DEPLOY_PORT" "$destination" "set -eu; cd '$release'; tar -xzf source.tar.gz; bash deployment/deploy.sh '$GITHUB_SHA'"
+          artifact=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts" --jq ".artifacts[] | select(.name == \"release-$GITHUB_SHA\") | .id")
+          test -n "$artifact"
+          # Preserve the exact ZIP whose SHA-256 digest GitHub records.
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact/zip" > release.zip
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -p "$DEPLOY_PORT" "$destination" "upload $GITHUB_SHA" < release.zip
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -p "$DEPLOY_PORT" "$destination" "deploy $GITHUB_SHA"
       - name: Remove runner SSH credentials
         if: always()
         run: rm -f ~/.ssh/id_ed25519 ~/.ssh/known_hosts
