@@ -2325,9 +2325,9 @@ html:has(.trip-workbench), body:has(.trip-workbench) { overflow: hidden; height:
 /* Card cells use layers 1–2; sticky times stay above them, below the date header (4). */
 .trip-calendar-table tbody tr > th:first-child { z-index: 3; }
 
-.calendar-surface { position: relative; }
-.trip-calendar-scroll { overflow-anchor: none; }
-.calendar-zoom-controls { position: absolute; right: 12px; bottom: 12px; z-index: 6; display: flex; align-items: center; gap: 2px; padding: 4px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); box-shadow: 0 2px 8px #00000014; }
+.calendar-surface { position: relative; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); gap: 0; isolation: isolate; }
+.calendar-surface > .trip-calendar-scroll { grid-area: 1 / 1; overflow-anchor: none; }
+.calendar-zoom-controls { grid-area: 1 / 1; align-self: end; justify-self: end; position: relative; margin: 12px; z-index: 6; display: flex; align-items: center; gap: 2px; padding: 4px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); box-shadow: 0 2px 8px #00000014; }
 .calendar-zoom-controls button { display: grid; place-items: center; min-width: 32px; min-height: 32px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--ink); font-size: 1.125rem; line-height: 1; cursor: pointer; }
 .calendar-zoom-controls button:hover:not(:disabled) { background: var(--brand-soft); }
 .calendar-zoom-controls button:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px; }

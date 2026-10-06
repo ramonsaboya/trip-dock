@@ -41,6 +41,17 @@ async function chooseDate(page: Page, field: string, day: string) {
   await page.getByRole('button', { name: new RegExp(`, ${day} April 2028$`) }).click();
 }
 
+async function expectCalendarZoomInside(page: Page) {
+  await expect.poll(async () => {
+    const board = await page.getByRole('region', { name: 'Itinerary by date', exact: true }).boundingBox();
+    const controls = await page.getByRole('group', { name: 'Calendar zoom', exact: true }).boundingBox();
+    if (!board || !controls) return false;
+    const rightGap = board.x + board.width - controls.x - controls.width;
+    const bottomGap = board.y + board.height - controls.y - controls.height;
+    return controls.x >= board.x && controls.y >= board.y && rightGap >= 10 && rightGap <= 15 && bottomGap >= 10 && bottomGap <= 15;
+  }).toBe(true);
+}
+
 test('manual create, retained draft, locked trip, reload and modal keyboard exit', async ({ page }, testInfo) => {
   const api = await isolatedApi(page);
   await page.clock.setFixedTime(new Date('2028-04-02T12:00:00Z'));
@@ -166,6 +177,7 @@ for (const width of [320, 390, 768]) {
     await page.getByRole('button', { name: 'Create trip', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Mobile trip', exact: true })).toBeVisible();
     const calendar = page.getByRole('region', { name: 'Itinerary by date', exact: true });
+    await expectCalendarZoomInside(page);
     const geometry = await calendar.evaluate(element => ({
       calendar: element.getBoundingClientRect().width,
       page: document.documentElement.clientWidth,
@@ -258,6 +270,7 @@ for (const theme of ['light', 'dark']) {
     const out = page.getByRole('button', { name: 'Zoom out calendar', exact: true });
     const reset = page.getByRole('button', { name: 'Reset calendar zoom to 100%', exact: true });
     await expect(out).toBeVisible();
+    await expectCalendarZoomInside(page);
     await expect(board.locator('.calendar-date-row th[data-day]').first()).toContainText('Sat 28 Aug');
     await board.evaluate((element) => { element.scrollLeft = 400; element.scrollTop = 0; });
     await reset.click();
@@ -282,11 +295,13 @@ for (const theme of ['light', 'dark']) {
     expect(geometry.height).toBeLessThanOrEqual(geometry.viewportHeight + 1);
     expect(geometry.bodyHeight).toBeGreaterThanOrEqual(geometry.availableBodyHeight - 1);
     expect(geometry.axisWidth).toBeCloseTo(62, 0);
+    await expectCalendarZoomInside(page);
     await page.screenshot({ path: testInfo.outputPath(`calendar-compact-${theme}.png`), animations: 'disabled' });
     await reset.click();
     await expect(reset).toHaveText('100%');
     await expect.poll(() => board.evaluate((element) => Math.abs(element.querySelector('[data-hour="10:00"]')!.getBoundingClientRect().top - element.querySelector('thead')!.getBoundingClientRect().bottom))).toBeLessThan(2);
     await expect(out).toBeEnabled();
+    await expectCalendarZoomInside(page);
     await page.screenshot({ path: testInfo.outputPath(`calendar-default-${theme}.png`), animations: 'disabled' });
     expect(api.mutations).toEqual([]);
   });
