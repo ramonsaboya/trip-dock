@@ -32,8 +32,9 @@ function calendarTimeRange(leg: TransportLeg) {
   return `${start.slice(11, 16)}–${end.slice(11, 16)}${start.slice(0, 10) !== end.slice(0, 10) ? ` (${end.slice(8, 10)}/${end.slice(5, 7)})` : ''}`;
 }
 
-export function TripCalendar({ trip, onChanged, onActivity, onStay, onTransport, onRemove }: {
+export function TripCalendar({ trip, onChanged, onActivity, onStay, onTransport, onRemove, expanded, onToggleExpand }: {
   trip: Trip; onChanged: (trip: Trip) => void;
+  expanded: boolean; onToggleExpand: () => void;
   onActivity: (activity?: Activity, stopId?: string, scheduledLocal?: string) => void;
   onStay: (stay?: Stay, stopId?: string) => void;
   onTransport: (leg?: TransportLeg, fromStopId?: string | null, toStopId?: string | null) => void;
@@ -385,6 +386,11 @@ export function TripCalendar({ trip, onChanged, onActivity, onStay, onTransport,
           hover('', ''); setZoom((value) => Math.max(10, value - 10));
         }}>−</button>
         <button type="button" aria-label="Zoom in calendar" title="Zoom in" disabled={zoom >= 150 || busy} onClick={() => { hover('', ''); setZoom((value) => Math.min(150, value + 10)); }}>+</button>
+        <button type="button" className="calendar-expand" aria-label={expanded ? 'Restore width' : 'Expand view'} title={expanded ? 'Restore calendar width' : 'Expand calendar and activity pool'} aria-pressed={expanded} onClick={onToggleExpand}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            {expanded ? <path d="M3 7l5 5-5 5M21 7l-5 5 5 5" /> : <path d="M8 7l-5 5 5 5M16 7l5 5-5 5" />}
+          </svg>
+        </button>
       </div>
       </div>
     </div>

@@ -66,4 +66,38 @@ export async function exerciseItinerary(api: ReturnType<typeof createApi>) {
     assert.ok(invalid.errors);
   }
 
+  const editTrip = `mutation($id: ID!, $revision: Int!, $input: UpdateTripInput!) { updateTrip(id: $id, expectedRevision: $revision, input: $input) { ${fields} } }`;
+  const editInput = { name: 'Editable route', destinationArea: 'Japan', startDate: '2027-06-01', endDate: '2027-06-06',
+    stops: [{ id: stopId, arrivalDate: '2027-06-01', departureDate: '2027-06-03' }],
+    newStops: [{ name: 'Osaka', locationText: null, arrivalDate: '2027-06-03', departureDate: '2027-06-06' }],
+  };
+  const snapshot = await request(`query($id: ID!) { trip(id: $id) { ${fields} } }`, { id: trip.id });
+  const invalidInputs = [
+    { ...editInput, stops: [] },
+    { ...editInput, stops: [...editInput.stops, ...editInput.stops] },
+    { ...editInput, stops: [{ ...editInput.stops[0]!, id: other.data!.createTrip!.stops[0]!.id }] },
+    { ...editInput, newStops: [{ ...editInput.newStops[0]!, departureDate: '2027-06-02' }] },
+    { ...editInput, newStops: [{ ...editInput.newStops[0]!, departureDate: '2027-06-10' }] },
+    { ...editInput, newStops: [{ ...editInput.newStops[0]!, arrivalDate: null }] },
+    { ...editInput, newStops: Array.from({ length: 20 }, () => editInput.newStops[0]!) },
+  ];
+  for (const input of invalidInputs) {
+    const rejected = await request(editTrip, { id: trip.id, revision: trip.revision, input });
+    assert.equal(rejected.errors?.[0]?.extensions.code, 'BAD_USER_INPUT');
+    assert.deepEqual(await request(`query($id: ID!) { trip(id: $id) { ${fields} } }`, { id: trip.id }), snapshot, 'failed edits roll back destination changes, additions and activity scheduling');
+  }
+  const edited = await request(editTrip, { id: trip.id, revision: trip.revision, input: editInput });
+  assert.equal(edited.errors, undefined);
+  const accepted = edited.data!.updateTrip!;
+  assert.equal(accepted.revision, trip.revision + 1, 'one atomic save increments the revision once');
+  assert.equal(accepted.stops.length, 2);
+  assert.equal(accepted.stops[0]!.id, stopId, 'existing destinations keep their identities');
+  assert.equal(accepted.activities[0]!.scheduledAt, null, 'inner destination shortening returns activities even when overall dates stay the same');
+  assert.equal(accepted.activities[0]!.status, 'BOOKED');
+  assert.equal(accepted.activities[0]!.durationMinutes, 150);
+  assert.deepEqual(accepted.transportLegs, trip.transportLegs);
+  assert.deepEqual((await request(`query($id: ID!) { trip(id: $id) { ${fields} } }`, { id: trip.id })).data!.trip, accepted);
+  assert.equal((await request(editTrip, { id: trip.id, revision: trip.revision, input: editInput })).errors?.[0]?.extensions.code, 'REVISION_CONFLICT');
+  assert.equal((await request(`query($id: ID!) { trip(id: $id) { ${fields} } }`, { id: trip.id })).data!.trip!.stops.length, 2, 'stale retries cannot duplicate new destinations');
+
 }

@@ -30,7 +30,12 @@ async function isolatedApi(page: Page, failFirst = false, draft: TripDraft = exa
       expect(variables.expectedRevision).toBe(trips[0]!.revision);
       if (updateError) { updateError = false; await route.fulfill({ json: { errors: [{ message: 'This trip changed in another request. Refresh and try again.', extensions: { code: 'REVISION_CONFLICT' } }] } }); return; }
       mutations.push('update');
-      trips[0] = { ...trips[0]!, ...variables.input, revision: trips[0]!.revision + 1 };
+      const { stops: dates, newStops = [], ...details } = variables.input;
+      const previous = trips[0]!;
+      trips[0] = { ...previous, ...details, revision: previous.revision + 1,
+        stops: [...previous.stops.map(stop => ({ ...stop, ...dates?.find((value: { id: string }) => value.id === stop.id) })),
+          ...newStops.map((stop: TripInput['stops'][number], index: number) => ({ ...stop, id: `added-${previous.revision}-${index}`, tripId: previous.id, position: previous.stops.length + index }))],
+      };
       await route.fulfill({ json: { data: { updateTrip: trips[0] } } }); return;
     }
     throw new Error(`Unexpected GraphQL operation: ${query.slice(0, 90)}`);
@@ -53,16 +58,22 @@ for (const theme of ['light', 'dark']) {
       await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
       const main = page.getByRole('main');
       const initialWidth = (await main.boundingBox())!.width;
+      const initialHeader = await page.locator('.trip-workbench-header').boundingBox();
+      const controls = page.getByRole('group', { name: 'Calendar zoom', exact: true });
+      const initialControls = await controls.boundingBox();
       const board = page.getByRole('region', { name: 'Itinerary by date', exact: true });
       const initialBoardWidth = (await board.boundingBox())!.width;
       const initialPoolWidth = (await page.locator('.trip-calendar-pool').boundingBox())!.width;
       await page.getByRole('button', { name: 'Expand view', exact: true }).click();
       await expect(page.getByRole('button', { name: 'Restore width', exact: true })).toHaveAttribute('aria-pressed', 'true');
-      await expect.poll(async () => (await main.boundingBox())!.width).toBe(width - 24);
+      await expect.poll(async () => (await page.locator('.unified-trip-calendar').boundingBox())!.width).toBe(width - 24);
+      expect((await main.boundingBox())!.width).toBe(initialWidth);
+      expect(await page.locator('.trip-workbench-header').boundingBox()).toEqual(initialHeader);
+      expect(await controls.boundingBox()).toEqual(initialControls);
       expect((await board.boundingBox())!.width).toBeGreaterThan(initialBoardWidth);
       expect((await page.locator('.trip-calendar-pool').boundingBox())!.width).toBeGreaterThan(initialPoolWidth);
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(width);
-      await expectCalendarZoomInside(page);
+      await expectCalendarControlsVisible(page);
       await page.screenshot({ path: testInfo.outputPath('expanded.png'), animations: 'disabled', fullPage: width < 800 });
       await page.getByRole('button', { name: 'Edit trip', exact: true }).click();
       const dialog = page.getByRole('dialog', { name: 'Edit trip', exact: true });
@@ -87,12 +98,41 @@ for (const theme of ['light', 'dark']) {
       expect(api.trips[0]?.endDate).toBe('2028-04-05');
       await expect(board.locator('.calendar-date-row th[data-day]')).toHaveCount(3);
       await expect(page.getByRole('button', { name: 'Restore width', exact: true })).toHaveAttribute('aria-pressed', 'true');
+      await page.getByRole('button', { name: 'Edit trip', exact: true }).click();
+      const detailsBox = await dialog.getByRole('group', { name: 'Trip details', exact: true }).boundingBox();
+      const destinationsBox = await dialog.getByRole('group', { name: 'Destinations', exact: true }).boundingBox();
+      expect(detailsBox!.y + detailsBox!.height).toBeLessThan(destinationsBox!.y);
+      if (width > 800) {
+        const nameBox = await dialog.getByRole('textbox', { name: 'Trip name', exact: true }).boundingBox();
+        const startBox = await dialog.getByRole('combobox', { name: 'Start date', exact: true }).boundingBox();
+        const endBox = await dialog.getByRole('combobox', { name: 'End date', exact: true }).boundingBox();
+        expect(Math.abs(nameBox!.y - startBox!.y)).toBeLessThan(2);
+        expect(Math.abs(startBox!.y - endBox!.y)).toBeLessThan(2);
+      }
+      await chooseDate(page, 'Departure date', '4');
+      await dialog.getByRole('button', { name: '+ Add destination', exact: true }).click();
+      await dialog.getByRole('button', { name: 'Remove new destination 2', exact: true }).click();
+      await expect(dialog.getByRole('group', { name: 'Destination 2', exact: true })).toHaveCount(0);
+      await dialog.getByRole('button', { name: '+ Add destination', exact: true }).click();
+      const added = dialog.getByRole('group', { name: 'Destination 2', exact: true });
+      await added.getByRole('textbox', { name: 'City', exact: true }).fill('Lisbon');
+      await added.getByRole('combobox', { name: 'Departure date', exact: true }).click();
+      await page.getByRole('button', { name: /, 6 April 2028$/ }).click();
+      await expect(dialog.getByRole('combobox', { name: 'End date', exact: true })).toHaveValue(/6/);
+      await page.screenshot({ path: testInfo.outputPath('add-destination.png'), animations: 'disabled' });
+      await dialog.getByRole('button', { name: 'Save changes', exact: true }).click();
+      await expect(dialog).toHaveCount(0);
+      expect(api.trips[0]?.stops.map(stop => [stop.name, stop.arrivalDate, stop.departureDate])).toEqual([
+        ['Porto', '2028-04-03', '2028-04-04'], ['Lisbon', '2028-04-04', '2028-04-06'],
+      ]);
+      await expect(page.locator('.calendar-destination-label').filter({ hasText: 'Lisbon' })).toBeVisible();
       await page.getByRole('button', { name: 'Restore width', exact: true }).click();
       await expect.poll(async () => (await main.boundingBox())!.width).toBe(initialWidth);
+      expect(await controls.boundingBox()).toEqual(initialControls);
       await page.reload();
       await expect(page.getByRole('heading', { name: 'Summer plans', exact: true })).toBeVisible();
       await expect(page.getByRole('button', { name: 'Expand view', exact: true })).toHaveAttribute('aria-pressed', 'false');
-      expect(api.mutations).toEqual(['update']);
+      expect(api.mutations).toEqual(['update', 'update']);
     });
   }
 }
@@ -102,14 +142,12 @@ async function chooseDate(page: Page, field: string, day: string) {
   await page.getByRole('button', { name: new RegExp(`, ${day} April 2028$`) }).click();
 }
 
-async function expectCalendarZoomInside(page: Page) {
+async function expectCalendarControlsVisible(page: Page) {
   await expect.poll(async () => {
-    const board = await page.getByRole('region', { name: 'Itinerary by date', exact: true }).boundingBox();
     const controls = await page.getByRole('group', { name: 'Calendar zoom', exact: true }).boundingBox();
-    if (!board || !controls) return false;
-    const rightGap = board.x + board.width - controls.x - controls.width;
-    const bottomGap = board.y + board.height - controls.y - controls.height;
-    return controls.x >= board.x && controls.y >= board.y && rightGap >= 10 && rightGap <= 15 && bottomGap >= 10 && bottomGap <= 15;
+    const viewport = page.viewportSize();
+    if (!viewport || !controls) return false;
+    return controls.x >= 0 && controls.y >= 0 && controls.x + controls.width <= viewport.width && Math.abs(viewport.height - controls.y - controls.height - 22) <= 1;
   }).toBe(true);
 }
 
@@ -238,7 +276,7 @@ for (const width of [320, 390, 768]) {
     await page.getByRole('button', { name: 'Create trip', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Mobile trip', exact: true })).toBeVisible();
     const calendar = page.getByRole('region', { name: 'Itinerary by date', exact: true });
-    await expectCalendarZoomInside(page);
+    await expectCalendarControlsVisible(page);
     const geometry = await calendar.evaluate(element => ({
       calendar: element.getBoundingClientRect().width,
       page: document.documentElement.clientWidth,
@@ -331,7 +369,7 @@ for (const theme of ['light', 'dark']) {
     const out = page.getByRole('button', { name: 'Zoom out calendar', exact: true });
     const reset = page.getByRole('button', { name: 'Reset calendar zoom to 100%', exact: true });
     await expect(out).toBeVisible();
-    await expectCalendarZoomInside(page);
+    await expectCalendarControlsVisible(page);
     await expect(board.locator('.calendar-date-row th[data-day]').first()).toContainText('Sat 28 Aug');
     await board.evaluate((element) => { element.scrollLeft = 400; element.scrollTop = 0; });
     await reset.click();
@@ -356,13 +394,13 @@ for (const theme of ['light', 'dark']) {
     expect(geometry.height).toBeLessThanOrEqual(geometry.viewportHeight + 1);
     expect(geometry.bodyHeight).toBeGreaterThanOrEqual(geometry.availableBodyHeight - 1);
     expect(geometry.axisWidth).toBeCloseTo(62, 0);
-    await expectCalendarZoomInside(page);
+    await expectCalendarControlsVisible(page);
     await page.screenshot({ path: testInfo.outputPath(`calendar-compact-${theme}.png`), animations: 'disabled' });
     await reset.click();
     await expect(reset).toHaveText('100%');
     await expect.poll(() => board.evaluate((element) => Math.abs(element.querySelector('[data-hour="10:00"]')!.getBoundingClientRect().top - element.querySelector('thead')!.getBoundingClientRect().bottom))).toBeLessThan(2);
     await expect(out).toBeEnabled();
-    await expectCalendarZoomInside(page);
+    await expectCalendarControlsVisible(page);
     await page.screenshot({ path: testInfo.outputPath(`calendar-default-${theme}.png`), animations: 'disabled' });
     expect(api.mutations).toEqual([]);
   });

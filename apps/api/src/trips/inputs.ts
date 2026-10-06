@@ -23,6 +23,8 @@ export const updateTripInputSchema = z
     destinationArea: requiredText.max(200),
     startDate: isoDateSchema,
     endDate: isoDateSchema,
+    stops: z.array(z.object({ id: idSchema, arrivalDate: isoDateSchema, departureDate: isoDateSchema }).strict()).min(1).max(20).optional(),
+    newStops: z.array(tripDraftStopSchema.extend({ arrivalDate: isoDateSchema, departureDate: isoDateSchema })).max(20).optional(),
     travelerCount: z.number().int().min(1).max(20).nullish().transform((value) => value ?? null),
   })
   .strict();

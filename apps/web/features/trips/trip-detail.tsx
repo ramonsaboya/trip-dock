@@ -50,12 +50,11 @@ export function TripDetail({ trip, onChanged, onDeleted, notify }: { trip: Trip;
       <header className="trip-workbench-header">
         <div className="trip-workbench-title"><h1>{trip.name}</h1><p>{formatDateRange(trip.startDate, trip.endDate)}</p></div>
         <div className="hero-actions">
-          <button className="button-text" type="button" aria-pressed={expanded} onClick={() => setExpanded(!expanded)}>{expanded ? 'Restore width' : 'Expand view'}</button>
           <button className="button-text" type="button" onClick={() => setEditor({ kind: 'trip' })}>Edit trip</button>
           <button className="button-text button-danger" type="button" onClick={() => void deleteTrip()}>Delete</button>
         </div>
       </header>
-      <TripCalendar trip={trip} onChanged={onChanged}
+      <TripCalendar trip={trip} onChanged={onChanged} expanded={expanded} onToggleExpand={() => setExpanded(!expanded)}
         onActivity={(activity, stopId, scheduledLocal) => setEditor({ kind: 'activity', value: activity, stopId, scheduledLocal })}
         onStay={(stay, stopId) => setEditor({ kind: 'stay', value: stay, stopId })}
         onTransport={(leg, fromStopId, toStopId) => setEditor({ kind: 'transport', value: leg, fromStopId, toStopId })}

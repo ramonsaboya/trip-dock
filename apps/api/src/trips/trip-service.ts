@@ -5,7 +5,7 @@ import { activities, trips, tripStops } from '../db/schema.js';
 import { AppError, parseInput as parse, validateDateRange } from '../domain.js';
 import { createTripInputSchema, idSchema, revisionSchema, updateTripInputSchema } from './inputs.js';
 import { orderStopsByDate, validateStopsWithinTrip } from './policy.js';
-import { finishManualMutation, lockTrip, orderedTripStops, synchronizeStopsFromTripDates } from './transactions.js';
+import { finishManualMutation, lockTrip, orderedTripStops, resequenceTripStops, synchronizeStopsFromTripDates } from './transactions.js';
 
 export function createTripService(db: AppDatabase) {
   return {
@@ -58,11 +58,42 @@ export function createTripService(db: AppDatabase) {
       const id = parse(idSchema, args.id);
       const expectedRevision = parse(revisionSchema, args.expectedRevision);
       const input = parse(updateTripInputSchema, args.input);
+      const { stops: stopDates, newStops = [], ...tripInput } = input;
       validateDateRange(input.startDate, input.endDate, 'trip date range');
       return db.transaction(async (tx) => {
         const trip = await lockTrip(tx, id, expectedRevision);
-        await synchronizeStopsFromTripDates(tx, trip, input.startDate, input.endDate);
-        if (trip.startDate !== input.startDate || trip.endDate !== input.endDate) {
+        const previousStops = await orderedTripStops(tx, id);
+        if (previousStops.length + newStops.length > 20) {
+          throw new AppError('A trip can have at most 20 destinations.', 'BAD_USER_INPUT');
+        }
+        if (stopDates) {
+          if (new Set(stopDates.map(stop => stop.id)).size !== stopDates.length || stopDates.length !== previousStops.length || previousStops.some(stop => !stopDates.some(value => value.id === stop.id))) {
+            throw new AppError('Include every destination in this trip exactly once.', 'BAD_USER_INPUT');
+          }
+          const updatedStops = previousStops.map(stop => ({ ...stop, ...stopDates.find(value => value.id === stop.id)! }));
+          validateStopsWithinTrip(updatedStops, input.startDate, input.endDate);
+          for (const stop of updatedStops) {
+            const previous = previousStops.find(value => value.id === stop.id)!;
+            if (previous.arrivalDate !== stop.arrivalDate || previous.departureDate !== stop.departureDate) {
+              await tx.update(tripStops).set({ arrivalDate: stop.arrivalDate, departureDate: stop.departureDate, updatedAt: new Date().toISOString() }).where(eq(tripStops.id, stop.id));
+            }
+          }
+          await resequenceTripStops(tx, id, orderStopsByDate(updatedStops));
+        } else {
+          await synchronizeStopsFromTripDates(tx, trip, input.startDate, input.endDate);
+        }
+        if (newStops.length) {
+          const currentStops = await orderedTripStops(tx, id);
+          const nextPosition = Math.max(...currentStops.map(stop => stop.position)) + 1;
+          validateStopsWithinTrip(newStops.map((stop, index) => ({ ...stop, position: nextPosition + index })), input.startDate, input.endDate);
+          await tx.insert(tripStops).values(newStops.map((stop, index) => ({ ...stop, tripId: id, position: nextPosition + index })));
+          await resequenceTripStops(tx, id, await orderedTripStops(tx, id));
+        }
+        const destinationsChanged = stopDates?.some(stop => {
+          const previous = previousStops.find(value => value.id === stop.id)!;
+          return previous.arrivalDate !== stop.arrivalDate || previous.departureDate !== stop.departureDate;
+        });
+        if (newStops.length || destinationsChanged || trip.startDate !== input.startDate || trip.endDate !== input.endDate) {
           const stops = await orderedTripStops(tx, id);
           const scheduled = await tx.select().from(activities).where(eq(activities.tripId, id));
           for (const activity of scheduled) {
@@ -77,7 +108,7 @@ export function createTripService(db: AppDatabase) {
             }
           }
         }
-        await tx.update(trips).set({ ...input, updatedAt: new Date().toISOString() }).where(eq(trips.id, id));
+        await tx.update(trips).set({ ...tripInput, updatedAt: new Date().toISOString() }).where(eq(trips.id, id));
         await finishManualMutation(tx, id, trip.revision);
         return requireTrip(tx, id);
       });

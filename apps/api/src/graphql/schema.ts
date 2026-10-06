@@ -180,6 +180,14 @@ export const typeDefs = /* GraphQL */ `
     startDate: String!
     endDate: String!
     travelerCount: Int
+    stops: [TripStopDatesInput!]
+    newStops: [TripStopDraftInput!]
+  }
+
+  input TripStopDatesInput {
+    id: ID!
+    arrivalDate: String!
+    departureDate: String!
   }
 
   input TripStopDraftInput {
